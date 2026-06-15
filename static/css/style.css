@@ -404,19 +404,21 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .movers-table tr:hover { background: var(--bg-input); }
 .movers-table .m-ticker { font-weight: 700; color: var(--accent); width: 56px; }
 .movers-table .m-name   { color: var(--muted); }
+.movers-table .m-price  { text-align: right; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 .movers-table .m-pct    { text-align: right; font-weight: 600; white-space: nowrap; }
 
 /* ── HOME — 뉴스 프리뷰 ────────────────────────────────────────────────────── */
 .news-preview-item {
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid #1e2530;
   cursor: pointer;
   transition: background .1s;
 }
 .news-preview-item:last-child { border-bottom: none; }
 .news-preview-item:hover { background: var(--bg-input); }
-.news-preview-item .np-title  { font-size: 12.5px; line-height: 1.45; margin-bottom: 4px; }
-.news-preview-item .np-meta   { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
+.news-preview-item .np-title  { font-size: 12.5px; line-height: 1.45; margin-bottom: 3px; }
+.news-preview-item .np-meta   { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.np-sent-dot { font-size: 9px; line-height: 1; flex-shrink: 0; }
 
 /* ── 공통 — 색상 유틸리티 ─────────────────────────────────────────────────── */
 .up   { color: var(--green); }

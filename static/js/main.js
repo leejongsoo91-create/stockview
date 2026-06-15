@@ -115,7 +115,7 @@ function renderVolumeLeaders(stocks) {
   const top = [...stocks]
     .filter(s => s.volume > 0)
     .sort((a, b) => b.volume - a.volume)
-    .slice(0, 6);
+    .slice(0, 10);
   const el = document.getElementById('volume-body');
   if (!el) return;
   el.innerHTML = top.map(s => `
@@ -231,7 +231,7 @@ const _INDEX_SYMBOL = {
   'Gold':         'GC=F',
   'Bitcoin':      'BTC-USD',
   '10Y Yield':    '^TNX',
-  'DXY':          'DX=F',
+  'DXY':          'DX-Y.NYB',
   'EUR/USD':      'EURUSD=X',
   'GBP/USD':      'GBPUSD=X',
   'USD/JPY':      'JPY=X',
@@ -299,8 +299,8 @@ function renderIndices(indices) {
 // ── Top Gainers / Losers ──────────────────────────────────────────────────────
 function renderMovers(stocks) {
   const sorted = [...stocks].sort((a, b) => b.change_pct - a.change_pct);
-  const gainers = sorted.slice(0, 6);
-  const losers  = sorted.slice(-6).reverse();
+  const gainers = sorted.slice(0, 10);
+  const losers  = sorted.slice(-10).reverse();
 
   function rows(list) {
     return list.map(s => `
@@ -308,6 +308,7 @@ function renderMovers(stocks) {
         <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
         <td class="m-ticker">${s.ticker}</td>
         <td class="m-name">${s.name}<br><span style="font-size:11px;color:#6e7681">${s.name_ko || ''}</span></td>
+        <td class="m-price">$${s.price != null ? Number(s.price).toFixed(2) : '—'}</td>
         <td class="m-pct ${colorCls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
       </tr>`).join('');
   }
@@ -318,17 +319,20 @@ function renderMovers(stocks) {
 // ── 홈 뉴스 프리뷰 ───────────────────────────────────────────────────────────
 function renderHomeNews(news) {
   const el = document.getElementById('home-news');
-  el.innerHTML = news.slice(0, 6).map(n => {
-    const badge = n.ticker
+  const sentMap = { positive: { cls: 'np-pos', dot: '🟢' }, negative: { cls: 'np-neg', dot: '🔴' }, neutral: { cls: '', dot: '⚪' } };
+  el.innerHTML = news.slice(0, 10).map(n => {
+    const sm = sentMap[n.sentiment] || sentMap.neutral;
+    const tickerBadge = n.ticker
       ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${n.ticker}')">${n.ticker}</span>`
       : '';
     return `
       <div class="news-preview-item" onclick="window.open('${n.url}','_blank')">
         <div class="np-title">${n.title}</div>
         <div class="np-meta">
+          <span class="np-sent-dot">${sm.dot}</span>
           <span class="news-source">${n.source}</span>
           <span>${n.time}</span>
-          ${badge}
+          ${tickerBadge}
         </div>
       </div>`;
   }).join('');
