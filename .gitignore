@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+
+# 로그 파일
+*.log
+server*.log
+
+# 캐시 / 백업
+pe_eps_cache.backup.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 환경변수
+.env
+.env.*
+
+# API 키 파일
+api/

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockView — US Market</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+  <!-- ① 티커 테이프 -->
+  <div id="ticker-tape">
+    <div id="ticker-inner"></div>
+  </div>
+
+  <!-- ② 헤더 + 내비게이션 -->
+  <header>
+    <div class="logo">📈 StockView</div>
+    <nav id="main-nav">
+      <button class="nav-btn active" data-view="home">Home</button>
+      <button class="nav-btn" data-view="screener">Screener</button>
+      <button class="nav-btn" data-view="heatmap">Heatmap</button>
+      <button class="nav-btn" data-view="chart">Chart</button>
+      <button class="nav-btn" data-view="news">News</button>
+      <button class="nav-btn" data-view="brief">📊 Brief</button>
+      <button class="nav-btn" data-view="earnings">📅 Earnings</button>
+      <button class="nav-btn wl-nav-btn" data-view="watchlist">
+        ★ Watchlist <span id="wl-count" class="wl-count-badge" style="display:none"></span>
+      </button>
+      <button class="nav-btn pt-nav-btn" data-view="portfolio">
+        💼 Portfolio <span id="pt-count" class="wl-count-badge" style="display:none"></span>
+      </button>
+    </nav>
+    <span id="last-updated" class="last-updated"></span>
+  </header>
+
+  <!-- ③ 메인 컨텐츠 -->
+  <main>
+
+    <!-- ─── HOME ─────────────────────────────────────────────────────── -->
+    <div id="view-home" class="view active">
+
+      <!-- 시장 상태 바 -->
+      <div class="home-status-bar">
+        <div id="market-status"></div>
+        <span id="home-et-time" class="mkt-et-time"></span>
+      </div>
+
+      <!-- 지수·선물·채권 3그룹 Overview -->
+      <div class="home-overview" id="indices-overview"></div>
+
+      <!-- 섹터 퍼포먼스 가로 스트립 -->
+      <div class="home-sector-strip">
+        <span class="sp-strip-label">Sectors</span>
+        <div id="sector-perf-grid"></div>
+      </div>
+
+      <!-- 2단 대시보드 -->
+      <div class="home-dashboard">
+
+        <!-- 왼쪽: Fear & Greed -->
+        <div class="home-left">
+          <div class="home-card home-fg-panel">
+            <div class="panel-title">😨 Fear &amp; Greed</div>
+            <div class="fg-gauge-wrap hfg-wrap">
+              <div class="fg-arc"></div>
+              <div class="fg-inner"></div>
+              <div class="fg-needle" id="home-fg-needle"></div>
+            </div>
+            <div class="fg-score-big" id="home-fg-score">—</div>
+            <div class="fg-rating-label" id="home-fg-rating">Loading…</div>
+            <div class="fg-history" id="home-fg-history"></div>
+          </div>
+        </div>
+
+        <!-- 오른쪽: 2×2 패널 그리드 -->
+        <div class="home-right">
+          <div class="home-right-grid">
+            <div class="movers-panel">
+              <h3 class="panel-title">🚀 Top Gainers</h3>
+              <table class="movers-table"><tbody id="gainers-body"></tbody></table>
+            </div>
+            <div class="movers-panel">
+              <h3 class="panel-title">📉 Top Losers</h3>
+              <table class="movers-table"><tbody id="losers-body"></tbody></table>
+            </div>
+            <div class="movers-panel">
+              <h3 class="panel-title">🔥 Volume Leaders</h3>
+              <table class="movers-table"><tbody id="volume-body"></tbody></table>
+            </div>
+            <div class="news-preview-panel">
+              <h3 class="panel-title">📰 Latest News</h3>
+              <div id="home-news"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─── SCREENER ──────────────────────────────────────────────────── -->
+    <div id="view-screener" class="view">
+      <div class="screener-filters">
+        <!-- 필터 1행 -->
+        <div class="sc-filter-row">
+          <div class="filter-group">
+            <label>Sector</label>
+            <select id="filter-sector">
+              <option value="all">All Sectors</option>
+              <option value="Technology">Technology</option>
+              <option value="Finance">Finance</option>
+              <option value="Healthcare">Healthcare</option>
+              <option value="Energy">Energy</option>
+              <option value="Consumer Disc.">Consumer Disc.</option>
+              <option value="Consumer Staples">Consumer Staples</option>
+              <option value="Industrial">Industrial</option>
+              <option value="Communication">Communication</option>
+              <option value="Real Estate">Real Estate</option>
+              <option value="Materials">Materials</option>
+              <option value="Utilities">Utilities</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Industry</label>
+            <select id="filter-industry">
+              <option value="all">All Industries</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Country</label>
+            <select id="filter-country">
+              <option value="all">All Countries</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Market Cap</label>
+            <select id="filter-cap">
+              <option value="all">Any</option>
+              <option value="mega">Mega (&gt;$500B)</option>
+              <option value="large">Large ($100–500B)</option>
+              <option value="mid">Mid ($10–100B)</option>
+              <option value="small">Small (&lt;$10B)</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>P/E Ratio</label>
+            <select id="filter-pe">
+              <option value="all">Any</option>
+              <option value="has">Has P/E</option>
+              <option value="u15">Under 15</option>
+              <option value="u20">Under 20</option>
+              <option value="u30">Under 30</option>
+              <option value="o30">Over 30</option>
+              <option value="neg">Negative</option>
+            </select>
+          </div>
+        </div>
+        <!-- 필터 2행 -->
+        <div class="sc-filter-row sc-filter-row2">
+          <div class="filter-group">
+            <label>Change %</label>
+            <select id="filter-change">
+              <option value="all">Any</option>
+              <option value="up5">+5% or more</option>
+              <option value="up2">+2% or more</option>
+              <option value="up0">Positive</option>
+              <option value="down0">Negative</option>
+              <option value="down2">-2% or less</option>
+              <option value="down5">-5% or less</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>52W Position</label>
+            <select id="filter-52w">
+              <option value="all">Any</option>
+              <option value="near_high">Near High (&gt;80%)</option>
+              <option value="mid">Mid Range (20–80%)</option>
+              <option value="near_low">Near Low (&lt;20%)</option>
+            </select>
+          </div>
+          <div class="filter-group search-group">
+            <label>Search</label>
+            <input type="text" id="filter-search" placeholder="Ticker or name…">
+          </div>
+          <div class="sc-filter-meta">
+            <span id="filter-count-label" class="sc-result-count">— results</span>
+            <span id="sc-last-updated" class="sc-last-updated"></span>
+            <button id="sc-refresh-btn" class="sc-refresh-btn" title="새로고침">⟳</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 뷰 탭 -->
+      <div class="sc-view-tabs">
+        <button class="sc-view-btn active" data-scview="overview">Overview</button>
+        <button class="sc-view-btn" data-scview="fundamental">Fundamental</button>
+        <button class="sc-view-btn" data-scview="performance">Performance</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="screener-table">
+          <thead id="screener-head"><tr></tr></thead>
+          <tbody id="screener-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─── HEATMAP ───────────────────────────────────────────────────── -->
+    <div id="view-heatmap" class="view">
+      <!-- 인덱스 탭 -->
+      <div class="hm-index-bar">
+        <button class="hm-idx-btn active" data-index="all">All</button>
+        <button class="hm-idx-btn" data-index="sp500">S&amp;P 500</button>
+        <button class="hm-idx-btn" data-index="nasdaq100">Nasdaq 100</button>
+        <button class="hm-idx-btn" data-index="dow30">Dow 30</button>
+        <button class="hm-idx-btn" data-index="russell2000">Russell 2000</button>
+        <span id="hm-count-label" class="hm-count-label"></span>
+      </div>
+      <div class="heatmap-toolbar">
+        <div class="heatmap-legend">
+          <span class="leg-item" style="background:#7f1d1d">-5%+</span>
+          <span class="leg-item" style="background:#b91c1c">-3%</span>
+          <span class="leg-item" style="background:#dc2626">-1%</span>
+          <span class="leg-item" style="background:#374151"> 0%</span>
+          <span class="leg-item" style="background:#16a34a">+1%</span>
+          <span class="leg-item" style="background:#15803d">+3%</span>
+          <span class="leg-item" style="background:#14532d">+5%+</span>
+        </div>
+        <div class="heatmap-filter-group">
+          <span class="quick-label">표시:</span>
+          <button class="hm-top-btn" data-top="200">Top 200</button>
+          <button class="hm-top-btn active" data-top="500">Top 500</button>
+          <button class="hm-top-btn" data-top="1000">Top 1000</button>
+          <button class="hm-top-btn" data-top="0">전체</button>
+        </div>
+        <span class="heatmap-hint">셀 클릭 시 차트 이동</span>
+      </div>
+      <div id="heatmap-container"></div>
+      <div id="heatmap-tooltip"></div>
+    </div>
+
+    <!-- ─── CHART ─────────────────────────────────────────────────────── -->
+    <div id="view-chart" class="view">
+      <div class="chart-toolbar">
+        <div class="chart-search-row">
+          <input id="chart-input" type="text" placeholder="Enter ticker (e.g. AAPL)">
+          <button id="chart-go-btn">Go</button>
+        </div>
+        <div class="quick-tickers">
+          <span class="quick-label">Indices:</span>
+          <button class="quick-btn idx-btn" data-ticker="^GSPC">S&amp;P 500</button>
+          <button class="quick-btn idx-btn" data-ticker="^IXIC">NASDAQ</button>
+          <button class="quick-btn idx-btn" data-ticker="^DJI">DOW</button>
+          <button class="quick-btn idx-btn" data-ticker="^RUT">RUT</button>
+          <button class="quick-btn idx-btn" data-ticker="^VIX">VIX</button>
+          <button class="quick-btn idx-btn" data-ticker="CL=F">OIL</button>
+          <button class="quick-btn idx-btn" data-ticker="GC=F">GOLD</button>
+        </div>
+        <div class="quick-tickers">
+          <span class="quick-label">Stocks:</span>
+          <button class="quick-btn" data-ticker="AAPL">AAPL</button>
+          <button class="quick-btn" data-ticker="NVDA">NVDA</button>
+          <button class="quick-btn" data-ticker="MSFT">MSFT</button>
+          <button class="quick-btn" data-ticker="TSLA">TSLA</button>
+          <button class="quick-btn" data-ticker="AMZN">AMZN</button>
+          <button class="quick-btn" data-ticker="META">META</button>
+          <button class="quick-btn" data-ticker="LLY">LLY</button>
+        </div>
+        <div class="chart-interval-row">
+          <span class="quick-label">Interval:</span>
+          <button class="interval-btn" data-interval="1m">1m</button>
+          <button class="interval-btn" data-interval="5m">5m</button>
+          <button class="interval-btn" data-interval="15m">15m</button>
+          <button class="interval-btn" data-interval="30m">30m</button>
+          <button class="interval-btn" data-interval="60m">1H</button>
+          <button class="interval-btn active" data-interval="1d">1D</button>
+          <span class="chart-sep">|</span>
+          <span id="period-group">
+            <button class="period-btn" data-period="1mo">1M</button>
+            <button class="period-btn" data-period="3mo">3M</button>
+            <button class="period-btn" data-period="6mo">6M</button>
+            <button class="period-btn active" data-period="1y">1Y</button>
+            <button class="period-btn" data-period="2y">2Y</button>
+          </span>
+          <span id="chart-live-badge" class="chart-live-badge" style="display:none">● LIVE</span>
+          <span id="chart-updated-at" class="chart-updated-at"></span>
+        </div>
+      </div>
+      <div class="chart-layout">
+        <div class="chart-main">
+          <div class="chart-header">
+            <div>
+              <span id="chart-ticker-label" class="chart-ticker-name">—</span>
+              <span id="chart-company-label" class="chart-company-name"></span>
+            </div>
+            <div id="chart-price-badge"></div>
+          </div>
+          <div id="lw-chart"></div>
+        </div>
+        <aside class="chart-sidebar">
+          <div id="stock-info-panel">
+            <div class="info-placeholder">Select a ticker to view chart</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ─── NEWS ──────────────────────────────────────────────────────── -->
+    <div id="view-news" class="view">
+      <!-- 서브탭: News / Reports -->
+      <div class="news-subtab-bar">
+        <button class="news-subtab active" data-subtab="news">📰 News</button>
+        <button class="news-subtab" data-subtab="reports">📋 Reports</button>
+      </div>
+
+      <!-- News 패널 -->
+      <div id="news-panel">
+        <div class="news-filter-bar">
+          <button class="news-tag active" data-sentiment="all">All</button>
+          <button class="news-tag positive" data-sentiment="positive">Positive</button>
+          <button class="news-tag negative" data-sentiment="negative">Negative</button>
+          <button class="news-tag neutral"  data-sentiment="neutral">Neutral</button>
+        </div>
+        <div id="news-list"></div>
+      </div>
+
+      <!-- Reports 패널 -->
+      <div id="reports-panel" style="display:none">
+        <div class="news-filter-bar">
+          <button class="report-tag active" data-rtype="all">All</button>
+          <button class="report-tag" data-rtype="Earnings">📊 Earnings</button>
+          <button class="report-tag" data-rtype="Press Release">📣 Press Release</button>
+          <button class="report-tag" data-rtype="Fed">🏦 Fed</button>
+        </div>
+        <div id="reports-list"></div>
+      </div>
+    </div>
+
+    <!-- ─── BRIEF ──────────────────────────────────────────────────────── -->
+    <div id="view-brief" class="view">
+      <div class="brief-header">
+        <h2 class="brief-title">Market Brief</h2>
+        <div class="brief-period-bar">
+          <button class="brief-period-btn active" data-period="daily">Daily</button>
+          <button class="brief-period-btn" data-period="weekly">Weekly</button>
+          <button class="brief-period-btn" data-period="monthly">Monthly</button>
+        </div>
+        <span id="brief-updated" class="brief-updated"></span>
+      </div>
+
+      <div class="brief-grid">
+        <!-- 감성 게이지 -->
+        <div class="brief-card brief-mood-card">
+          <div class="brief-card-title">📊 Market Mood</div>
+          <div id="brief-mood-label" class="brief-mood-label">—</div>
+          <div class="brief-mood-bar-wrap">
+            <div class="brief-mood-bar">
+              <div id="brief-bar-pos"  class="bmb-pos"  style="width:0%"></div>
+              <div id="brief-bar-neut" class="bmb-neut" style="width:0%"></div>
+              <div id="brief-bar-neg"  class="bmb-neg"  style="width:0%"></div>
+            </div>
+            <div class="brief-mood-legend">
+              <span id="brief-pct-pos"  class="bml-pos">0% Bullish</span>
+              <span id="brief-pct-neut" class="bml-neut">0% Neutral</span>
+              <span id="brief-pct-neg"  class="bml-neg">0% Bearish</span>
+            </div>
+          </div>
+          <div id="brief-item-count" class="brief-item-count"></div>
+        </div>
+
+        <!-- Fear & Greed Index -->
+        <div class="brief-card brief-fg-card fg-full">
+          <div class="brief-card-title">😨 Fear &amp; Greed Index</div>
+          <div class="fg-gauge-wrap">
+            <div class="fg-arc"></div>
+            <div class="fg-inner"></div>
+            <div class="fg-needle" id="brief-fg-needle"></div>
+          </div>
+          <div class="fg-score-big" id="brief-fg-score">—</div>
+          <div class="fg-rating-label" id="brief-fg-rating">Loading…</div>
+          <div class="fg-history" id="brief-fg-history"></div>
+        </div>
+
+        <!-- Most Mentioned Stocks -->
+        <div class="brief-card">
+          <div class="brief-card-title">🏷️ Most Mentioned</div>
+          <div id="brief-tickers" class="brief-ticker-wrap"></div>
+        </div>
+
+        <!-- Top Stories -->
+        <div class="brief-card brief-stories-card">
+          <div class="brief-card-title">📰 Top Stories</div>
+          <div id="brief-stories" class="brief-stories-list"></div>
+        </div>
+
+        <!-- Report Highlights -->
+        <div class="brief-card brief-reports-card">
+          <div class="brief-card-title">📋 Report Highlights</div>
+          <div id="brief-reports" class="brief-stories-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── WATCHLIST ────────────────────────────────────────────────── -->
+    <div id="view-watchlist" class="view">
+      <div id="wl-content"></div>
+    </div>
+
+    <!-- ─── EARNINGS ─────────────────────────────────────────────────── -->
+    <div id="view-earnings" class="view">
+      <div class="earnings-header">
+        <h2 class="earnings-title">Earnings Calendar</h2>
+        <div class="earnings-period-bar">
+          <button class="earn-period-btn active" data-period="week">This Week</button>
+          <button class="earn-period-btn" data-period="next_week">Next Week</button>
+          <button class="earn-period-btn" data-period="today">Today</button>
+        </div>
+      </div>
+      <div id="earnings-content">
+        <div class="loading-msg">Loading earnings data...</div>
+      </div>
+    </div>
+
+    <!-- ─── PORTFOLIO ───────────────────────────────────────────────── -->
+    <div id="view-portfolio" class="view">
+      <div class="pt-header-bar">
+        <h3 class="pt-title">내 포트폴리오</h3>
+        <button class="pt-add-btn" onclick="openPtModal()">+ 종목 추가</button>
+      </div>
+      <div id="pt-content"></div>
+    </div>
+
+    <!-- ─── PORTFOLIO 모달 ───────────────────────────────────────────── -->
+    <div id="pt-modal" class="pt-modal-overlay" style="display:none" onclick="if(event.target===this)closePtModal()">
+      <div class="pt-modal-box">
+        <div class="pt-modal-title">종목 추가 / 수정</div>
+        <div class="pt-modal-body">
+          <label class="pt-label">티커 (예: AAPL, MSFT)</label>
+          <input id="pt-modal-ticker" class="pt-input" type="text" placeholder="AAPL" autocomplete="off">
+          <label class="pt-label">수량 (주)</label>
+          <input id="pt-modal-qty" class="pt-input" type="number" placeholder="10" min="0.0001" step="any">
+          <label class="pt-label">평균 매수가 ($)</label>
+          <input id="pt-modal-price" class="pt-input" type="number" placeholder="150.00" min="0.01" step="any">
+        </div>
+        <div class="pt-modal-footer">
+          <button class="pt-modal-cancel" onclick="closePtModal()">취소</button>
+          <button class="pt-modal-save"   onclick="savePtModal()">저장</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/static/js/brief.js"></script>
+  <script src="/static/js/main.js"></script>
+  <script src="/static/js/heatmap.js"></script>
+  <script src="/static/js/screener.js"></script>
+  <script src="/static/js/chart.js"></script>
+  <script src="/static/js/watchlist.js"></script>
+  <script src="/static/js/portfolio.js"></script>
+  <script src="/static/js/earnings.js"></script>
+</body>
+</html>

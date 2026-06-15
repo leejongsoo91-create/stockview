@@ -1,0 +1,539 @@
+/* ═══════════════════════════════════════════════════════════════
+   main.js — 뷰 전환, 홈 페이지, 티커 테이프, 공통 헬퍼
+   ═══════════════════════════════════════════════════════════════ */
+
+// ── 공통 헬퍼 ───────────────────────────────────────────────────────────────
+function fmt$(n)  { return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtPct(n){ const s = n >= 0 ? '+' : ''; return s + n.toFixed(2) + '%'; }
+function fmtVol(n){ if(n >= 1e9) return (n/1e9).toFixed(2)+'B'; if(n >= 1e6) return (n/1e6).toFixed(1)+'M'; return n.toLocaleString(); }
+function fmtCap(n){ if(n >= 1000) return '$'+(n/1000).toFixed(2)+'T'; return '$'+n.toFixed(0)+'B'; }
+function colorCls(n){ return n >= 0 ? 'up' : 'down'; }
+
+// api fetch 래퍼
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+// ── 뷰 전환 ─────────────────────────────────────────────────────────────────
+let _heatmapInited   = false;
+let _screenerInited  = false;
+let _chartInited     = false;
+let _newsInited      = false;
+let _briefInited     = false;
+let _watchlistInited = false;
+let _portfolioInited = false;
+let _earningsInited  = false;
+
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelector(`.nav-btn[data-view="${name}"]`).classList.add('active');
+
+  // 다른 탭으로 이동 시 각 탭 타이머 중지
+  if (name !== 'screener' && typeof stopScreenerRefresh === 'function') {
+    stopScreenerRefresh();
+  }
+  if (name !== 'chart'     && typeof stopChartTimers       === 'function') stopChartTimers();
+  if (name !== 'portfolio' && typeof stopPortfolioRefresh  === 'function') stopPortfolioRefresh();
+
+  // 첫 진입 시 각 탭 초기화 (스크리너는 매번 재로드)
+  if (name === 'screener')                        { initScreener();  _screenerInited  = true; }
+  if (name === 'heatmap'  && !_heatmapInited)     { initHeatmap();   _heatmapInited   = true; }
+  if (name === 'chart'    && !_chartInited)       { initChart();     _chartInited     = true; }
+  if (name === 'news'     && !_newsInited)        { initNews();      _newsInited      = true; }
+  if (name === 'brief'    && !_briefInited)       { initBrief();     _briefInited     = true; }
+  if (name === 'earnings' && !_earningsInited)   { initEarnings();  _earningsInited  = true; }
+  // 워치리스트는 진입할 때마다 최신 데이터로 갱신
+  if (name === 'watchlist')  { initWatchlist();  _watchlistInited  = true; }
+  if (name === 'portfolio')  { initPortfolio(); _portfolioInited  = true; }
+}
+
+// 차트 탭으로 이동 + 종목 로드 (다른 탭에서 호출)
+function navigateToChart(ticker) {
+  switchView('chart');
+  if (!_chartInited) { initChart(); _chartInited = true; }
+  loadChart(ticker);
+}
+
+// ── 시장 상태 배지 ───────────────────────────────────────────────────────────
+function renderMarketStatus() {
+  const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et    = new Date(etStr);
+  const day   = et.getDay();
+  const mins  = et.getHours() * 60 + et.getMinutes();
+  const timeStr = et.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) + ' ET';
+
+  let statusKey, label;
+  if (day === 0 || day === 6) {
+    statusKey = 'closed'; label = 'MARKET CLOSED';
+  } else if (mins >= 9 * 60 + 30 && mins < 16 * 60) {
+    statusKey = 'open';   label = 'MARKET OPEN';
+  } else if (mins >= 4 * 60 && mins < 9 * 60 + 30) {
+    statusKey = 'pre';    label = 'PRE-MARKET';
+  } else if (mins >= 16 * 60 && mins < 20 * 60) {
+    statusKey = 'after';  label = 'AFTER HOURS';
+  } else {
+    statusKey = 'closed'; label = 'MARKET CLOSED';
+  }
+
+  const el = document.getElementById('market-status');
+  if (el) el.innerHTML = `<span class="market-status-badge mkt-${statusKey}"><span class="mkt-dot"></span>${label}</span>`;
+  const timeEl = document.getElementById('home-et-time');
+  if (timeEl) timeEl.textContent = timeStr;
+}
+
+// ── 섹터 퍼포먼스 가로 칩 스트립 ────────────────────────────────────────────
+function renderSectorPerf(stocks) {
+  const map = {};
+  for (const s of stocks) {
+    if (!s.sector || s.sector === 'Other' || s.change_pct == null) continue;
+    if (!map[s.sector]) map[s.sector] = { sum: 0, n: 0 };
+    map[s.sector].sum += s.change_pct;
+    map[s.sector].n++;
+  }
+  const items = Object.entries(map)
+    .map(([name, v]) => ({ name, avg: +(v.sum / v.n).toFixed(2) }))
+    .sort((a, b) => b.avg - a.avg);
+
+  const el = document.getElementById('sector-perf-grid');
+  if (!el) return;
+  el.innerHTML = items.map(({ name, avg }) => {
+    const cls  = avg >= 0 ? 'up' : 'down';
+    const sign = avg >= 0 ? '+' : '';
+    return `<div class="sec-chip ${cls}">
+      <span class="sec-chip-name">${name}</span>
+      <span class="sec-chip-pct">${sign}${avg}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Volume Leaders ───────────────────────────────────────────────────────────
+function renderVolumeLeaders(stocks) {
+  const top = [...stocks]
+    .filter(s => s.volume > 0)
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 6);
+  const el = document.getElementById('volume-body');
+  if (!el) return;
+  el.innerHTML = top.map(s => `
+    <tr onclick="navigateToChart('${s.ticker}')">
+      <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
+      <td class="m-ticker">${s.ticker}</td>
+      <td class="m-name">${s.name}<br><span style="font-size:11px;color:#6e7681">${fmtVol(s.volume)}</span></td>
+      <td class="m-pct ${colorCls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+    </tr>`).join('');
+}
+
+// ── 홈 Fear & Greed 위젯 ────────────────────────────────────────────────────
+function _fgRatingClass(rating) {
+  if (!rating) return '';
+  return 'fg-' + rating.toLowerCase().replace(/\s+/g, '-');
+}
+
+function _scoreToRating(score) {
+  if (score <= 25) return 'Extreme Fear';
+  if (score <= 44) return 'Fear';
+  if (score <= 55) return 'Neutral';
+  if (score <= 75) return 'Greed';
+  return 'Extreme Greed';
+}
+
+function renderHomeFearGreed(fg) {
+  if (!fg || fg.score == null) return;
+  const { score, rating, prev_close, prev_1w, prev_1m, prev_1y } = fg;
+
+  const deg  = (score / 100 * 180) - 90;
+  const rCls = _fgRatingClass(rating);
+
+  // 바늘
+  requestAnimationFrame(() => {
+    const n = document.getElementById('home-fg-needle');
+    if (n) n.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+  });
+
+  // 점수 + 등급
+  const scoreEl  = document.getElementById('home-fg-score');
+  const ratingEl = document.getElementById('home-fg-rating');
+  if (scoreEl)  { scoreEl.textContent = score;  scoreEl.className  = 'fg-score-big '    + rCls; }
+  if (ratingEl) { ratingEl.textContent = rating; ratingEl.className = 'fg-rating-label ' + rCls; }
+
+  // 과거 비교
+  const histEl = document.getElementById('home-fg-history');
+  if (histEl) {
+    const rows = [
+      ['Yesterday',  prev_close],
+      ['Last Week',  prev_1w],
+      ['Last Month', prev_1m],
+      ['Last Year',  prev_1y],
+    ];
+    histEl.innerHTML = rows.map(([label, val]) => {
+      const r = _scoreToRating(val);
+      return `<div class="fg-hist-row">
+        <span class="fg-hist-label">${label}</span>
+        <span class="fg-hist-val ${_fgRatingClass(r)}">${val}</span>
+        <span class="fg-hist-rating">${r}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── 홈 초기화 ────────────────────────────────────────────────────────────────
+async function loadHome() {
+  const [indices, stocks, news, fg] = await Promise.all([
+    api('/api/indices'),
+    api('/api/stocks'),
+    api('/api/news'),
+    api('/api/fear-greed').catch(() => ({})),
+  ]);
+  renderMarketStatus();
+  buildTickerTape(indices, stocks);
+  renderIndices(indices);
+  renderHomeFearGreed(fg);
+  renderMovers(stocks);
+  renderSectorPerf(stocks);
+  renderVolumeLeaders(stocks);
+  renderHomeNews(news);
+  return true;
+}
+
+// ── 티커 테이프 ──────────────────────────────────────────────────────────────
+function buildTickerTape(indices, stocks) {
+  const tape = document.getElementById('ticker-inner');
+  const items = [
+    ...indices.map(i => ({ label: i.name, value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct })),
+    ...['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','JPM','LLY','NFLX'].map(t => {
+      const s = stocks.find(x => x.ticker === t);
+      if (!s) return null;
+      return { label: s.ticker, value: fmt$(s.price), pct: s.change_pct };
+    }).filter(Boolean),
+  ];
+  const html = items.map(i =>
+    `<span class="tape-item">
+       <span class="tape-name">${i.label}</span>
+       <span class="tape-val">${i.value}</span>
+       <span class="tape-pct ${i.pct >= 0 ? 'up' : 'down'}">${fmtPct(i.pct)}</span>
+     </span>`
+  ).join('');
+  tape.innerHTML = html + html; // 끊김 없는 루프를 위해 복제
+}
+
+// 지수 이름 → Yahoo Finance 심볼 매핑
+const _INDEX_SYMBOL = {
+  'S&P 500':      '^GSPC',
+  'NASDAQ':       '^IXIC',
+  'Dow Jones':    '^DJI',
+  'Russell 2000': '^RUT',
+  'VIX':          '^VIX',
+  'WTI Crude':    'CL=F',
+  'Gold':         'GC=F',
+  'Bitcoin':      'BTC-USD',
+  '10Y Yield':    '^TNX',
+  'DXY':          'DX=F',
+  'EUR/USD':      'EURUSD=X',
+  'GBP/USD':      'GBPUSD=X',
+  'USD/JPY':      'JPY=X',
+  'USD/KRW':      'KRW=X',
+  'KOSPI':        '^KS11',
+  'KOSDAQ':       '^KQ11',
+  'US500':        'ES=F',
+  'US30':         'YM=F',
+  'US Tech 100':  'NQ=F',
+};
+
+// Overview 3그룹 정의
+const _INDEX_GROUPS = [
+  { label: '📈 Major Indices', names: ['S&P 500','NASDAQ','Dow Jones','Russell 2000','KOSPI','KOSDAQ'] },
+  { label: '🛢️ Futures',       names: ['US500','US30','US Tech 100','WTI Crude','Gold','Bitcoin'] },
+  { label: '🏦 Bonds & FX',    names: ['10Y Yield','DXY','EUR/USD','GBP/USD','USD/JPY','USD/KRW','VIX'] },
+];
+
+// ── 지수 Overview 3그룹 렌더링 ────────────────────────────────────────────────
+function renderIndices(indices) {
+  const el = document.getElementById('indices-overview');
+  if (!el) return;
+
+  const byName = {};
+  for (const i of indices) byName[i.name] = i;
+
+  el.innerHTML = _INDEX_GROUPS.map(group => {
+    const rows = group.names.map(name => {
+      const i = byName[name];
+      if (!i) return '';
+      const cls = colorCls(i.change_pct);
+      const sym = _INDEX_SYMBOL[name];
+      const click = sym ? `onclick="navigateToChart('${sym}')"` : '';
+
+      // 값 포맷
+      let valStr;
+      if (name === 'Bitcoin')            valStr = '$' + Math.round(i.value).toLocaleString('en-US');
+      else if (name === 'EUR/USD' || name === 'GBP/USD') valStr = i.value.toFixed(4);
+      else if (name === 'USD/JPY' || name === 'USD/KRW') valStr = i.value.toFixed(2);
+      else if (name === '10Y Yield' || name === 'VIX') valStr = i.value.toFixed(2);
+      else if (name === 'DXY')           valStr = i.value.toFixed(2);
+      else                               valStr = i.value.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+      // 변화량 포맷
+      const sign = i.change >= 0 ? '+' : '';
+      let chgStr;
+      if (name === 'Bitcoin') chgStr = sign + '$' + Math.abs(i.change).toLocaleString('en-US', {maximumFractionDigits:0});
+      else if (name === 'EUR/USD' || name === 'GBP/USD') chgStr = sign + i.change.toFixed(4);
+      else chgStr = sign + i.change.toFixed(2);
+
+      return `<div class="ov-row" ${click}>
+        <span class="ov-name">${name}</span>
+        <span class="ov-value">${valStr}</span>
+        <span class="ov-chg ${cls}">${chgStr} (${fmtPct(i.change_pct)})</span>
+      </div>`;
+    }).join('');
+
+    return `<div class="ov-group">
+      <div class="ov-group-title">${group.label}</div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+
+// ── Top Gainers / Losers ──────────────────────────────────────────────────────
+function renderMovers(stocks) {
+  const sorted = [...stocks].sort((a, b) => b.change_pct - a.change_pct);
+  const gainers = sorted.slice(0, 6);
+  const losers  = sorted.slice(-6).reverse();
+
+  function rows(list) {
+    return list.map(s => `
+      <tr onclick="navigateToChart('${s.ticker}')">
+        <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
+        <td class="m-ticker">${s.ticker}</td>
+        <td class="m-name">${s.name}<br><span style="font-size:11px;color:#6e7681">${s.name_ko || ''}</span></td>
+        <td class="m-pct ${colorCls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
+      </tr>`).join('');
+  }
+  document.getElementById('gainers-body').innerHTML = rows(gainers);
+  document.getElementById('losers-body').innerHTML  = rows(losers);
+}
+
+// ── 홈 뉴스 프리뷰 ───────────────────────────────────────────────────────────
+function renderHomeNews(news) {
+  const el = document.getElementById('home-news');
+  el.innerHTML = news.slice(0, 6).map(n => {
+    const badge = n.ticker
+      ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${n.ticker}')">${n.ticker}</span>`
+      : '';
+    return `
+      <div class="news-preview-item" onclick="window.open('${n.url}','_blank')">
+        <div class="np-title">${n.title}</div>
+        <div class="np-meta">
+          <span class="news-source">${n.source}</span>
+          <span>${n.time}</span>
+          ${badge}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 뉴스 탭 ──────────────────────────────────────────────────────────────────
+let _allNews = [];
+let _allReports = [];
+let _activeSubtab = 'news';
+
+function initNews() {
+  // 서브탭 전환
+  document.querySelectorAll('.news-subtab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.news-subtab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _activeSubtab = btn.dataset.subtab;
+      document.getElementById('news-panel').style.display    = _activeSubtab === 'news'    ? '' : 'none';
+      document.getElementById('reports-panel').style.display = _activeSubtab === 'reports' ? '' : 'none';
+      if (_activeSubtab === 'reports' && _allReports.length === 0) {
+        loadReports();
+      }
+    });
+  });
+
+  // News 감성 필터
+  api('/api/news').then(news => {
+    _allNews = news;
+    renderNews('all');
+  });
+  document.querySelectorAll('.news-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.news-tag').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderNews(btn.dataset.sentiment);
+    });
+  });
+
+  // Reports 타입 필터
+  document.querySelectorAll('.report-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.report-tag').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderReports(btn.dataset.rtype);
+    });
+  });
+}
+
+function loadReports() {
+  document.getElementById('reports-list').innerHTML = '<div style="color:var(--muted);padding:20px 0">Loading...</div>';
+  api('/api/reports').then(data => {
+    _allReports = data;
+    renderReports('all');
+  });
+}
+
+function renderReports(rtype) {
+  const list = rtype === 'all' ? _allReports : _allReports.filter(r => r.report_type === rtype);
+  const el = document.getElementById('reports-list');
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">No reports available.</div>';
+    return;
+  }
+  const badgeClass = t => 'badge-' + t.replace(/\s+/g, '-');
+  el.innerHTML = list.map(r => {
+    const tickerBadge = r.ticker
+      ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${r.ticker}')">${r.ticker}</span>`
+      : '';
+    return `
+      <div class="report-card" onclick="window.open('${r.url}','_blank')">
+        <span class="report-type-badge ${badgeClass(r.report_type)}">${r.report_type}</span>
+        <div class="news-body">
+          <div class="news-title">${r.title}</div>
+          <div class="news-meta">
+            <span class="news-source">${r.source}</span>
+            <span>${r.time}</span>
+            ${tickerBadge}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+function renderNews(sentiment) {
+  const list = sentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === sentiment);
+  const el = document.getElementById('news-list');
+  el.innerHTML = list.map(n => {
+    const tickerBadge = n.ticker
+      ? `<span class="news-ticker-badge" onclick="navigateToChart('${n.ticker}')">${n.ticker}</span>`
+      : '';
+    return `
+      <div class="news-card" onclick="window.open('${n.url}','_blank')" style="cursor:pointer">
+        <div class="news-sentiment-badge badge-${n.sentiment}"></div>
+        <div class="news-body">
+          <div class="news-title">${n.title}</div>
+          <div class="news-meta">
+            <span class="news-source" data-src="${n.source}">${n.source}</span>
+            <span>${n.time}</span>
+            ${tickerBadge}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+let _currentView = 'home';
+
+// ── 타임스탬프 ────────────────────────────────────────────────────────────────
+function updateTimestamp() {
+  const el = document.getElementById('last-updated');
+  if (el) el.textContent = 'Live · ' + new Date().toLocaleTimeString('ko-KR');
+}
+
+// ── WebSocket 연결 + 이벤트 핸들러 ──────────────────────────────────────────
+function initSocketIO() {
+  const socket = io({ transports: ['websocket', 'polling'] });
+
+  socket.on('connect', () => {
+    console.log('[WS] connected:', socket.id);
+    updateTimestamp();
+  });
+
+  socket.on('disconnect', () => {
+    console.log('[WS] disconnected');
+  });
+
+  // 종목 가격 갱신 Push
+  socket.on('stocks_update', async (data) => {
+    console.log('[WS] stocks_update:', data.count, '개');
+    try {
+      const stocks = await api('/api/stocks');
+      if (_currentView === 'home') {
+        const indices = await api('/api/indices');
+        buildTickerTape(indices, stocks);
+        renderMovers(stocks);
+        renderSectorPerf(stocks);
+        renderVolumeLeaders(stocks);
+      }
+      // 스크리너가 열려있으면 데이터 갱신
+      if (_currentView === 'screener' && typeof loadScreenerData === 'function') {
+        loadScreenerData(false);
+      }
+      // 포트폴리오가 열려있으면 갱신
+      if (_currentView === 'portfolio' && typeof renderPortfolio === 'function') {
+        renderPortfolio();
+      }
+      updateTimestamp();
+    } catch {}
+  });
+
+  // 지수 갱신 Push
+  socket.on('indices_update', async () => {
+    console.log('[WS] indices_update');
+    try {
+      const [indices, stocks] = await Promise.all([api('/api/indices'), api('/api/stocks')]);
+      renderIndices(indices);
+      if (_currentView === 'home') {
+        buildTickerTape(indices, stocks);
+      }
+      updateTimestamp();
+    } catch {}
+  });
+
+  // 뉴스 갱신 Push
+  socket.on('news_update', async () => {
+    console.log('[WS] news_update');
+    try {
+      const news = await api('/api/news');
+      if (_currentView === 'home')  renderHomeNews(news);
+      if (_currentView === 'news') { _allNews = news; renderNews(document.querySelector('.news-tag.active')?.dataset.sentiment || 'all'); }
+      updateTimestamp();
+    } catch {}
+  });
+
+  return socket;
+}
+
+// ── 진입점 ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // 탭 클릭
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _currentView = btn.dataset.view;
+      switchView(btn.dataset.view);
+    });
+  });
+
+  // 홈 초기 로드
+  loadHome().then(updateTimestamp);
+
+  // 시장 상태 배지 — 1분마다 갱신 (ET 시간 변동 반영)
+  setInterval(renderMarketStatus, 60 * 1000);
+
+  // WebSocket 연결 (Socket.IO CDN 로드된 후)
+  if (typeof io !== 'undefined') {
+    initSocketIO();
+  } else {
+    console.warn('[WS] Socket.IO 미로드 — polling 모드로 동작');
+  }
+
+  // 배지 초기화
+  updateWLCount();
+  if (typeof _updatePtCount === 'function') _updatePtCount();
+
+  // URL hash로 탭 직접 진입 (예: #screener, #heatmap)
+  const _hash = window.location.hash.slice(1);
+  const _views = ['home','screener','heatmap','chart','news','brief','earnings','watchlist','portfolio'];
+  if (_hash && _views.includes(_hash)) switchView(_hash);
+});

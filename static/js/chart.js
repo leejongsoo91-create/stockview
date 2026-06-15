@@ -1,0 +1,429 @@
+/* ═══════════════════════════════════════════════════════════════
+   chart.js — Lightweight Charts 캔들스틱 차트 (실시간 갱신)
+   ═══════════════════════════════════════════════════════════════ */
+
+let _lwChart        = null;
+let _candleSeries   = null;
+let _volSeries      = null;
+let _currentTicker  = null;
+let _currentPeriod  = '1y';
+let _currentInterval = '1d';
+let _priceTimer     = null;
+let _candleTimer    = null;
+let _lastOhlcv      = [];
+
+const _CANDLE_REFRESH = {
+  '1m': 30_000, '5m': 60_000, '15m': 120_000,
+  '30m': 300_000, '60m': 600_000, '1d': 60_000,
+};
+
+// 지수 심볼 → 표시 이름 매핑
+const _INDEX_NAMES = {
+  '^GSPC': 'S&P 500 Index',
+  '^IXIC': 'NASDAQ Composite',
+  '^DJI':  'Dow Jones Industrial',
+  '^RUT':  'Russell 2000 Index',
+  '^VIX':  'CBOE Volatility Index',
+  'CL=F':  'WTI Crude Oil Futures',
+  'GC=F':  'Gold Futures',
+};
+
+function _isIndex(ticker) {
+  return ticker.startsWith('^') || ticker.endsWith('=F');
+}
+
+function initChart() {
+  _createLWChart();
+  _bindSearchEvents();
+  _bindPeriodEvents();
+  _bindResizeObserver();
+}
+
+// 차트 탭 이탈 시 타이머 정지 (main.js에서 호출)
+function stopChartTimers() {
+  if (_priceTimer)  { clearInterval(_priceTimer);  _priceTimer  = null; }
+  if (_candleTimer) { clearInterval(_candleTimer); _candleTimer = null; }
+  const badge = document.getElementById('chart-live-badge');
+  if (badge) badge.style.display = 'none';
+}
+
+// ── LW 차트 생성 ─────────────────────────────────────────────────────────────
+function _createLWChart() {
+  const container = document.getElementById('lw-chart');
+  const W = container.clientWidth  || 900;
+  const H = 500;
+
+  _lwChart = LightweightCharts.createChart(container, {
+    width:  W,
+    height: H,
+    layout: {
+      background: { type: 'solid', color: '#161b22' },
+      textColor:  '#8b949e',
+      fontSize:   12,
+    },
+    grid: {
+      vertLines: { color: '#1e2530' },
+      horzLines: { color: '#1e2530' },
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: { color: '#484f58', width: 1, style: 0 },
+      horzLine: { color: '#484f58', width: 1, style: 0 },
+    },
+    rightPriceScale: {
+      borderColor: '#30363d',
+      scaleMargins: { top: 0.08, bottom: 0.22 },
+    },
+    timeScale: {
+      borderColor: '#30363d',
+      timeVisible: true,
+      fixLeftEdge: true,
+      fixRightEdge: true,
+    },
+  });
+
+  _candleSeries = _lwChart.addCandlestickSeries({
+    upColor:         '#3fb950',
+    downColor:       '#f85149',
+    borderUpColor:   '#3fb950',
+    borderDownColor: '#f85149',
+    wickUpColor:     '#3fb950',
+    wickDownColor:   '#f85149',
+  });
+
+  _volSeries = _lwChart.addHistogramSeries({
+    priceFormat:  { type: 'volume' },
+    priceScaleId: 'vol',
+  });
+  _lwChart.priceScale('vol').applyOptions({
+    scaleMargins: { top: 0.78, bottom: 0 },
+    borderVisible: false,
+  });
+}
+
+// ── 이벤트 바인딩 ─────────────────────────────────────────────────────────────
+function _bindSearchEvents() {
+  const input = document.getElementById('chart-input');
+  document.getElementById('chart-go-btn').addEventListener('click', () => {
+    const t = input.value.trim().toUpperCase();
+    if (t) loadChart(t);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const t = input.value.trim().toUpperCase();
+      if (t) loadChart(t);
+    }
+  });
+  document.querySelectorAll('.quick-btn').forEach(btn => {
+    btn.addEventListener('click', () => loadChart(btn.dataset.ticker));
+  });
+}
+
+function _bindPeriodEvents() {
+  // 기간 버튼 (1D interval일 때만 활성)
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.period === _currentPeriod) return;
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _currentPeriod = btn.dataset.period;
+      if (_currentTicker) loadChart(_currentTicker);
+    });
+  });
+
+  // interval 버튼 (1m/5m/15m/30m/1H/1D)
+  document.querySelectorAll('.interval-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const iv = btn.dataset.interval;
+      if (iv === _currentInterval) return;
+      document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _currentInterval = iv;
+      // 인트라데이 선택: 기간 버튼 숨김 / 1D: 표시
+      const pg = document.getElementById('period-group');
+      const sep = document.querySelector('.chart-sep');
+      const isIntraday = iv !== '1d';
+      if (pg)  pg.style.display  = isIntraday ? 'none' : '';
+      if (sep) sep.style.display = isIntraday ? 'none' : '';
+      if (_currentTicker) loadChart(_currentTicker);
+    });
+  });
+}
+
+function _bindResizeObserver() {
+  const resizeObs = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      if (_lwChart) _lwChart.resize(entry.contentRect.width, entry.contentRect.height);
+    }
+  });
+  resizeObs.observe(document.getElementById('lw-chart'));
+}
+
+// ── 차트 데이터 로드 ─────────────────────────────────────────────────────────
+async function loadChart(ticker) {
+  ticker = ticker.toUpperCase();
+  _currentTicker = ticker;
+  document.getElementById('chart-input').value = ticker;
+
+  // 헤더 초기화
+  document.getElementById('chart-ticker-label').textContent  = ticker;
+  document.getElementById('chart-company-label').textContent = '…';
+  document.getElementById('chart-price-badge').innerHTML     = '';
+  document.getElementById('stock-info-panel').innerHTML      = '<div class="info-placeholder">Loading…</div>';
+  _setUpdatedAt('');
+
+  // 기존 타이머 정지
+  stopChartTimers();
+
+  try {
+    const encodedTicker = encodeURIComponent(ticker);
+    const chartUrl = _currentInterval === '1d'
+      ? `/api/chart/${encodedTicker}?interval=1d&period=${_currentPeriod}`
+      : `/api/chart/${encodedTicker}?interval=${_currentInterval}`;
+
+    let ohlcv, stockData;
+
+    if (_isIndex(ticker)) {
+      // 지수: OHLCV만 가져오고, 현재가는 /api/indices에서 추출
+      ohlcv = await api(chartUrl);
+      const indices = await api('/api/indices');
+      const idx = indices.find(i => {
+        const map = { '^GSPC':'S&P 500','^IXIC':'NASDAQ','^DJI':'Dow Jones',
+                      '^RUT':'Russell 2000','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
+        return map[ticker] === i.name;
+      });
+      stockData = idx
+        ? { ticker, name: _INDEX_NAMES[ticker] || ticker, name_ko: '',
+            sector: 'Index', price: idx.value, change: idx.change,
+            change_pct: idx.change_pct, volume: null,
+            market_cap: null, pe: null, eps: null,
+            week52_high: null, week52_low: null }
+        : { ticker, name: _INDEX_NAMES[ticker] || ticker, name_ko: '',
+            sector: 'Index', price: ohlcv.length ? ohlcv[ohlcv.length-1].close : null,
+            change: 0, change_pct: 0, volume: null,
+            market_cap: null, pe: null, eps: null,
+            week52_high: null, week52_low: null };
+    } else {
+      [ohlcv, stockData] = await Promise.all([
+        api(chartUrl),
+        api(`/api/stock/${encodedTicker}`),
+      ]);
+    }
+
+    if (!ohlcv.length) throw new Error('No data');
+
+    _lastOhlcv = ohlcv;
+    _renderCandles(ohlcv);
+    _renderHeader(stockData);
+    renderStockInfo(stockData);
+    _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));
+
+    if (!_isIndex(ticker)) _loadStockNews(ticker);
+
+    _startAutoRefresh();
+
+  } catch {
+    document.getElementById('stock-info-panel').innerHTML =
+      `<div class="info-placeholder" style="color:#f85149">Ticker "${ticker}" not found</div>`;
+    document.getElementById('chart-ticker-label').textContent  = ticker;
+    document.getElementById('chart-company-label').textContent = '';
+  }
+}
+
+function _renderCandles(ohlcv) {
+  _candleSeries.setData(ohlcv.map(d => ({
+    time: d.time, open: d.open, high: d.high, low: d.low, close: d.close,
+  })));
+  _volSeries.setData(ohlcv.map(d => ({
+    time:  d.time,
+    value: d.volume,
+    color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
+  })));
+  _lwChart.timeScale().fitContent();
+}
+
+function _renderHeader(stock) {
+  document.getElementById('chart-ticker-label').textContent  = stock.ticker;
+  document.getElementById('chart-company-label').textContent =
+    stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name;
+  _updatePriceBadge(stock);
+}
+
+function _updatePriceBadge(stock) {
+  const cls = colorCls(stock.change_pct || 0);
+  const price   = stock.price    ? fmt$(stock.price)           : '—';
+  const change  = stock.change   != null
+    ? `${stock.change >= 0 ? '+' : ''}${fmt$(stock.change)}`  : '—';
+  const pct     = stock.change_pct != null ? fmtPct(stock.change_pct) : '—';
+  document.getElementById('chart-price-badge').innerHTML = `
+    <span class="${cls}" style="font-size:20px;font-weight:800">${price}</span><br>
+    <span class="${cls}">${change} (${pct})</span>
+  `;
+}
+
+function _setUpdatedAt(text) {
+  const el = document.getElementById('chart-updated-at');
+  if (el) el.textContent = text ? `업데이트: ${text}` : '';
+}
+
+// ── 자동 갱신 ─────────────────────────────────────────────────────────────────
+function _startAutoRefresh() {
+  const liveBadge = document.getElementById('chart-live-badge');
+  if (liveBadge) liveBadge.style.display = 'inline';
+
+  // 30초마다 현재가 + 가격 배지 갱신
+  _priceTimer = setInterval(async () => {
+    if (!_currentTicker) return;
+    try {
+      if (_isIndex(_currentTicker)) {
+        const indices = await api('/api/indices');
+        const map = { '^GSPC':'S&P 500','^IXIC':'NASDAQ','^DJI':'Dow Jones',
+                      '^RUT':'Russell 2000','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
+        const idx = indices.find(i => map[_currentTicker] === i.name);
+        if (idx) {
+          const s = { ticker: _currentTicker, price: idx.value,
+                      change: idx.change, change_pct: idx.change_pct,
+                      name: _INDEX_NAMES[_currentTicker] || _currentTicker,
+                      name_ko:'', sector:'Index', volume:null,
+                      market_cap:null, pe:null, eps:null,
+                      week52_high:null, week52_low:null };
+          _updatePriceBadge(s);
+          renderStockInfo(s);
+        }
+      } else {
+        const stock = await api(`/api/stock/${encodeURIComponent(_currentTicker)}`);
+        _updatePriceBadge(stock);
+        renderStockInfo(stock);
+      }
+    } catch {}
+  }, 30_000);
+
+  // interval별 주기로 캔들 업데이트
+  const candleMs = _CANDLE_REFRESH[_currentInterval] || 60_000;
+  _candleTimer = setInterval(async () => {
+    if (!_currentTicker) return;
+    try {
+      const enc = encodeURIComponent(_currentTicker);
+      const chartUrl = _currentInterval === '1d'
+        ? `/api/chart/${enc}?interval=1d&period=${_currentPeriod}`
+        : `/api/chart/${enc}?interval=${_currentInterval}`;
+      const ohlcv = await api(chartUrl);
+      if (!ohlcv.length) return;
+
+      const latest = ohlcv[ohlcv.length - 1];
+      const prev   = _lastOhlcv[_lastOhlcv.length - 1];
+
+      if (prev && latest.time === prev.time) {
+        // 같은 날짜: 마지막 캔들만 업데이트 (화면 깜빡임 없음)
+        _candleSeries.update({
+          time: latest.time, open: latest.open,
+          high: latest.high, low: latest.low, close: latest.close,
+        });
+        _volSeries.update({
+          time:  latest.time,
+          value: latest.volume,
+          color: latest.close >= latest.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
+        });
+      } else {
+        // 새 날짜 캔들 추가: 전체 재렌더
+        _lastOhlcv = ohlcv;
+        _renderCandles(ohlcv);
+      }
+
+      _lastOhlcv = ohlcv;
+      _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));
+    } catch {}
+  }, candleMs);
+}
+
+// ── 종목 정보 사이드바 ────────────────────────────────────────────────────────
+function renderStockInfo(s) {
+  const cls    = colorCls(s.change_pct || 0);
+  const peStr  = s.pe  > 0 ? s.pe.toFixed(1) : '—';
+  const epsStr = s.eps != null && s.eps !== 0
+    ? (s.eps > 0 ? fmt$(s.eps) : `<span class="down">${fmt$(s.eps)}</span>`)
+    : '—';
+  const capStr = s.market_cap ? fmtCap(s.market_cap) : '—';
+  const hiPct  = s.week52_high && s.price
+    ? ((s.price / s.week52_high - 1) * 100).toFixed(1) + '%'
+    : '—';
+
+  document.getElementById('stock-info-panel').innerHTML = `
+    <div class="info-section-title">Key Statistics</div>
+    <div class="info-row">
+      <span class="info-label">Price</span>
+      <span class="info-val">${s.price ? fmt$(s.price) : '—'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Change</span>
+      <span class="info-val ${cls}">${s.change != null ? (s.change >= 0 ? '+' : '') + fmt$(s.change) : '—'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Change %</span>
+      <span class="info-val ${cls}">${s.change_pct != null ? fmtPct(s.change_pct) : '—'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Volume</span>
+      <span class="info-val">${s.volume ? fmtVol(s.volume) : '—'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Mkt Cap</span>
+      <span class="info-val">${capStr}</span>
+    </div>
+    <div class="info-section-title" style="margin-top:4px">Valuation</div>
+    <div class="info-row">
+      <span class="info-label">P/E Ratio</span>
+      <span class="info-val">${peStr}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">EPS</span>
+      <span class="info-val">${epsStr}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Sector</span>
+      <span class="info-val" style="font-size:11.5px">${s.sector || '—'}</span>
+    </div>
+    <div class="info-section-title" style="margin-top:4px">52-Week Range</div>
+    <div class="info-row">
+      <span class="info-label">High</span>
+      <span class="info-val up">${s.week52_high ? fmt$(s.week52_high) : '—'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Low</span>
+      <span class="info-val down">${s.week52_low ? fmt$(s.week52_low) : '—'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">vs 52W High</span>
+      <span class="info-val ${colorCls(s.price && s.week52_high ? s.price/s.week52_high*100-100 : 0)}">
+        ${hiPct}
+      </span>
+    </div>
+    <div id="stock-news-section"></div>
+  `;
+}
+
+async function _loadStockNews(ticker) {
+  const section = document.getElementById('stock-news-section');
+  if (!section) return;
+  section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
+    <div style="color:#8b949e;font-size:11px;padding:4px 0">Loading…</div>`;
+  try {
+    const news = await api(`/api/stock-news/${encodeURIComponent(ticker)}`);
+    if (!news || !news.length) {
+      section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
+        <div style="color:#8b949e;font-size:11px;padding:4px 0">No recent news</div>`;
+      return;
+    }
+    const items = news.slice(0, 8).map(n => {
+      const cls = n.sentiment === 'positive' ? 'up' : n.sentiment === 'negative' ? 'down' : '';
+      return `<div class="stock-news-item" onclick="window.open('${n.url}','_blank')">
+        <span class="stock-news-dot ${cls}"></span>
+        <span class="stock-news-title">${n.title}</span>
+        <div class="stock-news-meta">${n.source} · ${n.time}</div>
+      </div>`;
+    }).join('');
+    section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>${items}`;
+  } catch {
+    section.innerHTML = '';
+  }
+}

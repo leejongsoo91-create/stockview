@@ -1,0 +1,255 @@
+/* ═══════════════════════════════════════════════════════════════
+   portfolio.js — 포트폴리오 손익 계산 (localStorage 기반)
+   ═══════════════════════════════════════════════════════════════ */
+
+const PT_KEY = 'stockview_portfolio';
+
+// ── 포트폴리오 저장소 ─────────────────────────────────────────────────────────
+// 구조: { "AAPL": { qty: 10, avgPrice: 150.00 }, ... }
+const PT = {
+  _data: null,
+
+  load() {
+    if (this._data) return this._data;
+    try { this._data = JSON.parse(localStorage.getItem(PT_KEY) || '{}'); }
+    catch { this._data = {}; }
+    return this._data;
+  },
+
+  save() { localStorage.setItem(PT_KEY, JSON.stringify(this._data)); },
+
+  set(ticker, qty, avgPrice) {
+    this.load()[ticker] = { qty: parseFloat(qty), avgPrice: parseFloat(avgPrice) };
+    this.save();
+  },
+
+  remove(ticker) {
+    delete this.load()[ticker];
+    this.save();
+  },
+
+  tickers() { return Object.keys(this.load()); },
+  count()   { return this.tickers().length; },
+};
+
+// ── 유틸 ──────────────────────────────────────────────────────────────────────
+function _fmtPnl(n) {
+  if (n == null) return '—';
+  const sign = n >= 0 ? '+' : '';
+  return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function _fmtPnlPct(n) {
+  if (n == null) return '—';
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+function _clsPnl(n) { return n == null ? '' : n >= 0 ? 'up' : 'down'; }
+
+// ── 포트폴리오 탭 진입 ────────────────────────────────────────────────────────
+let _ptRefreshTimer = null;
+
+function initPortfolio() {
+  renderPortfolio();
+  // WebSocket으로 갱신하므로 polling 불필요 (WebSocket 미연결 시 폴백)
+  if (typeof io === 'undefined') _startPtRefresh();
+  _updatePtCount();
+}
+
+function stopPortfolioRefresh() {
+  if (_ptRefreshTimer) { clearInterval(_ptRefreshTimer); _ptRefreshTimer = null; }
+}
+
+function _startPtRefresh() {
+  stopPortfolioRefresh();
+  _ptRefreshTimer = setInterval(() => {
+    const view = document.getElementById('view-portfolio');
+    if (view && view.classList.contains('active')) renderPortfolio();
+  }, 30_000);
+}
+
+function _updatePtCount() {
+  const cnt = PT.count();
+  const badge = document.getElementById('pt-count');
+  if (badge) {
+    badge.textContent = cnt > 0 ? cnt : '';
+    badge.style.display = cnt > 0 ? 'inline-block' : 'none';
+  }
+}
+
+// ── 포트폴리오 렌더링 ─────────────────────────────────────────────────────────
+async function renderPortfolio() {
+  const container = document.getElementById('pt-content');
+  if (!container) return;
+  const tickers = PT.tickers();
+
+  if (tickers.length === 0) {
+    container.innerHTML = `
+      <div class="pt-empty">
+        <div class="pt-empty-icon">📊</div>
+        <div class="pt-empty-text">포트폴리오가 비어 있습니다</div>
+        <div class="pt-empty-sub">아래 [+ 종목 추가] 버튼을 눌러 보유 종목을 등록하세요</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="pt-loading">데이터 불러오는 중...</div>`;
+
+  // 전체 종목에서 해당 티커 가격 조회
+  let priceMap = {};
+  try {
+    const all = await api('/api/stocks');
+    all.forEach(s => { priceMap[s.ticker] = s; });
+    // API에 없는 종목은 개별 조회
+    for (const t of tickers) {
+      if (!priceMap[t]) {
+        try { priceMap[t] = await api(`/api/stock/${t}`); } catch {}
+      }
+    }
+  } catch {}
+
+  const data = PT.load();
+  let totalCost = 0, totalValue = 0;
+
+  const rows = tickers.map(ticker => {
+    const { qty, avgPrice } = data[ticker];
+    const stock = priceMap[ticker] || {};
+    const curPrice = stock.price || null;
+    const cost     = qty * avgPrice;
+    const value    = curPrice ? qty * curPrice : null;
+    const pnl      = value != null ? value - cost : null;
+    const pnlPct   = pnl  != null ? (pnl / cost) * 100 : null;
+
+    if (value  != null) totalValue += value;
+    totalCost += cost;
+
+    return { ticker, qty, avgPrice, curPrice, cost, value, pnl, pnlPct, stock };
+  });
+
+  const totalPnl    = totalValue - totalCost;
+  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : null;
+
+  // 요약 카드
+  const summaryHtml = `
+    <div class="pt-summary">
+      <div class="pt-sum-card">
+        <div class="pt-sum-label">총 투자금액</div>
+        <div class="pt-sum-val">$${totalCost.toLocaleString('en-US', {minimumFractionDigits:2})}</div>
+      </div>
+      <div class="pt-sum-card">
+        <div class="pt-sum-label">현재 평가금액</div>
+        <div class="pt-sum-val">$${totalValue > 0 ? totalValue.toLocaleString('en-US', {minimumFractionDigits:2}) : '—'}</div>
+      </div>
+      <div class="pt-sum-card">
+        <div class="pt-sum-label">총 손익</div>
+        <div class="pt-sum-val ${_clsPnl(totalPnl)}">${_fmtPnl(totalValue > 0 ? totalPnl : null)}</div>
+      </div>
+      <div class="pt-sum-card">
+        <div class="pt-sum-label">총 수익률</div>
+        <div class="pt-sum-val ${_clsPnl(totalPnlPct)}">${_fmtPnlPct(totalValue > 0 ? totalPnlPct : null)}</div>
+      </div>
+    </div>`;
+
+  // 테이블
+  const tableHtml = `
+    <div class="table-wrap">
+      <table class="pt-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Ticker</th>
+            <th>Name</th>
+            <th class="num">수량</th>
+            <th class="num">평균단가</th>
+            <th class="num">현재가</th>
+            <th class="num">손익($)</th>
+            <th class="num">수익률(%)</th>
+            <th class="num">투자금액</th>
+            <th class="num">평가금액</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => {
+            const cls    = _clsPnl(r.pnl);
+            const name   = r.stock.name   || r.ticker;
+            const nameKo = r.stock.name_ko || '';
+            return `
+              <tr onclick="navigateToChart('${r.ticker}')">
+                <td onclick="event.stopPropagation()">${starBtn(r.ticker)}</td>
+                <td class="td-ticker">${r.ticker}</td>
+                <td class="td-name">${name}
+                  ${nameKo ? `<span class="td-name-ko">(${nameKo})</span>` : ''}
+                </td>
+                <td class="num">${r.qty.toLocaleString()}</td>
+                <td class="num">$${r.avgPrice.toFixed(2)}</td>
+                <td class="num">${r.curPrice ? fmt$(r.curPrice) : '—'}</td>
+                <td class="num ${cls}">${_fmtPnl(r.pnl)}</td>
+                <td class="num ${cls}">${_fmtPnlPct(r.pnlPct)}</td>
+                <td class="num">$${r.cost.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+                <td class="num">${r.value != null ? '$' + r.value.toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</td>
+                <td onclick="event.stopPropagation()">
+                  <button class="pt-edit-btn" onclick="openPtModal('${r.ticker}', ${r.qty}, ${r.avgPrice})" title="수정">✎</button>
+                  <button class="pt-del-btn" onclick="removePtStock('${r.ticker}')" title="삭제">✕</button>
+                </td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  const updatedAt = new Date().toLocaleTimeString('ko-KR');
+  container.innerHTML = `
+    <div class="pt-toolbar">
+      <span class="pt-count-label">${tickers.length}개 종목</span>
+      <span class="pt-updated">업데이트: ${updatedAt}</span>
+    </div>
+    ${summaryHtml}
+    ${tableHtml}`;
+}
+
+// ── 종목 삭제 ─────────────────────────────────────────────────────────────────
+function removePtStock(ticker) {
+  if (!confirm(`${ticker}을(를) 포트폴리오에서 삭제하시겠습니까?`)) return;
+  PT.remove(ticker);
+  _updatePtCount();
+  renderPortfolio();
+}
+
+// ── 종목 추가/수정 모달 ────────────────────────────────────────────────────────
+function openPtModal(ticker = '', qty = '', avgPrice = '') {
+  const modal = document.getElementById('pt-modal');
+  const t     = document.getElementById('pt-modal-ticker');
+  const q     = document.getElementById('pt-modal-qty');
+  const p     = document.getElementById('pt-modal-price');
+
+  t.value = ticker;
+  t.disabled = !!ticker;   // 수정 시 티커 변경 불가
+  q.value = qty;
+  p.value = avgPrice;
+
+  modal.style.display = 'flex';
+  (ticker ? q : t).focus();
+}
+
+function closePtModal() {
+  document.getElementById('pt-modal').style.display = 'none';
+}
+
+function savePtModal() {
+  const ticker   = document.getElementById('pt-modal-ticker').value.trim().toUpperCase();
+  const qty      = parseFloat(document.getElementById('pt-modal-qty').value);
+  const avgPrice = parseFloat(document.getElementById('pt-modal-price').value);
+
+  if (!ticker)          { alert('종목 티커를 입력하세요 (예: AAPL)'); return; }
+  if (!qty || qty <= 0) { alert('수량을 올바르게 입력하세요'); return; }
+  if (!avgPrice || avgPrice <= 0) { alert('평균단가를 올바르게 입력하세요'); return; }
+
+  PT.set(ticker, qty, avgPrice);
+  _updatePtCount();
+  closePtModal();
+  renderPortfolio();
+}
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePtModal();
+});
