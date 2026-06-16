@@ -49,6 +49,8 @@ RSS_FEEDS = [
     {"url": "https://www.reddit.com/r/stocks/top/.rss?t=day",                    "source": "Reddit r/stocks",   "reddit": True},
     {"url": "https://www.reddit.com/r/investing/top/.rss?t=day",                 "source": "Reddit r/investing","reddit": True},
     {"url": "https://www.reddit.com/r/wallstreetbets/top/.rss?t=day",            "source": "Reddit r/wsb",      "reddit": True},
+    # 테크/앱 비즈니스 인사이트
+    {"url": "https://www.appeconomyinsights.com/feed",                            "source": "App Economy Insights"},
 ]
 
 REPORT_FEEDS = [
