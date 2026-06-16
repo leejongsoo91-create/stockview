@@ -287,6 +287,14 @@
           <span id="chart-live-badge" class="chart-live-badge" style="display:none">● LIVE</span>
           <span id="chart-updated-at" class="chart-updated-at"></span>
         </div>
+        <div class="chart-indicator-row">
+          <span class="quick-label">Indicators:</span>
+          <button class="ind-btn ind-ma5"  data-ind="ma5">MA 5</button>
+          <button class="ind-btn ind-ma20" data-ind="ma20">MA 20</button>
+          <button class="ind-btn ind-ma60" data-ind="ma60">MA 60</button>
+          <button class="ind-btn ind-bb"   data-ind="bb">BB</button>
+          <button class="ind-btn ind-rsi"  data-ind="rsi">RSI</button>
+        </div>
       </div>
       <div class="chart-layout">
         <div class="chart-main">
@@ -298,6 +306,10 @@
             <div id="chart-price-badge"></div>
           </div>
           <div id="lw-chart"></div>
+          <div id="rsi-panel" style="display:none">
+            <div class="rsi-panel-label">RSI (14)</div>
+            <div id="rsi-chart"></div>
+          </div>
         </div>
         <aside class="chart-sidebar">
           <div id="stock-info-panel">

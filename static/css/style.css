@@ -747,6 +747,42 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   margin-top: 6px;
   flex-wrap: wrap;
 }
+
+/* 기술 지표 버튼 행 */
+.chart-indicator-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.ind-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 2px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.ind-btn:hover { opacity: .85; }
+.ind-ma5.active  { border-color: #f0c040; color: #f0c040; background: rgba(240,192,64,.12); }
+.ind-ma20.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,.12); }
+.ind-ma60.active { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,.12); }
+.ind-bb.active   { border-color: #bc8cff; color: #bc8cff; background: rgba(188,140,255,.12); }
+.ind-rsi.active  { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.12); }
+
+/* RSI 패널 */
+#rsi-panel { margin-top: 2px; position: relative; }
+.rsi-panel-label {
+  position: absolute;
+  top: 4px; left: 8px;
+  font-size: 10px;
+  color: #8b949e;
+  z-index: 2;
+  pointer-events: none;
+}
 .chart-sep {
   color: var(--border);
   font-size: 14px;

@@ -12,6 +12,14 @@ let _priceTimer     = null;
 let _candleTimer    = null;
 let _lastOhlcv      = [];
 
+// ── 기술 지표 상태 ────────────────────────────────────────────────────────────
+const _activeInds = new Set();
+const _indSeries  = { ma5: null, ma20: null, ma60: null, bbU: null, bbM: null, bbL: null };
+let   _rsiChart   = null;
+let   _rsiSeries  = null;
+let   _rsiOb      = null;   // 과매수 기준선
+let   _rsiOs      = null;   // 과매도 기준선
+
 const _CANDLE_REFRESH = {
   '1m': 30_000, '5m': 60_000, '15m': 120_000,
   '30m': 300_000, '60m': 600_000, '1d': 60_000,
@@ -36,6 +44,7 @@ function initChart() {
   _createLWChart();
   _bindSearchEvents();
   _bindPeriodEvents();
+  _bindIndicatorEvents();
   _bindResizeObserver();
 }
 
@@ -240,6 +249,150 @@ function _renderCandles(ohlcv) {
     color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
   })));
   _lwChart.timeScale().fitContent();
+  _applyIndicators();
+}
+
+// ── 기술 지표 계산 ────────────────────────────────────────────────────────────
+function _calcMA(closes, period) {
+  return closes.map((_, i) => {
+    if (i < period - 1) return null;
+    return closes.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
+  });
+}
+
+function _calcBB(closes, period = 20, mult = 2) {
+  const upper = [], mid = [], lower = [];
+  closes.forEach((_, i) => {
+    if (i < period - 1) { upper.push(null); mid.push(null); lower.push(null); return; }
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean  = slice.reduce((a, b) => a + b, 0) / period;
+    const std   = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period);
+    mid.push(mean);
+    upper.push(mean + mult * std);
+    lower.push(mean - mult * std);
+  });
+  return { upper, mid, lower };
+}
+
+function _calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return [];
+  const rsi = new Array(period).fill(null);
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+  }
+  avgGain /= period; avgLoss /= period;
+  rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d    = closes[i] - closes[i - 1];
+    const gain = d > 0 ? d : 0;
+    const loss = d < 0 ? Math.abs(d) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
+  }
+  return rsi;
+}
+
+// ── 지표 적용 ─────────────────────────────────────────────────────────────────
+function _applyIndicators() {
+  if (!_lastOhlcv.length) return;
+  const times  = _lastOhlcv.map(d => d.time);
+  const closes = _lastOhlcv.map(d => d.close);
+
+  const _setLine = (key, color, width = 1.5) => {
+    if (!_indSeries[key]) {
+      _indSeries[key] = _lwChart.addLineSeries({
+        color, lineWidth: width,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+    }
+  };
+  const _rmLine = key => {
+    if (_indSeries[key]) { _lwChart.removeSeries(_indSeries[key]); _indSeries[key] = null; }
+  };
+  const _toData = (vals) => vals.map((v, i) => v != null ? { time: times[i], value: +v.toFixed(4) } : null).filter(Boolean);
+
+  // MA5
+  if (_activeInds.has('ma5')) {
+    _setLine('ma5', '#f0c040');
+    _indSeries.ma5.setData(_toData(_calcMA(closes, 5)));
+  } else { _rmLine('ma5'); }
+
+  // MA20
+  if (_activeInds.has('ma20')) {
+    _setLine('ma20', '#58a6ff');
+    _indSeries.ma20.setData(_toData(_calcMA(closes, 20)));
+  } else { _rmLine('ma20'); }
+
+  // MA60
+  if (_activeInds.has('ma60') && closes.length >= 60) {
+    _setLine('ma60', '#ff7b72');
+    _indSeries.ma60.setData(_toData(_calcMA(closes, 60)));
+  } else { _rmLine('ma60'); }
+
+  // Bollinger Bands
+  if (_activeInds.has('bb')) {
+    const bb = _calcBB(closes);
+    _setLine('bbU', 'rgba(188,140,255,0.7)', 1);
+    _setLine('bbM', 'rgba(188,140,255,0.4)', 1);
+    _setLine('bbL', 'rgba(188,140,255,0.7)', 1);
+    _indSeries.bbU.setData(_toData(bb.upper));
+    _indSeries.bbM.setData(_toData(bb.mid));
+    _indSeries.bbL.setData(_toData(bb.lower));
+  } else { _rmLine('bbU'); _rmLine('bbM'); _rmLine('bbL'); }
+
+  // RSI
+  const rsiPanel = document.getElementById('rsi-panel');
+  if (_activeInds.has('rsi')) {
+    rsiPanel.style.display = '';
+    if (!_rsiChart) _createRSIChart();
+    const rsiVals = _calcRSI(closes);
+    const rsiData = rsiVals.map((v, i) => v != null ? { time: times[i], value: +v.toFixed(2) } : null).filter(Boolean);
+    _rsiSeries.setData(rsiData);
+    // 기준선 데이터 업데이트
+    const t0 = times[0], t1 = times[times.length - 1];
+    _rsiOb.setData([{ time: t0, value: 70 }, { time: t1, value: 70 }]);
+    _rsiOs.setData([{ time: t0, value: 30 }, { time: t1, value: 30 }]);
+  } else {
+    rsiPanel.style.display = 'none';
+  }
+}
+
+function _createRSIChart() {
+  const container = document.getElementById('rsi-chart');
+  _rsiChart = LightweightCharts.createChart(container, {
+    width:  container.clientWidth || 900,
+    height: 120,
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontSize: 11 },
+    grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderColor: '#30363d', timeVisible: true, fixLeftEdge: true, fixRightEdge: true },
+    handleScroll: false,
+    handleScale: false,
+  });
+  _rsiSeries = _rsiChart.addLineSeries({ color: '#e3b341', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+  _rsiOb     = _rsiChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  _rsiOs     = _rsiChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+}
+
+// ── 지표 버튼 이벤트 ─────────────────────────────────────────────────────────
+function _bindIndicatorEvents() {
+  document.querySelectorAll('.ind-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ind = btn.dataset.ind;
+      if (_activeInds.has(ind)) {
+        _activeInds.delete(ind);
+        btn.classList.remove('active');
+      } else {
+        _activeInds.add(ind);
+        btn.classList.add('active');
+      }
+      _applyIndicators();
+    });
+  });
 }
 
 function _renderHeader(stock) {
