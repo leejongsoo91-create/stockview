@@ -5,6 +5,8 @@
 let _hmStocks   = [];
 let _hmTopN     = 500;
 let _hmIndex    = 'all';
+let _hmPeriod   = '1d';
+let _hmPerfData = {};   // { '1w': {ticker: perf_pct}, '1m': {ticker: perf_pct} }
 let _hmMembers  = {};
 
 const _colorScale = d3.scaleLinear()
@@ -46,6 +48,29 @@ async function initHeatmap() {
     });
   });
 
+  // 기간 버튼 (1D / 1W / 1M)
+  document.querySelectorAll('.hm-period-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.period;
+      if (p === _hmPeriod) return;
+      document.querySelectorAll('.hm-period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _hmPeriod = p;
+      if (p !== '1d' && !_hmPerfData[p]) {
+        const countEl = document.getElementById('hm-count-label');
+        const prevText = countEl ? countEl.textContent : '';
+        if (countEl) countEl.textContent = '수익률 로딩 중…';
+        try {
+          _hmPerfData[p] = await api(`/api/heatmap-perf?period=${p}`);
+        } catch (e) {
+          _hmPerfData[p] = {};
+        }
+        if (countEl) countEl.textContent = prevText;
+      }
+      renderHeatmap();
+    });
+  });
+
   // 리사이즈
   let _resizeTimer;
   window.addEventListener('resize', () => {
@@ -81,8 +106,17 @@ function renderHeatmap() {
   const countEl = document.getElementById('hm-count-label');
   if (countEl) countEl.textContent = visible.length + '개 종목';
 
+  // 기간별 등락률 오버레이 (1W/1M 선택 시 perf_pct로 교체)
+  const perfMap = _hmPeriod !== '1d' ? (_hmPerfData[_hmPeriod] || {}) : {};
+  const displayStocks = _hmPeriod === '1d'
+    ? visible
+    : visible.map(s => ({
+        ...s,
+        change_pct: perfMap[s.ticker] !== undefined ? perfMap[s.ticker] : s.change_pct,
+      }));
+
   // 3) sector → industry → stock 3단계 그룹핑
-  const sectorMap = d3.group(visible, d => d.sector || 'Other');
+  const sectorMap = d3.group(displayStocks, d => d.sector || 'Other');
   const hierarchyData = {
     name: 'root',
     children: Array.from(sectorMap, ([sector, stocks]) => {
@@ -340,13 +374,15 @@ function renderHeatmap() {
     .on('mouseover', (event, d) => {
       event.stopPropagation();
       const pct = d.data.change_pct;
+      const periodLabel = _hmPeriod === '1w' ? '1W' : _hmPeriod === '1m' ? '1M' : '1D';
       tooltip.style.display = 'block';
       tooltip.innerHTML = `
         <strong style="font-size:14px">${d.data.ticker}</strong>
         <span style="color:#8b949e;margin-left:6px;font-size:12px">${d.data.name}</span><br>
         ${d.data.name_ko ? `<span style="color:#6e7681;font-size:11px">${d.data.name_ko}</span><br>` : ''}
         Price: <strong>${fmt$(d.data.price)}</strong>&nbsp;
-        <strong class="${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</strong><br>
+        <strong class="${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</strong>
+        <span style="color:#6e7681;font-size:10px;margin-left:4px">(${periodLabel})</span><br>
         <span style="color:#8b949e;font-size:11px">${d.data.industry || d.data.sector} · ${fmtCap(d.data.market_cap)}</span>
       `;
     })

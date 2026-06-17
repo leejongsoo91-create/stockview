@@ -749,6 +749,24 @@ def fear_greed_api():
     return jsonify(data or {})
 
 
+@app.route("/api/heatmap-perf")
+def heatmap_perf():
+    period = request.args.get("period", "1w")
+    if period not in ("1w", "1m"):
+        period = "1w"
+    key = f"heatmap_perf_{period}"
+    cached = cache.get_fresh(key)
+    if cached is not None:
+        return jsonify(cached)
+    stocks = cache.get("stocks") or STOCKS
+    sorted_stocks = sorted(stocks, key=lambda x: x.get("market_cap") or 0, reverse=True)
+    tickers = [s["ticker"] for s in sorted_stocks[:500]]
+    perf = df.fetch_heatmap_perf(tickers, period=period)
+    ttl = 3600 if period == "1w" else 7200
+    cache.set(key, perf or {}, ttl=ttl)
+    return jsonify(perf or {})
+
+
 @app.route("/api/cache/status")
 def cache_status():
     return jsonify(cache.status())

@@ -905,6 +905,41 @@ def _fetch_mc_html(ticker: str) -> tuple[str, float | None]:
         return ticker, None
 
 
+def fetch_heatmap_perf(tickers: list[str], period: str = "1w", max_workers: int = 40) -> dict[str, float]:
+    """히트맵 기간 수익률 수집. period: '1w'(5거래일) | '1m'(1개월)"""
+    range_map = {"1w": "5d", "1m": "1mo"}
+    yf_range = range_map.get(period, "5d")
+
+    def _fetch_one(ticker: str):
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"?interval=1d&range={yf_range}"
+        )
+        try:
+            r = requests.get(url, headers=YF_HEADERS, timeout=8)
+            r.raise_for_status()
+            res = r.json()["chart"]["result"][0]
+            closes = res["indicators"]["quote"][0].get("close", [])
+            closes = [c for c in closes if c is not None]
+            if len(closes) < 2:
+                return None
+            perf = round((closes[-1] / closes[0] - 1) * 100, 2)
+            return ticker, perf
+        except Exception:
+            return None
+
+    result: dict[str, float] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_fetch_one, t): t for t in tickers}
+        for fut in as_completed(futures):
+            res = fut.result()
+            if res:
+                result[res[0]] = res[1]
+
+    log.info(f"fetch_heatmap_perf({period}): {len(result)}/{len(tickers)}개 성공")
+    return result
+
+
 def fetch_all_market_caps(tickers: list[str], max_workers: int = 25) -> dict[str, float]:
     """
     S&P500 전체 시가총액 수집 (Yahoo Finance HTML 병렬 파싱).
