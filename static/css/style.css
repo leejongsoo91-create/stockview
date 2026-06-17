@@ -1192,6 +1192,82 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .pt-sum-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .pt-sum-val   { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
 
+/* 포트폴리오 도넛 차트 */
+.pt-charts-area {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pt-chart-card {
+  flex: 1;
+  min-width: 280px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.pt-chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 12px;
+}
+.pt-chart-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pt-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.pt-leg-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+}
+.pt-leg-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pt-leg-label {
+  flex: 1;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pt-leg-pct {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+  min-width: 36px;
+}
+.pt-chart-tooltip {
+  display: none;
+  position: fixed;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #e6edf3;
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  line-height: 1.7;
+}
+
 /* 포트폴리오 테이블 */
 .pt-toolbar {
   display: flex;

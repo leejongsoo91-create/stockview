@@ -32,6 +32,26 @@ const PT = {
   count()   { return this.tickers().length; },
 };
 
+// ── 차트 색상 ─────────────────────────────────────────────────────────────────
+const _SECTOR_COLORS = {
+  'Technology':       '#58a6ff',
+  'Finance':          '#3fb950',
+  'Healthcare':       '#ff7b72',
+  'Energy':           '#d2a522',
+  'Consumer Disc.':   '#bc8cff',
+  'Consumer Staples': '#56d364',
+  'Industrial':       '#96b9ff',
+  'Communication':    '#ffa64d',
+  'Real Estate':      '#ffd400',
+  'Materials':        '#a0e6b4',
+  'Utilities':        '#8cc8ff',
+  'Other':            '#8b949e',
+};
+const _HOLDING_COLORS = [
+  '#58a6ff','#3fb950','#ff7b72','#d2a522',
+  '#bc8cff','#56d364','#ffa64d','#ffd400','#8b949e',
+];
+
 // ── 유틸 ──────────────────────────────────────────────────────────────────────
 function _fmtPnl(n) {
   if (n == null) return '—';
@@ -43,6 +63,98 @@ function _fmtPnlPct(n) {
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
 }
 function _clsPnl(n) { return n == null ? '' : n >= 0 ? 'up' : 'down'; }
+
+// ── 도넛 차트 ─────────────────────────────────────────────────────────────────
+function _drawDonut(svgId, legendId, slices, total) {
+  const W = 180, H = 180, R = 78, r = 50;
+  const el = document.getElementById(svgId);
+  if (!el || !slices.length) return;
+
+  const pie      = d3.pie().sort(null).value(d => d.value);
+  const arc      = d3.arc().outerRadius(R).innerRadius(r);
+  const arcHover = d3.arc().outerRadius(R + 6).innerRadius(r);
+  const tooltip  = document.getElementById('pt-chart-tooltip');
+
+  const svg = d3.select(el).append('svg')
+    .attr('width', W).attr('height', H)
+    .append('g').attr('transform', `translate(${W / 2},${H / 2})`);
+
+  svg.selectAll('path')
+    .data(pie(slices))
+    .enter().append('path')
+    .attr('d', arc)
+    .attr('fill', d => d.data.color)
+    .attr('stroke', '#0d1117')
+    .attr('stroke-width', 1.5)
+    .on('mouseover', function(event, d) {
+      d3.select(this).attr('d', arcHover);
+      const pct = total > 0 ? (d.data.value / total * 100).toFixed(1) : '0';
+      if (!tooltip) return;
+      tooltip.style.display = 'block';
+      tooltip.innerHTML = `<strong>${d.data.label}</strong><br>
+        $${d.data.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br>
+        <span style="color:#8b949e">${pct}%</span>`;
+    })
+    .on('mousemove', event => {
+      if (!tooltip) return;
+      const pad = 12;
+      let x = event.clientX + pad, y = event.clientY + pad;
+      if (x + tooltip.offsetWidth  > window.innerWidth  - 8) x = event.clientX - tooltip.offsetWidth  - pad;
+      if (y + tooltip.offsetHeight > window.innerHeight - 8) y = event.clientY - tooltip.offsetHeight - pad;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+    })
+    .on('mouseout', function() {
+      d3.select(this).attr('d', arc);
+      if (tooltip) tooltip.style.display = 'none';
+    });
+
+  // 범례
+  const leg = document.getElementById(legendId);
+  if (!leg) return;
+  leg.innerHTML = slices.map(s => {
+    const pct = total > 0 ? (s.value / total * 100).toFixed(1) : '0';
+    return `<div class="pt-leg-item">
+      <span class="pt-leg-dot" style="background:${s.color}"></span>
+      <span class="pt-leg-label">${s.label}</span>
+      <span class="pt-leg-pct">${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+function _renderCharts(rows, totalValue) {
+  const valued = rows.filter(r => r.value != null && r.value > 0);
+  if (!valued.length) return;
+
+  // 섹터 집계
+  const sectorMap = {};
+  valued.forEach(r => {
+    const sec = (r.stock && r.stock.sector) || 'Other';
+    sectorMap[sec] = (sectorMap[sec] || 0) + r.value;
+  });
+  const sectorSlices = Object.entries(sectorMap)
+    .map(([label, value]) => ({ label, value, color: _SECTOR_COLORS[label] || _SECTOR_COLORS['Other'] }))
+    .sort((a, b) => b.value - a.value);
+
+  // 종목별 비중 (상위 8 + Others)
+  const sorted = [...valued].sort((a, b) => (b.value || 0) - (a.value || 0));
+  const holdingSlices = sorted.slice(0, 8).map((r, i) => ({
+    label: r.ticker,
+    value: r.value,
+    color: _HOLDING_COLORS[i % _HOLDING_COLORS.length],
+  }));
+  const rest = sorted.slice(8);
+  if (rest.length) {
+    holdingSlices.push({
+      label: 'Others',
+      value: rest.reduce((s, r) => s + (r.value || 0), 0),
+      color: '#8b949e',
+    });
+  }
+
+  _drawDonut('pt-sector-donut',  'pt-sector-legend',  sectorSlices,  totalValue);
+  _drawDonut('pt-holding-donut', 'pt-holding-legend', holdingSlices, totalValue);
+}
 
 // ── 포트폴리오 탭 진입 ────────────────────────────────────────────────────────
 let _ptRefreshTimer = null;
@@ -196,6 +308,25 @@ async function renderPortfolio() {
       </table>
     </div>`;
 
+  const chartsHtml = `
+    <div class="pt-charts-area">
+      <div class="pt-chart-card">
+        <div class="pt-chart-title">섹터 분산</div>
+        <div class="pt-chart-inner">
+          <div id="pt-sector-donut"></div>
+          <div class="pt-legend" id="pt-sector-legend"></div>
+        </div>
+      </div>
+      <div class="pt-chart-card">
+        <div class="pt-chart-title">종목별 비중</div>
+        <div class="pt-chart-inner">
+          <div id="pt-holding-donut"></div>
+          <div class="pt-legend" id="pt-holding-legend"></div>
+        </div>
+      </div>
+    </div>
+    <div id="pt-chart-tooltip" class="pt-chart-tooltip"></div>`;
+
   const updatedAt = new Date().toLocaleTimeString('ko-KR');
   container.innerHTML = `
     <div class="pt-toolbar">
@@ -203,7 +334,10 @@ async function renderPortfolio() {
       <span class="pt-updated">업데이트: ${updatedAt}</span>
     </div>
     ${summaryHtml}
+    ${chartsHtml}
     ${tableHtml}`;
+
+  _renderCharts(rows, totalValue);
 }
 
 // ── 종목 삭제 ─────────────────────────────────────────────────────────────────
