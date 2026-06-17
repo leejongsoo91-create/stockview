@@ -9,13 +9,13 @@ let _scRefreshTimer = null;
 let _scLoading      = false;
 let _scView         = 'overview';   // overview | fundamental | performance
 
-// ── 뷰별 컬럼 정의 ──────────────────────────────────────────────────────────
+// ── 뷰별 컬럼 정의 (fixed: true = 항상 표시, 숨김 불가) ─────────────────────
 const _VIEWS = {
   overview: [
-    { key: null,          label: '',         cls: '' },
-    { key: '_no',         label: 'No',       cls: 'sc-no' },
-    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker' },
-    { key: 'name',        label: 'Name',     cls: 'td-name' },
+    { key: null,          label: '',         cls: '',          fixed: true },
+    { key: '_no',         label: 'No',       cls: 'sc-no',     fixed: true },
+    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker', fixed: true },
+    { key: 'name',        label: 'Name',     cls: 'td-name',   fixed: true },
     { key: 'sector',      label: 'Sector',   cls: 'td-sector' },
     { key: 'price',       label: 'Price',    cls: 'num' },
     { key: 'change',      label: 'Change',   cls: 'num' },
@@ -24,24 +24,24 @@ const _VIEWS = {
     { key: 'market_cap',  label: 'Mkt Cap',  cls: 'num' },
   ],
   fundamental: [
-    { key: null,          label: '',         cls: '' },
-    { key: '_no',         label: 'No',       cls: 'sc-no' },
-    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker' },
-    { key: 'name',        label: 'Name',     cls: 'td-name' },
-    { key: 'sector',      label: 'Sector',   cls: 'td-sector' },
-    { key: 'industry',    label: 'Industry', cls: 'td-industry' },
-    { key: 'country',     label: 'Country',  cls: 'td-country' },
-    { key: 'market_cap',  label: 'Mkt Cap',  cls: 'num' },
-    { key: 'pe',          label: 'P/E',      cls: 'num' },
-    { key: 'eps',         label: 'EPS (TTM)',cls: 'num' },
-    { key: 'week52_high', label: '52W High', cls: 'num' },
-    { key: 'week52_low',  label: '52W Low',  cls: 'num' },
+    { key: null,          label: '',          cls: '',            fixed: true },
+    { key: '_no',         label: 'No',        cls: 'sc-no',       fixed: true },
+    { key: 'ticker',      label: 'Ticker',    cls: 'td-ticker',   fixed: true },
+    { key: 'name',        label: 'Name',      cls: 'td-name',     fixed: true },
+    { key: 'sector',      label: 'Sector',    cls: 'td-sector' },
+    { key: 'industry',    label: 'Industry',  cls: 'td-industry' },
+    { key: 'country',     label: 'Country',   cls: 'td-country' },
+    { key: 'market_cap',  label: 'Mkt Cap',   cls: 'num' },
+    { key: 'pe',          label: 'P/E',       cls: 'num' },
+    { key: 'eps',         label: 'EPS (TTM)', cls: 'num' },
+    { key: 'week52_high', label: '52W High',  cls: 'num' },
+    { key: 'week52_low',  label: '52W Low',   cls: 'num' },
   ],
   performance: [
-    { key: null,          label: '',         cls: '' },
-    { key: '_no',         label: 'No',       cls: 'sc-no' },
-    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker' },
-    { key: 'name',        label: 'Name',     cls: 'td-name' },
+    { key: null,          label: '',         cls: '',          fixed: true },
+    { key: '_no',         label: 'No',       cls: 'sc-no',     fixed: true },
+    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker', fixed: true },
+    { key: 'name',        label: 'Name',     cls: 'td-name',   fixed: true },
     { key: 'price',       label: 'Price',    cls: 'num' },
     { key: 'change_pct',  label: 'Chg %',    cls: 'num' },
     { key: 'volume',      label: 'Volume',   cls: 'num' },
@@ -51,6 +51,32 @@ const _VIEWS = {
     { key: '_52wpos',     label: '52W Pos',  cls: 'num' },
   ],
 };
+
+// ── 컬럼 숨김 상태 (뷰별 독립, localStorage 저장) ───────────────────────────
+const _COL_STORAGE_KEY = 'sc_hidden_cols';
+let _hiddenCols = { overview: new Set(), fundamental: new Set(), performance: new Set() };
+
+function _loadHiddenCols() {
+  try {
+    const raw = localStorage.getItem(_COL_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    for (const v of ['overview', 'fundamental', 'performance']) {
+      if (Array.isArray(parsed[v])) _hiddenCols[v] = new Set(parsed[v]);
+    }
+  } catch (e) {}
+}
+
+function _saveHiddenCols() {
+  const obj = {};
+  for (const v of ['overview', 'fundamental', 'performance']) obj[v] = [..._hiddenCols[v]];
+  localStorage.setItem(_COL_STORAGE_KEY, JSON.stringify(obj));
+}
+
+// 숨김 컬럼이면 빈 문자열, 아니면 content 반환
+function _hd(key, content) {
+  return _hiddenCols[_scView].has(key) ? '' : content;
+}
 
 // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 async function loadScreenerData(showSpinner = false) {
@@ -210,7 +236,7 @@ function getFilteredStocks() {
 
 // ── 테이블 헤더 렌더링 ───────────────────────────────────────────────────────
 function _renderHead() {
-  const cols = _VIEWS[_scView];
+  const cols = _VIEWS[_scView].filter(c => c.fixed || !c.key || !_hiddenCols[_scView].has(c.key));
   const thead = document.getElementById('screener-head');
   thead.innerHTML = '<tr>' + cols.map(c => {
     if (!c.key) return `<th></th>`;
@@ -266,12 +292,12 @@ function _rowOverview(s, no) {
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
-    <td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>
-    <td class="num">${priceCell}</td>
-    <td class="num">${chgCell}</td>
-    <td class="num">${price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>
-    <td class="num">${s.volume ? fmtVol(s.volume) : '—'}</td>
-    <td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>
+    ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>`)}
+    ${_hd('price',      `<td class="num">${priceCell}</td>`)}
+    ${_hd('change',     `<td class="num">${chgCell}</td>`)}
+    ${_hd('change_pct', `<td class="num">${price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>`)}
+    ${_hd('volume',     `<td class="num">${s.volume ? fmtVol(s.volume) : '—'}</td>`)}
+    ${_hd('market_cap', `<td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>`)}
   </tr>`;
 }
 
@@ -290,14 +316,14 @@ function _rowFundamental(s, no) {
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
-    <td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>
-    <td class="td-industry">${s.industry || '—'}</td>
-    <td class="td-country"><span class="sc-country">${s.country || '—'}</span></td>
-    <td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>
-    <td class="num">${peStr}</td>
-    <td class="num">${epsStr}</td>
-    <td class="num">${s.week52_high ? fmt$(s.week52_high) : '—'}</td>
-    <td class="num">${s.week52_low  ? fmt$(s.week52_low)  : '—'}</td>
+    ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>`)}
+    ${_hd('industry',   `<td class="td-industry">${s.industry || '—'}</td>`)}
+    ${_hd('country',    `<td class="td-country"><span class="sc-country">${s.country || '—'}</span></td>`)}
+    ${_hd('market_cap', `<td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>`)}
+    ${_hd('pe',         `<td class="num">${peStr}</td>`)}
+    ${_hd('eps',        `<td class="num">${epsStr}</td>`)}
+    ${_hd('week52_high',`<td class="num">${s.week52_high ? fmt$(s.week52_high) : '—'}</td>`)}
+    ${_hd('week52_low', `<td class="num">${s.week52_low  ? fmt$(s.week52_low)  : '—'}</td>`)}
   </tr>`;
 }
 
@@ -316,13 +342,13 @@ function _rowPerformance(s, no) {
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
-    <td class="num">${s.price ? fmt$(s.price) : '—'}</td>
-    <td class="num">${s.price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>
-    <td class="num">${s.volume ? fmtVol(s.volume) : '—'}</td>
-    <td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>
-    <td class="num">${s.week52_high ? fmt$(s.week52_high) : '—'}</td>
-    <td class="num">${s.week52_low  ? fmt$(s.week52_low)  : '—'}</td>
-    <td class="num">${posBar}</td>
+    ${_hd('price',      `<td class="num">${s.price ? fmt$(s.price) : '—'}</td>`)}
+    ${_hd('change_pct', `<td class="num">${s.price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>`)}
+    ${_hd('volume',     `<td class="num">${s.volume ? fmtVol(s.volume) : '—'}</td>`)}
+    ${_hd('market_cap', `<td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>`)}
+    ${_hd('week52_high',`<td class="num">${s.week52_high ? fmt$(s.week52_high) : '—'}</td>`)}
+    ${_hd('week52_low', `<td class="num">${s.week52_low  ? fmt$(s.week52_low)  : '—'}</td>`)}
+    ${_hd('_52wpos',    `<td class="num">${posBar}</td>`)}
   </tr>`;
 }
 
@@ -338,8 +364,50 @@ function _secKey(sector) {
   return map[sector] || 'other';
 }
 
+// ── 컬럼 설정 패널 ───────────────────────────────────────────────────────────
+function _buildColPanel() {
+  const panel = document.getElementById('sc-col-panel');
+  if (!panel) return;
+  const cols = _VIEWS[_scView].filter(c => c.key && !c.fixed);
+  panel.innerHTML = cols.map(c => {
+    const checked = !_hiddenCols[_scView].has(c.key) ? 'checked' : '';
+    return `<label class="sc-col-chk">
+      <input type="checkbox" value="${c.key}" ${checked}>${c.label}
+    </label>`;
+  }).join('');
+  panel.querySelectorAll('input[type=checkbox]').forEach(chk => {
+    chk.addEventListener('change', () => {
+      if (chk.checked) _hiddenCols[_scView].delete(chk.value);
+      else             _hiddenCols[_scView].add(chk.value);
+      _saveHiddenCols();
+      renderScreener();
+    });
+  });
+}
+
+function _bindColSettingsEvents() {
+  const btn   = document.getElementById('sc-col-btn');
+  const panel = document.getElementById('sc-col-panel');
+  if (!btn || !panel) return;
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.toggle('open');
+    if (isOpen) _buildColPanel();
+  });
+
+  document.addEventListener('click', e => {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.remove('open');
+    }
+  });
+}
+
 // ── 이벤트 바인딩 ────────────────────────────────────────────────────────────
 function bindScreenerEvents() {
+  _loadHiddenCols();
+  _bindColSettingsEvents();
+
   // 필터 변경
   ['filter-sector','filter-industry','filter-country','filter-change',
    'filter-cap','filter-pe','filter-52w'].forEach(id => {
@@ -376,6 +444,9 @@ function bindScreenerEvents() {
       else if (_scView === 'performance') _sortCol = 'change_pct';
       else _sortCol = 'change_pct';
       _sortDir = -1;
+      // 패널이 열려있으면 현재 뷰로 체크박스 갱신
+      const panel = document.getElementById('sc-col-panel');
+      if (panel && panel.classList.contains('open')) _buildColPanel();
       renderScreener();
     });
   });

@@ -192,11 +192,17 @@
         </div>
       </div>
 
-      <!-- 뷰 탭 -->
-      <div class="sc-view-tabs">
-        <button class="sc-view-btn active" data-scview="overview">Overview</button>
-        <button class="sc-view-btn" data-scview="fundamental">Fundamental</button>
-        <button class="sc-view-btn" data-scview="performance">Performance</button>
+      <!-- 뷰 탭 + 컬럼 설정 -->
+      <div class="sc-view-tabs-row">
+        <div class="sc-view-tabs">
+          <button class="sc-view-btn active" data-scview="overview">Overview</button>
+          <button class="sc-view-btn" data-scview="fundamental">Fundamental</button>
+          <button class="sc-view-btn" data-scview="performance">Performance</button>
+        </div>
+        <div class="sc-col-settings-wrap">
+          <button class="sc-col-btn" id="sc-col-btn" title="컬럼 표시/숨김 설정">⚙ 컬럼</button>
+          <div class="sc-col-panel" id="sc-col-panel"></div>
+        </div>
       </div>
 
       <div class="table-wrap">

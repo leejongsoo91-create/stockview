@@ -492,11 +492,16 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .sc-refresh-btn.spinning { animation: sc-spin .6s linear infinite; }
 @keyframes sc-spin { to { transform: rotate(360deg); } }
 
-/* 뷰 탭 */
+/* 뷰 탭 + 컬럼 설정 행 */
+.sc-view-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
 .sc-view-tabs {
   display: flex;
   gap: 0;
-  margin-bottom: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -517,6 +522,55 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .sc-view-btn:last-child { border-right: none; }
 .sc-view-btn:hover { background: var(--bg-input); color: var(--text); }
 .sc-view-btn.active { background: var(--accent); color: #fff; font-weight: 600; }
+
+/* 컬럼 설정 버튼 + 드롭다운 패널 */
+.sc-col-settings-wrap { position: relative; }
+.sc-col-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.sc-col-btn:hover { color: var(--text); border-color: var(--accent); }
+.sc-col-panel {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #161b22;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  z-index: 200;
+  min-width: 155px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  flex-direction: column;
+  gap: 7px;
+}
+.sc-col-panel.open { display: flex; }
+.sc-col-chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .12s;
+}
+.sc-col-chk:hover { color: var(--text); }
+.sc-col-chk input[type=checkbox] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
 
 /* 가격 로딩 중 (···) */
 .sc-price-loading { color: var(--muted); letter-spacing: 2px; animation: sc-blink 1.2s ease-in-out infinite; }
