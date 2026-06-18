@@ -1148,9 +1148,25 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 
 .news-filter-bar {
   display: flex;
+  align-items: center;
   gap: 6px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
+#news-src-filter {
+  margin-left: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s;
+}
+#news-src-filter:hover,
+#news-src-filter:focus { border-color: var(--accent); }
 .news-tag {
   padding: 5px 16px;
   border-radius: 20px;

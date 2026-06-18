@@ -383,9 +383,20 @@ function renderHomeNews(news) {
 }
 
 // ── 뉴스 탭 ──────────────────────────────────────────────────────────────────
-let _allNews = [];
-let _allReports = [];
-let _activeSubtab = 'news';
+let _allNews        = [];
+let _allReports     = [];
+let _activeSubtab   = 'news';
+let _activeSentiment = 'all';
+let _activeSource    = 'all';
+
+function _populateSourceFilter(news) {
+  const sel = document.getElementById('news-src-filter');
+  if (!sel) return;
+  const sources = [...new Set(news.map(n => n.source).filter(Boolean))].sort();
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">All Sources</option>' +
+    sources.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+}
 
 function initNews() {
   // 서브탭 전환
@@ -402,17 +413,23 @@ function initNews() {
     });
   });
 
-  // News 감성 필터
+  // News 필터 (감성 + 소스)
   api('/api/news').then(news => {
     _allNews = news;
-    renderNews('all');
+    _populateSourceFilter(news);
+    renderNews();
   });
   document.querySelectorAll('.news-tag').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.news-tag').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      renderNews(btn.dataset.sentiment);
+      _activeSentiment = btn.dataset.sentiment;
+      renderNews();
     });
+  });
+  document.getElementById('news-src-filter')?.addEventListener('change', e => {
+    _activeSource = e.target.value;
+    renderNews();
   });
 
   // Reports 타입 필터
@@ -459,8 +476,9 @@ function renderReports(rtype) {
       </div>`;
   }).join('');
 }
-function renderNews(sentiment) {
-  const list = sentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === sentiment);
+function renderNews() {
+  let list = _activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment);
+  if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
   const el = document.getElementById('news-list');
   el.innerHTML = list.map(n => {
     const tickerBadge = n.ticker
@@ -545,7 +563,7 @@ function initSocketIO() {
     try {
       const news = await api('/api/news');
       if (_currentView === 'home')  renderHomeNews(news);
-      if (_currentView === 'news') { _allNews = news; renderNews(document.querySelector('.news-tag.active')?.dataset.sentiment || 'all'); }
+      if (_currentView === 'news') { _allNews = news; _populateSourceFilter(news); renderNews(); }
       updateTimestamp();
     } catch {}
   });
