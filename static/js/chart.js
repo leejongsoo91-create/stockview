@@ -14,11 +14,15 @@ let _lastOhlcv      = [];
 
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
 const _activeInds = new Set();
-const _indSeries  = { ma5: null, ma20: null, ma60: null, bbU: null, bbM: null, bbL: null };
+const _indSeries  = { ma5: null, ma20: null, ma60: null, bbU: null, bbM: null, bbL: null, volma: null };
 let   _rsiChart   = null;
 let   _rsiSeries  = null;
 let   _rsiOb      = null;   // 과매수 기준선
 let   _rsiOs      = null;   // 과매도 기준선
+
+// ── 가격 알림 상태 ────────────────────────────────────────────────────────────
+const _ALERT_KEY = 'stockview_price_alerts';
+let   _alertFired = new Set();  // 이번 세션에서 이미 발화된 알림 ID
 
 // ── 비교 모드 상태 ────────────────────────────────────────────────────────────
 let _compareMode   = false;
@@ -52,6 +56,7 @@ function initChart() {
   _bindPeriodEvents();
   _bindIndicatorEvents();
   _bindCompareEvents();
+  _bindAlertEvents();
   _bindResizeObserver();
 }
 
@@ -234,6 +239,8 @@ async function loadChart(ticker) {
     _renderHeader(stockData);
     renderStockInfo(stockData);
     _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));
+    _updateAlertBadge();
+    document.getElementById('chart-alert-panel').style.display = 'none';
 
     if (!_isIndex(ticker)) _loadStockNews(ticker);
 
@@ -351,6 +358,20 @@ function _applyIndicators() {
     _indSeries.bbL.setData(_toData(bb.lower));
   } else { _rmLine('bbU'); _rmLine('bbM'); _rmLine('bbL'); }
 
+  // Volume MA (20일, vol 스케일에 오버레이)
+  if (_activeInds.has('volma')) {
+    const volumes = _lastOhlcv.map(d => d.volume);
+    const volMaVals = _calcMA(volumes, 20);
+    if (!_indSeries.volma) {
+      _indSeries.volma = _lwChart.addLineSeries({
+        color: 'rgba(255,166,77,0.85)', lineWidth: 1.5,
+        priceScaleId: 'vol',
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+    }
+    _indSeries.volma.setData(_toData(volMaVals));
+  } else { _rmLine('volma'); }
+
   // RSI
   const rsiPanel = document.getElementById('rsi-panel');
   if (_activeInds.has('rsi')) {
@@ -400,6 +421,103 @@ function _bindIndicatorEvents() {
       }
       _applyIndicators();
     });
+  });
+}
+
+// ── 가격 알림 ─────────────────────────────────────────────────────────────────
+function _alertLoad() {
+  try { return JSON.parse(localStorage.getItem(_ALERT_KEY) || '[]'); } catch { return []; }
+}
+function _alertSave(list) {
+  localStorage.setItem(_ALERT_KEY, JSON.stringify(list));
+}
+function _alertAdd(ticker, targetPrice, direction) {
+  const list = _alertLoad();
+  list.push({ id: Date.now(), ticker, targetPrice, direction });
+  _alertSave(list);
+}
+function _alertRemove(id) {
+  _alertSave(_alertLoad().filter(a => a.id !== id));
+}
+
+function _alertCheck(ticker, price) {
+  if (!ticker || price == null) return;
+  const list = _alertLoad();
+  for (const a of list) {
+    if (a.ticker !== ticker) continue;
+    if (_alertFired.has(a.id)) continue;
+    const triggered = a.direction === 'above' ? price >= a.targetPrice : price <= a.targetPrice;
+    if (!triggered) continue;
+    _alertFired.add(a.id);
+    _showNotification(ticker, a.targetPrice, a.direction, price);
+    _alertRemove(a.id);
+    _renderAlertList();
+    _updateAlertBadge();
+  }
+}
+
+function _showNotification(ticker, target, direction, price) {
+  const msg = `${ticker} ${direction === 'above' ? '▲' : '▼'} $${target} 도달 (현재: $${price.toFixed(2)})`;
+  if (Notification.permission === 'granted') {
+    new Notification('📈 StockView 가격 알림', { body: msg, icon: '/static/img/icon.png' });
+  } else {
+    alert(msg);
+  }
+}
+
+function _renderAlertList() {
+  const el = document.getElementById('alert-list');
+  if (!el) return;
+  const list = _alertLoad().filter(a => a.ticker === _currentTicker);
+  if (!list.length) {
+    el.innerHTML = '<div class="alert-empty">설정된 알림 없음</div>';
+    return;
+  }
+  el.innerHTML = list.map(a =>
+    `<div class="alert-item">
+      <span class="alert-dir ${a.direction === 'above' ? 'up' : 'down'}">${a.direction === 'above' ? '▲' : '▼'}</span>
+      <span class="alert-price">$${a.targetPrice}</span>
+      <button class="alert-del-btn" onclick="_alertRemove(${a.id});_renderAlertList();_updateAlertBadge()">✕</button>
+    </div>`
+  ).join('');
+}
+
+function _updateAlertBadge() {
+  const badge = document.getElementById('chart-alert-badge');
+  if (!badge) return;
+  const cnt = _alertLoad().filter(a => a.ticker === _currentTicker).length;
+  if (cnt > 0) { badge.textContent = cnt; badge.style.display = 'inline'; }
+  else { badge.style.display = 'none'; }
+}
+
+function _bindAlertEvents() {
+  const btn   = document.getElementById('chart-alert-btn');
+  const panel = document.getElementById('chart-alert-panel');
+  const addBtn = document.getElementById('alert-add-btn');
+
+  btn?.addEventListener('click', () => {
+    if (!_currentTicker) return;
+    const open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : '';
+    if (!open) {
+      document.getElementById('alert-ticker-label').textContent = _currentTicker;
+      _renderAlertList();
+      if (Notification.permission === 'default') Notification.requestPermission();
+    }
+  });
+
+  addBtn?.addEventListener('click', () => {
+    const price = parseFloat(document.getElementById('alert-price-input').value);
+    const dir   = document.getElementById('alert-direction').value;
+    if (!_currentTicker || isNaN(price) || price <= 0) return;
+    _alertAdd(_currentTicker, price, dir);
+    document.getElementById('alert-price-input').value = '';
+    _renderAlertList();
+    _updateAlertBadge();
+  });
+
+  document.getElementById('alert-price-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') addBtn?.click();
   });
 }
 
@@ -569,11 +687,13 @@ function _startAutoRefresh() {
                       week52_high:null, week52_low:null };
           _updatePriceBadge(s);
           renderStockInfo(s);
+          _alertCheck(_currentTicker, s.price);
         }
       } else {
         const stock = await api(`/api/stock/${encodeURIComponent(_currentTicker)}`);
         _updatePriceBadge(stock);
         renderStockInfo(stock);
+        _alertCheck(_currentTicker, stock.price);
       }
     } catch {}
   }, 30_000);

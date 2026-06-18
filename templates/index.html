@@ -326,11 +326,12 @@
         </div>
         <div class="chart-indicator-row">
           <span class="quick-label">Indicators:</span>
-          <button class="ind-btn ind-ma5"  data-ind="ma5">MA 5</button>
-          <button class="ind-btn ind-ma20" data-ind="ma20">MA 20</button>
-          <button class="ind-btn ind-ma60" data-ind="ma60">MA 60</button>
-          <button class="ind-btn ind-bb"   data-ind="bb">BB</button>
-          <button class="ind-btn ind-rsi"  data-ind="rsi">RSI</button>
+          <button class="ind-btn ind-ma5"    data-ind="ma5">MA 5</button>
+          <button class="ind-btn ind-ma20"   data-ind="ma20">MA 20</button>
+          <button class="ind-btn ind-ma60"   data-ind="ma60">MA 60</button>
+          <button class="ind-btn ind-bb"     data-ind="bb">BB</button>
+          <button class="ind-btn ind-rsi"    data-ind="rsi">RSI</button>
+          <button class="ind-btn ind-volma"  data-ind="volma">Vol MA</button>
         </div>
       </div>
       <div class="chart-layout">
@@ -340,7 +341,25 @@
               <span id="chart-ticker-label" class="chart-ticker-name">—</span>
               <span id="chart-company-label" class="chart-company-name"></span>
             </div>
-            <div id="chart-price-badge"></div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div id="chart-price-badge"></div>
+              <button id="chart-alert-btn" class="chart-alert-btn" title="가격 알림 설정">
+                🔔<span id="chart-alert-badge" class="chart-alert-badge" style="display:none"></span>
+              </button>
+            </div>
+          </div>
+          <!-- 알림 설정 패널 -->
+          <div id="chart-alert-panel" class="chart-alert-panel" style="display:none">
+            <div class="alert-panel-title">가격 알림 설정 — <span id="alert-ticker-label"></span></div>
+            <div class="alert-input-row">
+              <input id="alert-price-input" type="number" step="0.01" placeholder="목표가 (예: 200.00)">
+              <select id="alert-direction">
+                <option value="above">이상 (↑)</option>
+                <option value="below">이하 (↓)</option>
+              </select>
+              <button id="alert-add-btn" class="alert-add-btn">+ 추가</button>
+            </div>
+            <div id="alert-list"></div>
           </div>
           <div id="lw-chart"></div>
           <div id="rsi-panel" style="display:none">
