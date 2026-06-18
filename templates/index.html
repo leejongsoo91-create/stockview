@@ -105,6 +105,18 @@
         </div>
 
       </div>
+
+      <!-- 경제 지표 캘린더 -->
+      <div class="eco-cal-wrap">
+        <div class="eco-cal-header">
+          <span class="eco-cal-title">📅 Economic Calendar</span>
+          <span class="eco-cal-sub">Upcoming key US economic events</span>
+        </div>
+        <div id="eco-cal-body" class="eco-cal-body">
+          <span style="color:var(--muted);font-size:13px">Loading…</span>
+        </div>
+      </div>
+
     </div>
 
     <!-- ─── SCREENER ──────────────────────────────────────────────────── -->
@@ -393,6 +405,8 @@
           <select id="news-src-filter">
             <option value="all">All Sources</option>
           </select>
+          <input id="news-kw-search" type="text" class="news-kw-input" placeholder="🔍 Search news…">
+          <span id="news-kw-count" class="news-kw-count" style="display:none"></span>
         </div>
         <div id="news-list"></div>
       </div>

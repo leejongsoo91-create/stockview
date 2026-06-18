@@ -219,6 +219,70 @@ function renderHomeFearGreed(fg) {
   }
 }
 
+// ── 경제 캘린더 ──────────────────────────────────────────────────────────────
+const _CAT_ICON = {
+  'Fed Policy':    '🏦',
+  'Inflation':     '📊',
+  'Employment':    '👷',
+  'GDP':           '📈',
+  'Consumer':      '🛒',
+  'Manufacturing': '🏭',
+};
+const _IMP_DOT = {
+  high:   '<span class="eco-dot eco-high"  title="High impact"></span>',
+  medium: '<span class="eco-dot eco-med"   title="Medium impact"></span>',
+  low:    '<span class="eco-dot eco-low"   title="Low impact"></span>',
+};
+
+function renderEconomicCalendar(events) {
+  const el = document.getElementById('eco-cal-body');
+  if (!el) return;
+  if (!events || !events.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:13px">No upcoming events in the next 3 weeks.</span>';
+    return;
+  }
+
+  // 날짜별 그룹화
+  const groups = {};
+  events.forEach(ev => {
+    if (!groups[ev.date]) groups[ev.date] = [];
+    groups[ev.date].push(ev);
+  });
+
+  const fmtDate = d => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  el.innerHTML = Object.entries(groups).map(([date, evs]) => {
+    const first = evs[0];
+    const dayLabel = first.is_today ? '🔴 Today' : first.is_tomorrow ? '🟡 Tomorrow' : fmtDate(date);
+    const rowClass = first.is_today ? 'eco-today' : first.is_tomorrow ? 'eco-tomorrow' : '';
+    const rows = evs.map(ev => {
+      const icon = _CAT_ICON[ev.category] || '📌';
+      const dot  = _IMP_DOT[ev.importance] || _IMP_DOT.low;
+      return `<div class="eco-row ${rowClass}">
+        <span class="eco-day">${dayLabel}</span>
+        <span class="eco-dot-wrap">${dot}</span>
+        <span class="eco-icon">${icon}</span>
+        <span class="eco-event">${ev.event}</span>
+        <span class="eco-cat">${ev.category}</span>
+      </div>`;
+    }).join('');
+    return rows;
+  }).join('');
+}
+
+async function loadEconomicCalendar() {
+  try {
+    const events = await api('/api/economic-calendar?days=21');
+    renderEconomicCalendar(events);
+  } catch {
+    const el = document.getElementById('eco-cal-body');
+    if (el) el.innerHTML = '<span style="color:var(--muted);font-size:13px">Failed to load calendar.</span>';
+  }
+}
+
 // ── 홈 초기화 ────────────────────────────────────────────────────────────────
 async function loadHome() {
   const [indices, stocks, news, fg] = await Promise.all([
@@ -236,6 +300,7 @@ async function loadHome() {
   renderSectorPerf(_sectorItemsFrom1D(stocks));
   renderVolumeLeaders(stocks);
   renderHomeNews(news);
+  loadEconomicCalendar();
   // 섹터 기간 버튼 이벤트 (최초 1회 바인딩)
   document.querySelectorAll('.sp-period-btn').forEach(b => {
     b.addEventListener('click', () => loadSectorPerf(b.dataset.period));
@@ -388,6 +453,17 @@ let _allReports     = [];
 let _activeSubtab   = 'news';
 let _activeSentiment = 'all';
 let _activeSource    = 'all';
+let _activeKeyword   = '';
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _highlightKw(text, kw) {
+  const esc = _escHtml(text);
+  if (!kw) return esc;
+  const kwEsc = _escHtml(kw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return esc.replace(new RegExp('(' + kwEsc + ')', 'gi'), '<mark class="kw-hl">$1</mark>');
+}
 
 function _populateSourceFilter(news) {
   const sel = document.getElementById('news-src-filter');
@@ -430,6 +506,16 @@ function initNews() {
   document.getElementById('news-src-filter')?.addEventListener('change', e => {
     _activeSource = e.target.value;
     renderNews();
+  });
+
+  // 키워드 검색 (debounce 300ms)
+  let _kwTimer = null;
+  document.getElementById('news-kw-search')?.addEventListener('input', e => {
+    clearTimeout(_kwTimer);
+    _kwTimer = setTimeout(() => {
+      _activeKeyword = e.target.value.trim().toLowerCase();
+      renderNews();
+    }, 300);
   });
 
   // Reports 타입 필터
@@ -479,19 +565,38 @@ function renderReports(rtype) {
 function renderNews() {
   let list = _activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment);
   if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
+  if (_activeKeyword) list = list.filter(n =>
+    n.title.toLowerCase().includes(_activeKeyword) ||
+    (n.source || '').toLowerCase().includes(_activeKeyword)
+  );
   const el = document.getElementById('news-list');
+  const kw = _activeKeyword;
+
+  // 결과 수 표시
+  const countEl = document.getElementById('news-kw-count');
+  if (countEl) {
+    countEl.textContent = kw ? `${list.length} results` : '';
+    countEl.style.display = kw ? 'inline' : 'none';
+  }
+
+  if (!list.length) {
+    el.innerHTML = `<div style="color:var(--muted);padding:20px 0;text-align:center">No news found${kw ? ` for "<b>${_escHtml(kw)}</b>"` : ''}.</div>`;
+    return;
+  }
+
   el.innerHTML = list.map(n => {
     const tickerBadge = n.ticker
-      ? `<span class="news-ticker-badge" onclick="navigateToChart('${n.ticker}')">${n.ticker}</span>`
+      ? `<span class="news-ticker-badge" onclick="navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>`
       : '';
+    const titleHtml = _highlightKw(n.title, kw);
     return `
-      <div class="news-card" onclick="window.open('${n.url}','_blank')" style="cursor:pointer">
+      <div class="news-card" onclick="window.open('${_escHtml(n.url)}','_blank')" style="cursor:pointer">
         <div class="news-sentiment-badge badge-${n.sentiment}"></div>
         <div class="news-body">
-          <div class="news-title">${n.title}</div>
+          <div class="news-title">${titleHtml}</div>
           <div class="news-meta">
-            <span class="news-source" data-src="${n.source}">${n.source}</span>
-            <span>${n.time}</span>
+            <span class="news-source" data-src="${_escHtml(n.source)}">${_escHtml(n.source)}</span>
+            <span>${_escHtml(n.time)}</span>
             ${tickerBadge}
           </div>
         </div>

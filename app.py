@@ -767,6 +767,12 @@ def heatmap_perf():
     return jsonify(perf or {})
 
 
+@app.route("/api/economic-calendar")
+def economic_calendar():
+    days = min(int(request.args.get("days", 21)), 60)
+    return jsonify(df.fetch_economic_calendar(days_ahead=days))
+
+
 @app.route("/api/cache/status")
 def cache_status():
     return jsonify(cache.status())

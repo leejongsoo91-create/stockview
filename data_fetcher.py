@@ -1581,3 +1581,143 @@ def fetch_earnings_calendar(date_str: str) -> list[dict]:
     except Exception as e:
         log.warning(f"fetch_earnings_calendar({date_str}): {e}")
         return []
+
+
+# ── 경제 지표 캘린더 ──────────────────────────────────────────────────────────
+# 2026년 주요 미국 경제 지표 발표 일정 (BLS/Fed 공식 일정 기준)
+_ECO_EVENTS: list[tuple] = [
+    # (날짜, 이벤트명, 중요도, 카테고리)
+    # ── FOMC 금리 결정 ──────────────────────────────────────────────────
+    ("2026-01-29", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-03-18", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-05-06", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-06-17", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-07-29", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-09-16", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-11-04", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2026-12-16", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    # ── CPI ──────────────────────────────────────────────────────────────
+    ("2026-01-15", "CPI (Dec 2025)",              "high",   "Inflation"),
+    ("2026-02-12", "CPI (Jan 2026)",              "high",   "Inflation"),
+    ("2026-03-12", "CPI (Feb 2026)",              "high",   "Inflation"),
+    ("2026-04-10", "CPI (Mar 2026)",              "high",   "Inflation"),
+    ("2026-05-14", "CPI (Apr 2026)",              "high",   "Inflation"),
+    ("2026-06-11", "CPI (May 2026)",              "high",   "Inflation"),
+    ("2026-07-15", "CPI (Jun 2026)",              "high",   "Inflation"),
+    ("2026-08-12", "CPI (Jul 2026)",              "high",   "Inflation"),
+    ("2026-09-10", "CPI (Aug 2026)",              "high",   "Inflation"),
+    ("2026-10-14", "CPI (Sep 2026)",              "high",   "Inflation"),
+    ("2026-11-12", "CPI (Oct 2026)",              "high",   "Inflation"),
+    ("2026-12-10", "CPI (Nov 2026)",              "high",   "Inflation"),
+    # ── Non-Farm Payrolls ─────────────────────────────────────────────────
+    ("2026-01-09", "Non-Farm Payrolls (Dec 2025)","high",   "Employment"),
+    ("2026-02-06", "Non-Farm Payrolls (Jan 2026)","high",   "Employment"),
+    ("2026-03-06", "Non-Farm Payrolls (Feb 2026)","high",   "Employment"),
+    ("2026-04-03", "Non-Farm Payrolls (Mar 2026)","high",   "Employment"),
+    ("2026-05-08", "Non-Farm Payrolls (Apr 2026)","high",   "Employment"),
+    ("2026-06-05", "Non-Farm Payrolls (May 2026)","high",   "Employment"),
+    ("2026-07-02", "Non-Farm Payrolls (Jun 2026)","high",   "Employment"),
+    ("2026-08-07", "Non-Farm Payrolls (Jul 2026)","high",   "Employment"),
+    ("2026-09-04", "Non-Farm Payrolls (Aug 2026)","high",   "Employment"),
+    ("2026-10-02", "Non-Farm Payrolls (Sep 2026)","high",   "Employment"),
+    ("2026-11-06", "Non-Farm Payrolls (Oct 2026)","high",   "Employment"),
+    ("2026-12-04", "Non-Farm Payrolls (Nov 2026)","high",   "Employment"),
+    # ── PCE (Fed 선호 물가지표) ───────────────────────────────────────────
+    ("2026-01-30", "PCE Price Index (Dec 2025)",  "high",   "Inflation"),
+    ("2026-02-27", "PCE Price Index (Jan 2026)",  "high",   "Inflation"),
+    ("2026-03-27", "PCE Price Index (Feb 2026)",  "high",   "Inflation"),
+    ("2026-04-30", "PCE Price Index (Mar 2026)",  "high",   "Inflation"),
+    ("2026-05-29", "PCE Price Index (Apr 2026)",  "high",   "Inflation"),
+    ("2026-06-26", "PCE Price Index (May 2026)",  "high",   "Inflation"),
+    ("2026-07-31", "PCE Price Index (Jun 2026)",  "high",   "Inflation"),
+    ("2026-08-28", "PCE Price Index (Jul 2026)",  "high",   "Inflation"),
+    ("2026-09-25", "PCE Price Index (Aug 2026)",  "high",   "Inflation"),
+    ("2026-10-30", "PCE Price Index (Sep 2026)",  "high",   "Inflation"),
+    ("2026-11-25", "PCE Price Index (Oct 2026)",  "high",   "Inflation"),
+    ("2026-12-23", "PCE Price Index (Nov 2026)",  "high",   "Inflation"),
+    # ── GDP ───────────────────────────────────────────────────────────────
+    ("2026-01-29", "GDP Q4 2025 (Advance)",       "high",   "GDP"),
+    ("2026-04-29", "GDP Q1 2026 (Advance)",       "high",   "GDP"),
+    ("2026-07-29", "GDP Q2 2026 (Advance)",       "high",   "GDP"),
+    ("2026-10-29", "GDP Q3 2026 (Advance)",       "high",   "GDP"),
+    # ── PPI ───────────────────────────────────────────────────────────────
+    ("2026-01-16", "PPI (Dec 2025)",              "medium", "Inflation"),
+    ("2026-02-13", "PPI (Jan 2026)",              "medium", "Inflation"),
+    ("2026-03-13", "PPI (Feb 2026)",              "medium", "Inflation"),
+    ("2026-04-11", "PPI (Mar 2026)",              "medium", "Inflation"),
+    ("2026-05-15", "PPI (Apr 2026)",              "medium", "Inflation"),
+    ("2026-06-12", "PPI (May 2026)",              "medium", "Inflation"),
+    ("2026-07-16", "PPI (Jun 2026)",              "medium", "Inflation"),
+    ("2026-08-13", "PPI (Jul 2026)",              "medium", "Inflation"),
+    ("2026-09-11", "PPI (Aug 2026)",              "medium", "Inflation"),
+    ("2026-10-15", "PPI (Sep 2026)",              "medium", "Inflation"),
+    ("2026-11-13", "PPI (Oct 2026)",              "medium", "Inflation"),
+    ("2026-12-11", "PPI (Nov 2026)",              "medium", "Inflation"),
+    # ── Retail Sales ──────────────────────────────────────────────────────
+    ("2026-01-16", "Retail Sales (Dec 2025)",     "medium", "Consumer"),
+    ("2026-02-13", "Retail Sales (Jan 2026)",     "medium", "Consumer"),
+    ("2026-03-17", "Retail Sales (Feb 2026)",     "medium", "Consumer"),
+    ("2026-04-15", "Retail Sales (Mar 2026)",     "medium", "Consumer"),
+    ("2026-05-15", "Retail Sales (Apr 2026)",     "medium", "Consumer"),
+    ("2026-06-17", "Retail Sales (May 2026)",     "medium", "Consumer"),
+    ("2026-07-17", "Retail Sales (Jun 2026)",     "medium", "Consumer"),
+    ("2026-08-14", "Retail Sales (Jul 2026)",     "medium", "Consumer"),
+    ("2026-09-16", "Retail Sales (Aug 2026)",     "medium", "Consumer"),
+    ("2026-10-14", "Retail Sales (Sep 2026)",     "medium", "Consumer"),
+    ("2026-11-13", "Retail Sales (Oct 2026)",     "medium", "Consumer"),
+    ("2026-12-12", "Retail Sales (Nov 2026)",     "medium", "Consumer"),
+    # ── ISM Manufacturing ─────────────────────────────────────────────────
+    ("2026-02-02", "ISM Manufacturing PMI (Jan)", "medium", "Manufacturing"),
+    ("2026-03-02", "ISM Manufacturing PMI (Feb)", "medium", "Manufacturing"),
+    ("2026-04-01", "ISM Manufacturing PMI (Mar)", "medium", "Manufacturing"),
+    ("2026-05-01", "ISM Manufacturing PMI (Apr)", "medium", "Manufacturing"),
+    ("2026-06-01", "ISM Manufacturing PMI (May)", "medium", "Manufacturing"),
+    ("2026-07-01", "ISM Manufacturing PMI (Jun)", "medium", "Manufacturing"),
+    ("2026-08-03", "ISM Manufacturing PMI (Jul)", "medium", "Manufacturing"),
+    ("2026-09-01", "ISM Manufacturing PMI (Aug)", "medium", "Manufacturing"),
+    ("2026-10-01", "ISM Manufacturing PMI (Sep)", "medium", "Manufacturing"),
+    ("2026-11-02", "ISM Manufacturing PMI (Oct)", "medium", "Manufacturing"),
+    ("2026-12-01", "ISM Manufacturing PMI (Nov)", "medium", "Manufacturing"),
+    # ── Consumer Confidence ───────────────────────────────────────────────
+    ("2026-01-27", "Consumer Confidence (Jan)",   "medium", "Consumer"),
+    ("2026-02-24", "Consumer Confidence (Feb)",   "medium", "Consumer"),
+    ("2026-03-31", "Consumer Confidence (Mar)",   "medium", "Consumer"),
+    ("2026-04-28", "Consumer Confidence (Apr)",   "medium", "Consumer"),
+    ("2026-05-26", "Consumer Confidence (May)",   "medium", "Consumer"),
+    ("2026-06-30", "Consumer Confidence (Jun)",   "medium", "Consumer"),
+    ("2026-07-28", "Consumer Confidence (Jul)",   "medium", "Consumer"),
+    ("2026-08-25", "Consumer Confidence (Aug)",   "medium", "Consumer"),
+    ("2026-09-29", "Consumer Confidence (Sep)",   "medium", "Consumer"),
+    ("2026-10-27", "Consumer Confidence (Oct)",   "medium", "Consumer"),
+    ("2026-11-24", "Consumer Confidence (Nov)",   "medium", "Consumer"),
+    ("2026-12-22", "Consumer Confidence (Dec)",   "medium", "Consumer"),
+]
+
+
+def fetch_economic_calendar(days_ahead: int = 21) -> list[dict]:
+    """향후 days_ahead일 이내의 주요 경제 지표 발표 일정 반환."""
+    from datetime import date, timedelta
+    today = date.today()
+    cutoff = today + timedelta(days=days_ahead)
+    today_str = today.isoformat()
+
+    result = []
+    for date_str, event, importance, category in _ECO_EVENTS:
+        if date_str < today_str:
+            continue
+        event_date = date.fromisoformat(date_str)
+        if event_date > cutoff:
+            continue
+        delta = (event_date - today).days
+        result.append({
+            "date":       date_str,
+            "event":      event,
+            "importance": importance,
+            "category":   category,
+            "is_today":   delta == 0,
+            "is_tomorrow": delta == 1,
+            "days_until": delta,
+        })
+
+    result.sort(key=lambda x: x["date"])
+    return result
