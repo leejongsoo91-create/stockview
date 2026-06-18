@@ -12,6 +12,7 @@ venv/
 env/
 
 # 로그 파일
+logs/
 *.log
 server*.log
 

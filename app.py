@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from cache import Cache
 import data_fetcher as df
 
-PE_EPS_FILE = os.path.join(os.path.dirname(__file__), "pe_eps_cache.json")
+PE_EPS_FILE = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
 
 def _load_pe_eps() -> dict:
     try:

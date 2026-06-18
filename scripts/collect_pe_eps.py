@@ -5,7 +5,7 @@ PE/EPS 수집 스크립트 — Yahoo Finance HTML 파싱
 import json, time, re, requests, shutil
 from pathlib import Path
 
-CACHE_FILE = Path("pe_eps_cache.json")
+CACHE_FILE = Path(__file__).parent.parent / "data" / "pe_eps_cache.json"
 COLLECT_LIMIT = 500   # Yahoo Finance는 일일 한도 없음
 
 _HEADERS = {
@@ -69,8 +69,8 @@ def main():
     print("=== PE/EPS 수집 시작 (Yahoo Finance HTML) ===\n")
 
     if CACHE_FILE.exists():
-        shutil.copy(CACHE_FILE, "pe_eps_cache.backup.json")
-        print("백업 생성: pe_eps_cache.backup.json")
+        shutil.copy(CACHE_FILE, Path(__file__).parent.parent / "data" / "pe_eps_cache.backup.json")
+        print("백업 생성: data/pe_eps_cache.backup.json")
 
     existing = load_cache()
     print(f"기존 캐시: {len(existing)}개\n")
