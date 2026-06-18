@@ -259,6 +259,24 @@
         <div class="chart-search-row">
           <input id="chart-input" type="text" placeholder="Enter ticker (e.g. AAPL)">
           <button id="chart-go-btn">Go</button>
+          <button id="chart-cmp-toggle" class="chart-cmp-toggle">⇌ 비교</button>
+        </div>
+        <div class="chart-compare-row" id="chart-compare-row" style="display:none">
+          <span class="quick-label">비교 종목:</span>
+          <input id="chart-cmp-input" type="text" placeholder="e.g. MSFT">
+          <button id="chart-cmp-go" class="chart-cmp-go">Go</button>
+          <button id="chart-cmp-clear" class="chart-cmp-clear">✕ 비교 종료</button>
+        </div>
+        <div class="cmp-legend" id="cmp-legend" style="display:none">
+          <div class="cmp-leg-item">
+            <span class="cmp-leg-dot" style="background:#58a6ff"></span>
+            <span id="cmp-leg-main"></span>
+          </div>
+          <div class="cmp-leg-item">
+            <span class="cmp-leg-dot" style="background:#ffa64d"></span>
+            <span id="cmp-leg-compare"></span>
+          </div>
+          <span class="cmp-leg-note">※ 시작일 = 100 기준 정규화</span>
         </div>
         <div class="quick-tickers">
           <span class="quick-label">Indices:</span>

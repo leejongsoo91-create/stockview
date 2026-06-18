@@ -20,6 +20,12 @@ let   _rsiSeries  = null;
 let   _rsiOb      = null;   // 과매수 기준선
 let   _rsiOs      = null;   // 과매도 기준선
 
+// ── 비교 모드 상태 ────────────────────────────────────────────────────────────
+let _compareMode   = false;
+let _compareTicker = null;
+let _cmpMainSeries = null;   // 메인 종목 정규화 라인
+let _cmpSeries     = null;   // 비교 종목 정규화 라인
+
 const _CANDLE_REFRESH = {
   '1m': 30_000, '5m': 60_000, '15m': 120_000,
   '30m': 300_000, '60m': 600_000, '1d': 60_000,
@@ -45,6 +51,7 @@ function initChart() {
   _bindSearchEvents();
   _bindPeriodEvents();
   _bindIndicatorEvents();
+  _bindCompareEvents();
   _bindResizeObserver();
 }
 
@@ -171,6 +178,7 @@ function _bindResizeObserver() {
 // ── 차트 데이터 로드 ─────────────────────────────────────────────────────────
 async function loadChart(ticker) {
   ticker = ticker.toUpperCase();
+  if (_compareMode) _exitCompare();   // 새 종목 로드 시 비교 모드 종료
   _currentTicker = ticker;
   document.getElementById('chart-input').value = ticker;
 
@@ -393,6 +401,125 @@ function _bindIndicatorEvents() {
       _applyIndicators();
     });
   });
+}
+
+// ── 비교 모드 ─────────────────────────────────────────────────────────────────
+async function _loadCompareChart(ticker2) {
+  if (!_currentTicker || !ticker2) return;
+  _compareTicker = ticker2.toUpperCase();
+
+  const enc1 = encodeURIComponent(_currentTicker);
+  const enc2 = encodeURIComponent(_compareTicker);
+  const mkUrl = (enc) => _currentInterval === '1d'
+    ? `/api/chart/${enc}?interval=1d&period=${_currentPeriod}`
+    : `/api/chart/${enc}?interval=${_currentInterval}`;
+
+  let data1, data2;
+  try {
+    [data1, data2] = await Promise.all([api(mkUrl(enc1)), api(mkUrl(enc2))]);
+  } catch { return; }
+  if (!data1.length || !data2.length) return;
+
+  // 공통 타임스탬프만 사용 (교집합)
+  const set2 = new Set(data2.map(d => d.time));
+  const f1   = data1.filter(d => set2.has(d.time));
+  const set1 = new Set(f1.map(d => d.time));
+  const f2   = data2.filter(d => set1.has(d.time));
+  if (!f1.length) return;
+
+  const base1 = f1[0].close;
+  const base2 = f2[0].close;
+  const norm1 = f1.map(d => ({ time: d.time, value: +(d.close / base1 * 100).toFixed(3) }));
+  const norm2 = f2.map(d => ({ time: d.time, value: +(d.close / base2 * 100).toFixed(3) }));
+
+  // 캔들/볼륨 숨김
+  _candleSeries.applyOptions({ visible: false });
+  _volSeries.applyOptions({ visible: false });
+  document.getElementById('rsi-panel').style.display = 'none';
+  document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = true; b.style.opacity = '.4'; });
+
+  // 기존 비교 시리즈 제거
+  if (_cmpMainSeries) { _lwChart.removeSeries(_cmpMainSeries); _cmpMainSeries = null; }
+  if (_cmpSeries)     { _lwChart.removeSeries(_cmpSeries);     _cmpSeries     = null; }
+
+  _cmpMainSeries = _lwChart.addLineSeries({
+    color: '#58a6ff', lineWidth: 2.5,
+    priceLineVisible: false, lastValueVisible: true,
+    title: _currentTicker,
+    crosshairMarkerRadius: 4,
+  });
+  _cmpSeries = _lwChart.addLineSeries({
+    color: '#ffa64d', lineWidth: 2.5,
+    priceLineVisible: false, lastValueVisible: true,
+    title: _compareTicker,
+    crosshairMarkerRadius: 4,
+  });
+  _cmpMainSeries.setData(norm1);
+  _cmpSeries.setData(norm2);
+  _lwChart.timeScale().fitContent();
+
+  _compareMode = true;
+
+  // 범례 표시
+  const legend = document.getElementById('cmp-legend');
+  if (legend) {
+    legend.style.display = '';
+    document.getElementById('cmp-leg-main').textContent    = _currentTicker;
+    document.getElementById('cmp-leg-compare').textContent = _compareTicker;
+  }
+  // 비교 버튼 활성 표시
+  document.getElementById('chart-cmp-toggle')?.classList.add('active');
+}
+
+function _exitCompare() {
+  _compareMode   = false;
+  _compareTicker = null;
+
+  if (_cmpMainSeries) { _lwChart.removeSeries(_cmpMainSeries); _cmpMainSeries = null; }
+  if (_cmpSeries)     { _lwChart.removeSeries(_cmpSeries);     _cmpSeries     = null; }
+
+  _candleSeries.applyOptions({ visible: true });
+  _volSeries.applyOptions({ visible: true });
+
+  document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = false; b.style.opacity = ''; });
+
+  const row = document.getElementById('chart-compare-row');
+  if (row) row.style.display = 'none';
+  const inp = document.getElementById('chart-cmp-input');
+  if (inp) inp.value = '';
+
+  const legend = document.getElementById('cmp-legend');
+  if (legend) legend.style.display = 'none';
+
+  document.getElementById('chart-cmp-toggle')?.classList.remove('active');
+}
+
+function _bindCompareEvents() {
+  const toggleBtn = document.getElementById('chart-cmp-toggle');
+  const goBtn     = document.getElementById('chart-cmp-go');
+  const clearBtn  = document.getElementById('chart-cmp-clear');
+  const input     = document.getElementById('chart-cmp-input');
+
+  const _run = async () => {
+    const t = input?.value.trim().toUpperCase();
+    if (!t || !_currentTicker) return;
+    if (t === _currentTicker) { input.value = ''; return; }
+    await _loadCompareChart(t);
+  };
+
+  toggleBtn?.addEventListener('click', () => {
+    if (_compareMode) {
+      _exitCompare();
+    } else {
+      const row = document.getElementById('chart-compare-row');
+      if (row) row.style.display = '';
+      input?.focus();
+    }
+  });
+
+  goBtn?.addEventListener('click', _run);
+  input?.addEventListener('keydown', e => { if (e.key === 'Enter') _run(); });
+  clearBtn?.addEventListener('click', _exitCompare);
 }
 
 function _renderHeader(stock) {

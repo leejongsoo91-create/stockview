@@ -893,6 +893,75 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .period-btn:hover  { border-color: var(--accent); color: var(--accent); }
 .period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* 비교 모드 버튼 */
+.chart-cmp-toggle {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.chart-cmp-toggle:hover  { border-color: #ffa64d; color: #ffa64d; }
+.chart-cmp-toggle.active { background: rgba(255,166,77,.15); border-color: #ffa64d; color: #ffa64d; }
+
+/* 비교 종목 입력 행 */
+.chart-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+#chart-cmp-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 110px;
+  outline: none;
+  transition: border-color .15s;
+}
+#chart-cmp-input:focus { border-color: #ffa64d; }
+.chart-cmp-go {
+  background: rgba(255,166,77,.15);
+  border: 1px solid #ffa64d;
+  color: #ffa64d;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.chart-cmp-go:hover { background: rgba(255,166,77,.28); }
+.chart-cmp-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.chart-cmp-clear:hover { border-color: #f85149; color: #f85149; }
+
+/* 비교 범례 */
+.cmp-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.cmp-leg-item { display: flex; align-items: center; gap: 5px; font-weight: 600; }
+.cmp-leg-dot  { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.cmp-leg-note { color: var(--muted); font-size: 11px; }
+
 /* LIVE 배지 */
 .chart-live-badge {
   font-size: 10px;
