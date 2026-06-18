@@ -214,13 +214,24 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 /* ── HOME — 섹터 퍼포먼스 가로 스트립 ─────────────────────────────────────── */
 .home-sector-strip {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  height: 48px;
+  height: 56px;
   margin-bottom: 12px;
   overflow: hidden;
+}
+.sp-strip-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  height: 100%;
 }
 .sp-strip-label {
   font-size: 10px;
@@ -228,13 +239,21 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: .5px;
-  padding: 0 14px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  height: 100%;
-  display: flex;
-  align-items: center;
 }
+.sp-period-bar { display: flex; gap: 3px; }
+.sp-period-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+}
+.sp-period-btn:hover  { border-color: var(--accent); color: var(--accent); }
+.sp-period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 #sector-perf-grid {
   display: flex;
   flex: 1;

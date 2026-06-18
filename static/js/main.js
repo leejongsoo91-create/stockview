@@ -86,7 +86,10 @@ function renderMarketStatus() {
 }
 
 // ── 섹터 퍼포먼스 가로 칩 스트립 ────────────────────────────────────────────
-function renderSectorPerf(stocks) {
+let _homeStocks   = [];
+let _sectorPeriod = '1d';
+
+function _sectorItemsFrom1D(stocks) {
   const map = {};
   for (const s of stocks) {
     if (!s.sector || s.sector === 'Other' || s.change_pct == null) continue;
@@ -94,10 +97,27 @@ function renderSectorPerf(stocks) {
     map[s.sector].sum += s.change_pct;
     map[s.sector].n++;
   }
-  const items = Object.entries(map)
+  return Object.entries(map)
     .map(([name, v]) => ({ name, avg: +(v.sum / v.n).toFixed(2) }))
     .sort((a, b) => b.avg - a.avg);
+}
 
+function _sectorItemsFromPerf(perfMap, stocks) {
+  const map = {};
+  for (const s of stocks) {
+    if (!s.sector || s.sector === 'Other') continue;
+    const pct = perfMap[s.ticker];
+    if (pct == null) continue;
+    if (!map[s.sector]) map[s.sector] = { sum: 0, n: 0 };
+    map[s.sector].sum += pct;
+    map[s.sector].n++;
+  }
+  return Object.entries(map)
+    .map(([name, v]) => ({ name, avg: +(v.sum / v.n).toFixed(2) }))
+    .sort((a, b) => b.avg - a.avg);
+}
+
+function renderSectorPerf(items) {
   const el = document.getElementById('sector-perf-grid');
   if (!el) return;
   el.innerHTML = items.map(({ name, avg }) => {
@@ -108,6 +128,25 @@ function renderSectorPerf(stocks) {
       <span class="sec-chip-pct">${sign}${avg}%</span>
     </div>`;
   }).join('');
+}
+
+async function loadSectorPerf(period) {
+  _sectorPeriod = period;
+  document.querySelectorAll('.sp-period-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.period === period);
+  });
+  if (period === '1d') {
+    renderSectorPerf(_sectorItemsFrom1D(_homeStocks));
+  } else {
+    const el = document.getElementById('sector-perf-grid');
+    if (el) el.innerHTML = '<span style="color:var(--muted);font-size:12px">Loading…</span>';
+    try {
+      const perfMap = await api(`/api/heatmap-perf?period=${period}`);
+      renderSectorPerf(_sectorItemsFromPerf(perfMap, _homeStocks));
+    } catch {
+      if (el) el.innerHTML = '<span style="color:#f85149;font-size:12px">Error loading data</span>';
+    }
+  }
 }
 
 // ── Volume Leaders ───────────────────────────────────────────────────────────
@@ -188,14 +227,19 @@ async function loadHome() {
     api('/api/news'),
     api('/api/fear-greed').catch(() => ({})),
   ]);
+  _homeStocks = stocks;
   renderMarketStatus();
   buildTickerTape(indices, stocks);
   renderIndices(indices);
   renderHomeFearGreed(fg);
   renderMovers(stocks);
-  renderSectorPerf(stocks);
+  renderSectorPerf(_sectorItemsFrom1D(stocks));
   renderVolumeLeaders(stocks);
   renderHomeNews(news);
+  // 섹터 기간 버튼 이벤트 (최초 1회 바인딩)
+  document.querySelectorAll('.sp-period-btn').forEach(b => {
+    b.addEventListener('click', () => loadSectorPerf(b.dataset.period));
+  });
   return true;
 }
 
