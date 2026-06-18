@@ -135,8 +135,80 @@
 | `static/js/screener.js` | 스크리너 탭 |
 | `static/js/heatmap.js` | D3.js 히트맵 |
 | `static/js/chart.js` | Lightweight Charts 캔들스틱 |
-| `fetch_stocks.py` | S&P500 전체 데이터 수집 (별도 실행) |
-| `screener_api.py` | FastAPI 고급 스크리너 (별도 서비스, pandas 필요) |
+| `scripts/fetch_stocks.py` | S&P500 전체 데이터 수집 (수동 실행, 서버와 무관) |
+| `scripts/collect_pe_eps.py` | PE/EPS 캐시 수집 (수동 실행, 서버와 무관) |
+| `scripts/screener_api.py` | FastAPI 고급 스크리너 (별도 서비스, pandas 필요) |
+| `data/pe_eps_cache.json` | PE/EPS 캐시 데이터 (app.py가 읽기 전용) |
+
+## 파일 위치 규칙
+
+새 파일을 만들거나 기존 파일을 수정할 때 반드시 아래 기준을 따른다.
+
+### 폴더별 용도
+
+| 위치 | 용도 | 기준 |
+|------|------|------|
+| `루트/` | 서버 런타임 핵심 | `app.py`가 `import`하는 파일만 (app.py, cache.py, data_fetcher.py, requirements.txt) |
+| `templates/` | HTML 템플릿 | SPA 구조이므로 `index.html` 단일 파일 유지 |
+| `static/js/` | 프론트엔드 JS | 탭 하나당 파일 하나 원칙 (main.js, screener.js, heatmap.js, chart.js, portfolio.js) |
+| `static/css/` | 스타일 | `style.css` 단일 파일 유지 |
+| `scripts/` | 독립 실행 도구 | 서버와 무관하게 수동으로 실행하는 스크립트. `app.py`에서 import 금지 |
+| `data/` | 캐시/데이터 파일 | 서버가 읽는 JSON 등 정적 데이터. 직접 편집 금지, 스크립트로 생성 |
+| `logs/` | 로그 | 자동 생성, gitignore 처리. 직접 수정 금지 |
+| `api/` | API 키 | gitignore 처리. 절대 커밋 금지 |
+
+### scripts/ 실행 방법
+
+항상 **루트 디렉토리에서** 실행한다 (스크립트 내부 경로가 루트 기준으로 설정됨):
+
+```bash
+# ✅ 올바른 실행
+cd finviz-app
+python scripts/collect_pe_eps.py
+python scripts/fetch_stocks.py
+
+# ❌ 잘못된 실행
+cd finviz-app/scripts
+python collect_pe_eps.py
+```
+
+---
+
+## CSS / JS 작성 규칙
+
+### CSS 삽입 위치
+
+새 탭이나 기능의 스타일을 추가할 때 반드시 **해당 탭의 CSS 블록 안**에 삽입한다. 파일 끝에 무작정 추가하지 않는다.
+
+```
+❌ 나쁜 예: style.css 맨 끝에 추가
+✅ 좋은 예: 해당 탭의 CSS 블록 안에 삽입
+```
+
+`style.css` 섹션 순서 (이 순서를 유지한다):
+```
+변수&리셋 → 티커테이프 → 헤더 → 레이아웃
+→ HOME → FEAR&GREED → 공통 → SCREENER
+→ HEATMAP → CHART → NEWS → WATCHLIST → PORTFOLIO
+```
+
+새 섹션 구분자 형식: `/* ── 섹션명 ── */`
+
+### JS 파일 선택 기준
+
+기능이 특정 탭에 종속되면 그 탭의 JS 파일에 추가한다. 여러 탭에서 공유하는 유틸리티는 `main.js`에 추가한다.
+
+---
+
+## Python 파일 규칙
+
+| 파일 | 수정 시 주의사항 |
+|------|-----------------|
+| `data_fetcher.py` | 섹션 헤더 `# ── 이름 ──` 형식 유지. 모듈 분리 금지 (Python 3.15 alpha 제약) |
+| `app.py` | 라우트 추가 시 관련 라우트 그룹 근처에 삽입. 파일 끝에 무작정 추가 금지 |
+| `scripts/*.py` | `app.py`에서 `import` 금지. 독립 실행 전용 |
+
+---
 
 ## 환경 제약사항
 
