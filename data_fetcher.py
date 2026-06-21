@@ -863,7 +863,8 @@ def _fetch_kr_price_one(stock: dict) -> dict:
         chg   = price - prev
         chg_pct = round((chg / prev * 100), 2) if prev else 0
         vol   = meta.get("regularMarketVolume", 0) or 0
-        cap   = meta.get("marketCap", 0) or 0
+        # v8 chart API는 KR 종목의 marketCap을 반환하지 않으므로 base 값 유지
+        cap   = meta.get("marketCap", 0) or stock.get("market_cap", 0) or 0
         row   = dict(stock)
         row.update(price=price, change=round(chg, 0),
                    change_pct=chg_pct, volume=vol, market_cap=cap)

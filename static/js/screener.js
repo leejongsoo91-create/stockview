@@ -95,7 +95,7 @@ function _currentFilterValues() {
     country:  document.getElementById('filter-country')?.value  || 'all',
     cap:      document.getElementById('filter-cap')?.value      || 'all',
     pe:       document.getElementById('filter-pe')?.value       || 'all',
-    chg:      document.getElementById('filter-chg')?.value      || 'all',
+    chg:      document.getElementById('filter-change')?.value    || 'all',
     w52:      document.getElementById('filter-52w')?.value      || 'all',
     search:   document.getElementById('filter-search')?.value   || '',
   };
@@ -108,7 +108,7 @@ function _applyFilterValues(vals) {
   set('filter-country',  vals.country);
   set('filter-cap',      vals.cap);
   set('filter-pe',       vals.pe);
-  set('filter-chg',      vals.chg);
+  set('filter-change',   vals.chg);
   set('filter-52w',      vals.w52);
   set('filter-search',   vals.search);
   // industry: 섹터 변경 후 동적 목록이 채워진 뒤 적용
@@ -775,13 +775,21 @@ function _getKrFiltered() {
   const sec = document.getElementById('filter-sector')?.value || 'all';
   if (sec === 'KOSPI' || sec === 'KOSDAQ') list = list.filter(s => s.market === sec);
   // 등락률 필터
-  const chg = document.getElementById('filter-chg')?.value || 'all';
+  const chg = document.getElementById('filter-change')?.value || 'all';
   if (chg === 'up')    list = list.filter(s => (s.change_pct || 0) > 0);
   if (chg === 'down')  list = list.filter(s => (s.change_pct || 0) < 0);
   if (chg === 'up2')   list = list.filter(s => (s.change_pct || 0) >= 2);
   if (chg === 'up5')   list = list.filter(s => (s.change_pct || 0) >= 5);
   if (chg === 'down2') list = list.filter(s => (s.change_pct || 0) <= -2);
   if (chg === 'down5') list = list.filter(s => (s.change_pct || 0) <= -5);
+  // 시가총액 필터 (KRW 단위: 100조=1e14, 10조=1e13, 1조=1e12)
+  const cap = document.getElementById('filter-cap')?.value || 'all';
+  switch (cap) {
+    case 'mega':  list = list.filter(s => s.market_cap >= 1e14); break;
+    case 'large': list = list.filter(s => s.market_cap >= 1e13 && s.market_cap < 1e14); break;
+    case 'mid':   list = list.filter(s => s.market_cap >= 1e12 && s.market_cap < 1e13); break;
+    case 'small': list = list.filter(s => s.market_cap > 0 && s.market_cap < 1e12); break;
+  }
   // 검색
   const q = (document.getElementById('filter-search')?.value || '').trim().toLowerCase();
   if (q) list = list.filter(s =>
