@@ -15,6 +15,20 @@
   --header-h:   48px;
   --tape-h:     28px;
 }
+body.light-theme {
+  --bg:         #f5f6fa;
+  --bg-card:    #ffffff;
+  --bg-input:   #eaedf1;
+  --border:     #d0d7de;
+  --text:       #1f2328;
+  --muted:      #636c76;
+  --green:      #1a7f37;
+  --green-bg:   rgba(26,127,55,.12);
+  --red:        #cf222e;
+  --red-bg:     rgba(207,34,46,.12);
+  --accent:     #0969da;
+  --accent2:    #0550ae;
+}
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 13px; }
 body {
@@ -88,6 +102,19 @@ header {
   color: var(--muted);
   white-space: nowrap;
 }
+.theme-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text);
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+.theme-btn:hover { background: var(--bg-input); }
 .global-search-wrap {
   position: relative;
   margin-left: auto;
@@ -171,6 +198,17 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .mkt-pre     .mkt-dot { background: #e3b341; }
 .mkt-after   { color: #bc8cff;      border-color: rgba(188,140,255,.3); background: rgba(188,140,255,.08); }
 .mkt-after   .mkt-dot { background: #bc8cff; }
+.market-stat-bar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.msb-up   { color: var(--green); }
+.msb-down { color: var(--red); }
+.msb-flat { color: var(--muted); }
 
 /* ── HOME — 지수·선물·채권 Overview 3그룹 ───────────────────────────────── */
 .home-overview {
@@ -1763,6 +1801,8 @@ mark.kw-hl {
   letter-spacing: .5px;
   margin-bottom: 12px;
 }
+.pt-return-card { flex: 1.4; min-width: 320px; }
+.pt-return-chart { width: 100%; overflow: hidden; }
 .pt-chart-inner {
   display: flex;
   align-items: center;

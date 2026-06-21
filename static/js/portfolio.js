@@ -154,6 +154,45 @@ function _renderCharts(rows, totalValue) {
 
   _drawDonut('pt-sector-donut',  'pt-sector-legend',  sectorSlices,  totalValue);
   _drawDonut('pt-holding-donut', 'pt-holding-legend', holdingSlices, totalValue);
+  _drawReturnChart(rows);
+}
+
+function _drawReturnChart(rows) {
+  const el = document.getElementById('pt-return-chart');
+  if (!el) return;
+  const data = rows
+    .filter(r => r.pnlPct != null)
+    .sort((a, b) => b.pnlPct - a.pnlPct);
+  if (!data.length) { el.innerHTML = '<span style="color:var(--muted);font-size:12px">데이터 없음</span>'; return; }
+
+  const maxAbs = Math.max(...data.map(r => Math.abs(r.pnlPct)), 0.01);
+  const BAR_H  = 22;
+  const GAP    = 4;
+  const LABEL_W = 48;
+  const VALUE_W = 46;
+  const W = el.clientWidth || 280;
+  const barW = W - LABEL_W - VALUE_W - 4;
+  const H = data.length * (BAR_H + GAP);
+
+  const bars = data.map((r, i) => {
+    const pct    = r.pnlPct;
+    const color  = pct >= 0 ? 'var(--green)' : 'var(--red)';
+    const w      = Math.round(Math.abs(pct) / maxAbs * (barW / 2));
+    const xBase  = LABEL_W + barW / 2;
+    const x      = pct >= 0 ? xBase : xBase - w;
+    const y      = i * (BAR_H + GAP);
+    const sign   = pct >= 0 ? '+' : '';
+    return `
+      <text x="${LABEL_W - 4}" y="${y + BAR_H * 0.72}" text-anchor="end" font-size="11" fill="var(--text)">${r.ticker}</text>
+      <rect x="${x}" y="${y}" width="${w || 1}" height="${BAR_H}" rx="2" fill="${color}" opacity="0.85"/>
+      <line x1="${xBase}" y1="${y}" x2="${xBase}" y2="${y + BAR_H}" stroke="var(--border)" stroke-width="1"/>
+      <text x="${LABEL_W + barW + 4}" y="${y + BAR_H * 0.72}" font-size="11" fill="${color}">${sign}${pct.toFixed(1)}%</text>`;
+  }).join('');
+
+  el.innerHTML = `<svg width="${W}" height="${H}" style="overflow:visible">
+    <line x1="${LABEL_W + barW/2}" y1="0" x2="${LABEL_W + barW/2}" y2="${H}" stroke="var(--border)" stroke-width="1"/>
+    ${bars}
+  </svg>`;
 }
 
 // ── 포트폴리오 탭 진입 ────────────────────────────────────────────────────────
@@ -323,6 +362,10 @@ async function renderPortfolio() {
           <div id="pt-holding-donut"></div>
           <div class="pt-legend" id="pt-holding-legend"></div>
         </div>
+      </div>
+      <div class="pt-chart-card pt-return-card">
+        <div class="pt-chart-title">종목별 수익률</div>
+        <div id="pt-return-chart" class="pt-return-chart"></div>
       </div>
     </div>
     <div id="pt-chart-tooltip" class="pt-chart-tooltip"></div>`;

@@ -166,6 +166,22 @@ function renderVolumeLeaders(stocks) {
     </tr>`).join('');
 }
 
+function renderMarketStatBar(stocks) {
+  const el = document.getElementById('market-stat-bar');
+  if (!el || !stocks || !stocks.length) return;
+  let up = 0, down = 0, flat = 0;
+  stocks.forEach(s => {
+    const p = parseFloat(s.change_pct) || 0;
+    if (p > 0) up++;
+    else if (p < 0) down++;
+    else flat++;
+  });
+  el.innerHTML =
+    `<span class="msb-up">▲ ${up.toLocaleString()}</span>` +
+    `<span class="msb-down">▼ ${down.toLocaleString()}</span>` +
+    `<span class="msb-flat">— ${flat.toLocaleString()}</span>`;
+}
+
 // ── 홈 Fear & Greed 위젯 ────────────────────────────────────────────────────
 function _fgRatingClass(rating) {
   if (!rating) return '';
@@ -300,6 +316,7 @@ async function loadHome() {
   renderSectorPerf(_sectorItemsFrom1D(stocks));
   renderVolumeLeaders(stocks);
   renderHomeNews(news);
+  renderMarketStatBar(stocks);
   loadEconomicCalendar();
   // 섹터 기간 버튼 이벤트 (최초 1회 바인딩)
   document.querySelectorAll('.sp-period-btn').forEach(b => {
@@ -636,6 +653,7 @@ function initSocketIO() {
         renderMovers(stocks);
         renderSectorPerf(stocks);
         renderVolumeLeaders(stocks);
+        renderMarketStatBar(stocks);
       }
       // 스크리너가 열려있으면 데이터 갱신
       if (_currentView === 'screener' && typeof loadScreenerData === 'function') {
@@ -710,7 +728,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 글로벌 검색 초기화
   initGlobalSearch();
+
+  // 테마 초기화
+  initTheme();
 });
+
+// ── 라이트/다크 테마 ────────────────────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') _applyTheme('light');
+}
+
+function toggleTheme() {
+  const isLight = document.body.classList.contains('light-theme');
+  _applyTheme(isLight ? 'dark' : 'light');
+}
+
+function _applyTheme(mode) {
+  const isLight = mode === 'light';
+  document.body.classList.toggle('light-theme', isLight);
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = isLight ? '🌕' : '🌙';
+  localStorage.setItem('theme', mode);
+}
 
 // ── 글로벌 검색 ──────────────────────────────────────────────────────────────
 function initGlobalSearch() {
