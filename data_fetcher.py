@@ -865,9 +865,16 @@ def _fetch_kr_price_one(stock: dict) -> dict:
         vol   = meta.get("regularMarketVolume", 0) or 0
         # v8 chart API는 KR 종목의 marketCap을 반환하지 않으므로 base 값 유지
         cap   = meta.get("marketCap", 0) or stock.get("market_cap", 0) or 0
+        # 52W High/Low는 v8 meta에서 제공됨
+        w52h  = meta.get("fiftyTwoWeekHigh",  0) or stock.get("week52_high", 0) or 0
+        w52l  = meta.get("fiftyTwoWeekLow",   0) or stock.get("week52_low",  0) or 0
+        # PER은 Naver base에서 유지, EPS는 price/PER로 계산
+        per   = stock.get("pe", 0) or 0
+        eps   = round(price / per, 0) if per > 0 and price > 0 else (stock.get("eps", 0) or 0)
         row   = dict(stock)
         row.update(price=price, change=round(chg, 0),
-                   change_pct=chg_pct, volume=vol, market_cap=cap)
+                   change_pct=chg_pct, volume=vol, market_cap=cap,
+                   week52_high=w52h, week52_low=w52l, pe=per, eps=eps)
         return row
     except Exception:
         return dict(stock)

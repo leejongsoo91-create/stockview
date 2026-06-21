@@ -14,21 +14,23 @@ HEADERS = {
     "Referer": "https://finance.naver.com",
 }
 
-# ── HTML 파서 (종목명 + 시가총액 동시 파싱) ─────────────────────────────────────
+# ── HTML 파서 (종목명 + 시가총액 + PER 동시 파싱) ────────────────────────────────
 class _NaverParser(HTMLParser):
     """
-    Naver Finance sise_market_sum 페이지에서 종목코드·이름·시가총액을 추출.
-    테이블 컬럼 순서: 종목명 | 현재가 | 전일비 | 등락률 | 액면가 | 시가총액(억원) | ...
+    Naver Finance sise_market_sum 페이지에서 종목코드·이름·시가총액·PER 추출.
+    컬럼 순서: 종목명 | 현재가(1) | 전일비(2) | 등락률(3) | 액면가(4) |
+               시가총액(5, 억원) | 상장주식수(6) | 외국인비율(7) | 거래량(8) |
+               PER(9) | ROE(10)
     """
     def __init__(self):
         super().__init__()
-        self.stocks    = []        # (code, name, market_cap_raw)
+        self.stocks    = []        # (code, name, market_cap_raw, per)
         self._code     = None
         self._name     = None
         self._in_name  = False
-        self._td_count = -1        # -1=미추적, 0+=이름링크 발견 후 td 개수
+        self._td_count = -1
         self._buf      = ''
-        self._td_bufs  = []        # 이름 이후 각 td의 텍스트 누적
+        self._td_bufs  = []
         self._seen     = set()
 
     def handle_starttag(self, tag, attrs):
@@ -61,16 +63,19 @@ class _NaverParser(HTMLParser):
         elif tag == 'td' and self._td_count > 0:
             self._td_bufs.append(self._buf)
             self._buf = ''
-            # 5번째 td = 시가총액 (억원)
-            # td 순서: 1=현재가, 2=전일비, 3=등락률, 4=액면가, 5=시가총액
-            if len(self._td_bufs) == 5 and self._code and self._name:
-                raw = self._td_bufs[4].replace(',', '').replace(' ', '')
-                cap_raw = 0
-                if raw.isdigit():
-                    cap_raw = int(raw) * int(1e8)   # 억원 → raw KRW
-                self.stocks.append((self._code, self._name, cap_raw))
+            # PER은 9번째 td (인덱스 8)
+            if len(self._td_bufs) == 9 and self._code and self._name:
+                # td[5-1=4] = 시가총액 (억원)
+                raw_cap = self._td_bufs[4].replace(',', '').replace(' ', '')
+                cap_raw = int(raw_cap) * int(1e8) if raw_cap.isdigit() else 0
+                # td[9-1=8] = PER
+                raw_per = self._td_bufs[8].replace(',', '').replace(' ', '')
+                try:
+                    per = float(raw_per) if raw_per and raw_per not in ('N/A', '-', '') else 0.0
+                except ValueError:
+                    per = 0.0
+                self.stocks.append((self._code, self._name, cap_raw, per))
                 self._seen.add(self._code)
-                # 추적 종료
                 self._code     = None
                 self._name     = None
                 self._td_count = -1
@@ -96,55 +101,61 @@ def _collect(sosok: int, market: str, pages: int) -> list[dict]:
     seen = set()
     for page in range(1, pages + 1):
         stocks = _fetch_page(sosok, page)
-        for code, name, cap_raw in stocks:
+        for code, name, cap_raw, per in stocks:
             if code not in seen:
                 seen.add(code)
-                all_stocks.append((code, name, cap_raw))
+                all_stocks.append((code, name, cap_raw, per))
         time.sleep(0.15)
 
     result = []
-    for code, name, cap_raw in all_stocks:
+    for code, name, cap_raw, per in all_stocks:
         result.append({
-            "ticker":     code + suffix,
-            "code":       code,
-            "name":       name,
-            "market":     market,
-            "sector":     "",
-            "price":      0,
-            "change":     0,
-            "change_pct": 0,
-            "volume":     0,
-            "market_cap": cap_raw,   # raw KRW (Naver 기준)
+            "ticker":       code + suffix,
+            "code":         code,
+            "name":         name,
+            "market":       market,
+            "sector":       "",
+            "price":        0,
+            "change":       0,
+            "change_pct":   0,
+            "volume":       0,
+            "market_cap":   cap_raw,
+            "pe":           per,
+            "eps":          0,
+            "week52_high":  0,
+            "week52_low":   0,
         })
     return result
 
 
-# ── 가격 배치 수집 ────────────────────────────────────────────────────────────
+# ── 가격 + 52W 배치 수집 ──────────────────────────────────────────────────────
 def _fetch_price(stock: dict) -> dict:
     ticker = stock["ticker"]
     try:
         r = requests.get(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d",
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json",
-            },
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1y",
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
             timeout=8,
         )
-        data   = r.json()
-        res    = data["chart"]["result"][0]
-        meta   = res["meta"]
-        price  = meta.get("regularMarketPrice") or meta.get("previousClose", 0)
-        prev   = meta.get("chartPreviousClose") or meta.get("previousClose", price)
-        chg    = price - prev
-        chg_pct = (chg / prev * 100) if prev else 0
-        vol    = meta.get("regularMarketVolume", 0)
-        # Yahoo Finance v8 chart API는 KR 종목의 marketCap을 반환하지 않으므로
-        # Naver에서 수집한 base market_cap을 우선 유지
-        cap    = meta.get("marketCap", 0) or stock.get("market_cap", 0) or 0
-        stock.update(price=price, change=round(chg, 2),
-                     change_pct=round(chg_pct, 2),
-                     volume=vol, market_cap=cap)
+        data  = r.json()
+        res   = data["chart"]["result"][0]
+        meta  = res["meta"]
+        price = meta.get("regularMarketPrice") or meta.get("previousClose", 0)
+        prev  = meta.get("chartPreviousClose") or meta.get("previousClose", price)
+        chg   = price - prev
+        chg_pct = round((chg / prev * 100), 2) if prev else 0
+        vol   = meta.get("regularMarketVolume", 0)
+        cap   = meta.get("marketCap", 0) or stock.get("market_cap", 0) or 0
+        w52h  = meta.get("fiftyTwoWeekHigh", 0) or 0
+        w52l  = meta.get("fiftyTwoWeekLow",  0) or 0
+        per   = stock.get("pe", 0) or 0
+        eps   = round(price / per, 0) if per > 0 and price > 0 else 0
+        stock.update(
+            price=price, change=round(chg, 2), change_pct=chg_pct,
+            volume=vol, market_cap=cap,
+            week52_high=w52h, week52_low=w52l,
+            pe=per, eps=eps,
+        )
     except Exception:
         pass
     return stock
@@ -159,7 +170,7 @@ def fetch_prices_parallel(stocks: list[dict], workers: int = 20) -> list[dict]:
             result.append(fut.result())
             done += 1
             if done % 50 == 0:
-                print(f"  가격 수집: {done}/{len(stocks)}")
+                print(f"  가격·52W 수집: {done}/{len(stocks)}")
     return result
 
 
@@ -177,20 +188,22 @@ def main():
     print(f"  KOSDAQ: {len(kosdaq)}개 수집")
 
     all_stocks = kospi + kosdaq
-    print(f"\n총 {len(all_stocks)}개 종목, 가격 수집 중 (Yahoo Finance)…")
+    print(f"\n총 {len(all_stocks)}개 종목, 가격·52W 수집 중 (Yahoo Finance)…")
     all_stocks = fetch_prices_parallel(all_stocks, workers=25)
 
-    filled = sum(1 for s in all_stocks if s["price"] > 0)
-    has_cap = sum(1 for s in all_stocks if s["market_cap"] > 0)
-    print(f"가격 수집 완료: {filled}/{len(all_stocks)}개")
-    print(f"시가총액 보유: {has_cap}/{len(all_stocks)}개")
+    filled   = sum(1 for s in all_stocks if s["price"] > 0)
+    has_cap  = sum(1 for s in all_stocks if s["market_cap"] > 0)
+    has_per  = sum(1 for s in all_stocks if s["pe"] > 0)
+    has_w52  = sum(1 for s in all_stocks if s["week52_high"] > 0)
+    print(f"가격: {filled}/{len(all_stocks)}, 시총: {has_cap}, PER: {has_per}, 52W: {has_w52}")
 
     out_path.write_text(json.dumps(all_stocks, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n저장 완료 -> {out_path}  ({len(all_stocks)}개 종목)")
 
-    for s in all_stocks[:3]:
-        cap_str = f"{s['market_cap']/1e12:.1f}조원" if s['market_cap'] >= 1e12 else f"{s['market_cap']/1e8:.0f}억원" if s['market_cap'] >= 1e8 else "N/A"
-        print(f"  {s['ticker']} {s['name']} {s['price']:,} ({s['change_pct']:+.2f}%) 시총 {cap_str}")
+    for s in sorted(all_stocks, key=lambda x: -x["market_cap"])[:3]:
+        cap_str = f"{s['market_cap']/1e12:.1f}조원" if s['market_cap'] >= 1e12 else "N/A"
+        print(f"  {s['ticker']} {s['name']} {s['price']:,.0f}원  "
+              f"PER={s['pe']}  52W={s['week52_low']:,.0f}~{s['week52_high']:,.0f}  시총 {cap_str}")
 
 
 if __name__ == "__main__":

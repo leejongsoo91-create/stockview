@@ -754,11 +754,14 @@ function renderStockInfo(s) {
   const cls    = colorCls(s.change_pct || 0);
   const isKr   = _isKrStock(s.ticker || '');
   const fmtP   = v => isKr ? _fmtKrPrice(v) : fmt$(v);
+  const fmtKrCap = v => v >= 1e12 ? (v/1e12).toFixed(1)+'조원' : v >= 1e8 ? Math.round(v/1e8)+'억원' : '—';
   const peStr  = s.pe  > 0 ? s.pe.toFixed(1) : '—';
   const epsStr = s.eps != null && s.eps !== 0
-    ? (s.eps > 0 ? fmtP(s.eps) : `<span class="down">${fmtP(s.eps)}</span>`)
+    ? (s.eps > 0 ? fmtP(s.eps) : `<span class="down">${fmtP(Math.abs(s.eps))}</span>`)
     : '—';
-  const capStr = s.market_cap ? fmtCap(s.market_cap) : '—';
+  const capStr = isKr
+    ? (s.market_cap ? fmtKrCap(s.market_cap) : '—')
+    : (s.market_cap ? fmtCap(s.market_cap) : '—');
   const hiPct  = s.week52_high && s.price
     ? ((s.price / s.week52_high - 1) * 100).toFixed(1) + '%'
     : '—';
@@ -801,11 +804,11 @@ function renderStockInfo(s) {
     <div class="info-section-title" style="margin-top:4px">52-Week Range</div>
     <div class="info-row">
       <span class="info-label">High</span>
-      <span class="info-val up">${s.week52_high ? fmt$(s.week52_high) : '—'}</span>
+      <span class="info-val up">${s.week52_high ? fmtP(s.week52_high) : '—'}</span>
     </div>
     <div class="info-row">
       <span class="info-label">Low</span>
-      <span class="info-val down">${s.week52_low ? fmt$(s.week52_low) : '—'}</span>
+      <span class="info-val down">${s.week52_low ? fmtP(s.week52_low) : '—'}</span>
     </div>
     <div class="info-row">
       <span class="info-label">vs 52W High</span>
