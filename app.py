@@ -10,7 +10,17 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from cache import Cache
 import data_fetcher as df
 
-PE_EPS_FILE = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
+PE_EPS_FILE  = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
+KR_STOCKS_FILE = os.path.join(os.path.dirname(__file__), "data", "kr_stocks.json")
+
+def _load_kr_base() -> list:
+    try:
+        if os.path.exists(KR_STOCKS_FILE):
+            with open(KR_STOCKS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
 
 def _load_pe_eps() -> dict:
     try:
@@ -191,6 +201,17 @@ def refresh_stocks():
     if updated:
         cache.set("stocks", _apply_market_caps(updated), ttl=300)
         _emit_queue.put(("stocks_update", {"count": len(updated)}))
+
+
+def refresh_kr_stocks():
+    """국내주식 가격 갱신 (Yahoo Finance). kr_stocks.json 기반."""
+    base = _load_kr_base()
+    if not base:
+        return
+    updated = df.fetch_kr_prices(base)
+    if updated:
+        cache.set("kr_stocks", updated, ttl=300)
+        log.info(f"국내주식 가격 갱신: {len(updated)}개")
 
 
 def refresh_pe_eps():
@@ -454,14 +475,24 @@ def initial_load():
         cache.set("pe_eps", saved, ttl=86400)
         log.info(f"PE/EPS 파일 캐시 로드: {len(saved)}개")
     def _delayed_pe_eps():
-        import time as _t; _t.sleep(180)   # 전체 종목 로드 완료 대기 (60초에서 연장)
+        import time as _t; _t.sleep(180)
         refresh_pe_eps()
     threading.Thread(target=_delayed_pe_eps, daemon=True).start()
+
+    # 국내주식: 파일 기반 베이스 로드 후 백그라운드 가격 갱신
+    kr_base = _load_kr_base()
+    if kr_base:
+        cache.set("kr_stocks", kr_base, ttl=300)
+        log.info(f"국내주식 파일 캐시 로드: {len(kr_base)}개")
+        threading.Thread(target=refresh_kr_stocks, daemon=True).start()
+    else:
+        log.info("kr_stocks.json 없음 — scripts/fetch_kr_stocks.py 실행 필요")
 
 
 # ── 스케줄러 ─────────────────────────────────────────────────────────────────
 _scheduler = BackgroundScheduler()
 _scheduler.add_job(refresh_stocks,          "interval", minutes=5,  id="stocks")
+_scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
 _scheduler.add_job(refresh_reports,         "interval", minutes=15, id="reports")
@@ -527,6 +558,20 @@ def news():
     for i, n in enumerate(merged, 1):
         n["id"] = i
     return jsonify(merged)
+
+
+@app.route("/api/kr-stocks")
+def kr_stocks():
+    """국내주식 목록 (KOSPI + KOSDAQ)."""
+    data   = cache.get("kr_stocks") or []
+    market = request.args.get("market", "all")  # all | KOSPI | KOSDAQ
+    search = request.args.get("q", "").strip().lower()
+    if market != "all":
+        data = [s for s in data if s.get("market") == market]
+    if search:
+        data = [s for s in data if search in s.get("code","").lower()
+                or search in s.get("name","").lower()]
+    return jsonify(data)
 
 
 @app.route("/api/stock-news/<ticker>")

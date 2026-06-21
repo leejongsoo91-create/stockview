@@ -783,12 +783,21 @@ function initGlobalSearch() {
 
 function _gsSearch(q) {
   const drop    = document.getElementById('global-search-dropdown');
-  const stocks  = window._scStocks || [];
-  const results = stocks.filter(s =>
+  const usStocks = window._scStocks || [];
+  const krStocks = window._krStocks || [];
+
+  const matchUs = usStocks.filter(s =>
     s.ticker.toLowerCase().startsWith(q) ||
     s.ticker.toLowerCase().includes(q)   ||
     (s.name || '').toLowerCase().includes(q)
-  ).slice(0, 6);
+  ).slice(0, 4).map(s => ({ ...s, _isKr: false }));
+
+  const matchKr = krStocks.filter(s =>
+    s.code.toLowerCase().includes(q) ||
+    s.name.toLowerCase().includes(q)
+  ).slice(0, 3).map(s => ({ ...s, ticker: s.ticker, name: s.name, _isKr: true }));
+
+  const results = [...matchUs, ...matchKr].slice(0, 6);
 
   if (!results.length) {
     drop.innerHTML = `<div class="gs-empty">결과 없음</div>`;
@@ -797,10 +806,15 @@ function _gsSearch(q) {
   }
 
   drop.innerHTML = results.map(s => {
-    const pct = s.change_pct ?? 0;
-    const cls = pct >= 0 ? 'up' : 'down';
+    const pct    = s.change_pct ?? 0;
+    const cls    = pct >= 0 ? 'up' : 'down';
+    const badge  = s._isKr ? '<span class="gs-kr-badge">🇰🇷</span>' : '';
+    const disp   = s._isKr ? s.code : s.ticker;
+    const price  = s._isKr
+      ? `₩${Math.round(s.price||0).toLocaleString('ko-KR')}`
+      : '';
     return `<div class="gs-item" onclick="_gsSelect('${s.ticker}')">
-      <span class="gs-ticker">${s.ticker}</span>
+      ${badge}<span class="gs-ticker">${disp}</span>
       <span class="gs-name">${s.name || ''}</span>
       <span class="gs-pct ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
     </div>`;
@@ -814,7 +828,9 @@ function _gsSelect(ticker) {
   if (input) input.value = '';
   if (drop)  drop.style.display = 'none';
 
-  if (typeof openStockModal === 'function' && window._scStocks && window._scStocks.length) {
+  // KR 종목(.KS/.KQ)은 항상 차트로 이동
+  const isKr = ticker.endsWith('.KS') || ticker.endsWith('.KQ');
+  if (!isKr && typeof openStockModal === 'function' && window._scStocks && window._scStocks.length) {
     openStockModal(ticker);
   } else {
     navigateToChart(ticker);

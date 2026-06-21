@@ -50,6 +50,15 @@ function _isIndex(ticker) {
   return ticker.startsWith('^') || ticker.endsWith('=F');
 }
 
+function _isKrStock(ticker) {
+  return ticker.endsWith('.KS') || ticker.endsWith('.KQ');
+}
+
+function _fmtKrPrice(v) {
+  if (!v) return '—';
+  return '₩' + Math.round(v).toLocaleString('ko-KR');
+}
+
 function initChart() {
   _createLWChart();
   _bindSearchEvents();
@@ -648,11 +657,15 @@ function _renderHeader(stock) {
 }
 
 function _updatePriceBadge(stock) {
-  const cls = colorCls(stock.change_pct || 0);
-  const price   = stock.price    ? fmt$(stock.price)           : '—';
-  const change  = stock.change   != null
-    ? `${stock.change >= 0 ? '+' : ''}${fmt$(stock.change)}`  : '—';
-  const pct     = stock.change_pct != null ? fmtPct(stock.change_pct) : '—';
+  const cls  = colorCls(stock.change_pct || 0);
+  const isKr = _isKrStock(stock.ticker || '');
+  const price   = isKr
+    ? _fmtKrPrice(stock.price)
+    : (stock.price ? fmt$(stock.price) : '—');
+  const change  = stock.change != null
+    ? `${stock.change >= 0 ? '+' : ''}${isKr ? _fmtKrPrice(Math.abs(stock.change)) : fmt$(stock.change)}`
+    : '—';
+  const pct = stock.change_pct != null ? fmtPct(stock.change_pct) : '—';
   document.getElementById('chart-price-badge').innerHTML = `
     <span class="${cls}" style="font-size:20px;font-weight:800">${price}</span><br>
     <span class="${cls}">${change} (${pct})</span>
@@ -739,9 +752,11 @@ function _startAutoRefresh() {
 // ── 종목 정보 사이드바 ────────────────────────────────────────────────────────
 function renderStockInfo(s) {
   const cls    = colorCls(s.change_pct || 0);
+  const isKr   = _isKrStock(s.ticker || '');
+  const fmtP   = v => isKr ? _fmtKrPrice(v) : fmt$(v);
   const peStr  = s.pe  > 0 ? s.pe.toFixed(1) : '—';
   const epsStr = s.eps != null && s.eps !== 0
-    ? (s.eps > 0 ? fmt$(s.eps) : `<span class="down">${fmt$(s.eps)}</span>`)
+    ? (s.eps > 0 ? fmtP(s.eps) : `<span class="down">${fmtP(s.eps)}</span>`)
     : '—';
   const capStr = s.market_cap ? fmtCap(s.market_cap) : '—';
   const hiPct  = s.week52_high && s.price
@@ -752,11 +767,11 @@ function renderStockInfo(s) {
     <div class="info-section-title">Key Statistics</div>
     <div class="info-row">
       <span class="info-label">Price</span>
-      <span class="info-val">${s.price ? fmt$(s.price) : '—'}</span>
+      <span class="info-val">${s.price ? fmtP(s.price) : '—'}</span>
     </div>
     <div class="info-row">
       <span class="info-label">Change</span>
-      <span class="info-val ${cls}">${s.change != null ? (s.change >= 0 ? '+' : '') + fmt$(s.change) : '—'}</span>
+      <span class="info-val ${cls}">${s.change != null ? (s.change >= 0 ? '+' : '') + fmtP(Math.abs(s.change)) : '—'}</span>
     </div>
     <div class="info-row">
       <span class="info-label">Change %</span>

@@ -4,6 +4,8 @@
 
 let _scStocks       = [];
 window._scStocks    = _scStocks;   // 히트맵 등 타 모듈에서 참조용
+let _krStocks       = [];
+window._krStocks    = _krStocks;   // 글로벌 검색 참조용
 let _sortCol        = 'change_pct';
 let _sortDir        = -1;   // -1: 내림차순, 1: 오름차순
 let _scRefreshTimer = null;
@@ -11,6 +13,7 @@ let _scLoading      = false;
 let _scView         = 'overview';   // overview | fundamental | performance
 let _scPage         = 1;
 const _SC_PAGE_SIZE = 100;
+let _scMarket       = 'us';        // 'us' | 'kr'
 
 // ── 뷰별 컬럼 정의 (fixed: true = 항상 표시, 숨김 불가) ─────────────────────
 const _VIEWS = {
@@ -192,7 +195,28 @@ function _updateScTimestamp() {
 
 // ── 스크리너 탭 진입 ─────────────────────────────────────────────────────────
 function initScreener() {
-  if (!_scStocks.length) {
+  // 마켓 탭 이벤트 (최초 1회만 등록)
+  if (!initScreener._marketBound) {
+    initScreener._marketBound = true;
+    document.querySelectorAll('.sc-market-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.sc-market-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _scMarket = btn.dataset.market;
+        _scPage = 1;
+        if (_scMarket === 'kr') {
+          loadKrScreener(true);
+        } else {
+          _showUsMode();
+          loadScreenerData(true);
+        }
+      });
+    });
+  }
+
+  if (_scMarket === 'kr') {
+    loadKrScreener(false);
+  } else if (!_scStocks.length) {
     bindScreenerEvents();
     loadScreenerData(true);
   } else {
@@ -201,7 +225,8 @@ function initScreener() {
   if (typeof io === 'undefined') _startScAutoRefresh();
   _renderPresetSelect();
   const presetSel = document.getElementById('sc-preset-select');
-  if (presetSel) {
+  if (presetSel && !presetSel._bound) {
+    presetSel._bound = true;
     presetSel.addEventListener('change', () => {
       if (presetSel.value === '') return;
       const list = _getPresets();
@@ -720,4 +745,124 @@ function exportScreenerCSV() {
   a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 국내주식 (KR) 스크리너
+// ══════════════════════════════════════════════════════════════════
+
+async function loadKrScreener(showSpinner = false) {
+  if (_scLoading) return;
+  _scLoading = true;
+  const body = document.getElementById('screener-body');
+  if (showSpinner && body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">🇰🇷 국내주식 로딩 중…</td></tr>';
+  try {
+    const q = (document.getElementById('filter-search')?.value || '').trim();
+    const url = '/api/kr-stocks' + (q ? `?q=${encodeURIComponent(q)}` : '');
+    _krStocks = await api(url);
+    window._krStocks = _krStocks;
+    renderKrScreener();
+  } catch (e) {
+    if (body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--red)">데이터 로드 실패</td></tr>';
+  } finally {
+    _scLoading = false;
+  }
+}
+
+function _getKrFiltered() {
+  let list = [..._krStocks];
+  // 마켓 필터 (KOSPI/KOSDAQ) — sector 필터 재활용
+  const sec = document.getElementById('filter-sector')?.value || 'all';
+  if (sec === 'KOSPI' || sec === 'KOSDAQ') list = list.filter(s => s.market === sec);
+  // 등락률 필터
+  const chg = document.getElementById('filter-chg')?.value || 'all';
+  if (chg === 'up')    list = list.filter(s => (s.change_pct || 0) > 0);
+  if (chg === 'down')  list = list.filter(s => (s.change_pct || 0) < 0);
+  if (chg === 'up2')   list = list.filter(s => (s.change_pct || 0) >= 2);
+  if (chg === 'up5')   list = list.filter(s => (s.change_pct || 0) >= 5);
+  if (chg === 'down2') list = list.filter(s => (s.change_pct || 0) <= -2);
+  if (chg === 'down5') list = list.filter(s => (s.change_pct || 0) <= -5);
+  // 검색
+  const q = (document.getElementById('filter-search')?.value || '').trim().toLowerCase();
+  if (q) list = list.filter(s =>
+    s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
+  // 정렬
+  list.sort((a, b) => {
+    let av = a[_sortCol] ?? 0, bv = b[_sortCol] ?? 0;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    return av < bv ? _sortDir : av > bv ? -_sortDir : 0;
+  });
+  return list;
+}
+
+function renderKrScreener() {
+  // 뷰탭 숨김 (KR 모드에선 단일 뷰)
+  document.querySelector('.sc-view-tabs-row').style.display = 'none';
+
+  const all    = _getKrFiltered();
+  const total  = all.length;
+  const start  = (_scPage - 1) * _SC_PAGE_SIZE;
+  const paged  = all.slice(start, start + _SC_PAGE_SIZE);
+
+  const head = document.getElementById('screener-head');
+  const body = document.getElementById('screener-body');
+  if (!head || !body) return;
+
+  const cols = [
+    { key: null,         label: '',          cls: '' },
+    { key: '_no',        label: 'No',        cls: 'sc-no' },
+    { key: 'code',       label: '종목코드',  cls: 'td-ticker' },
+    { key: 'name',       label: '종목명',    cls: 'td-name' },
+    { key: 'market',     label: '시장',      cls: '' },
+    { key: 'price',      label: '현재가',    cls: 'num' },
+    { key: 'change_pct', label: '등락률',    cls: 'num' },
+    { key: 'volume',     label: '거래량',    cls: 'num' },
+    { key: 'market_cap', label: '시가총액',  cls: 'num' },
+  ];
+
+  head.innerHTML = '<tr>' + cols.map(c => {
+    if (!c.key) return '<th style="width:28px"></th>';
+    const active = _sortCol === c.key;
+    const arrow  = active ? (_sortDir === -1 ? ' ▼' : ' ▲') : '';
+    return `<th class="sc-th${active ? ' sort-active' : ''}" data-col="${c.key}" style="cursor:pointer">${c.label}${arrow}</th>`;
+  }).join('') + '</tr>';
+
+  head.querySelectorAll('.sc-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (_sortCol === col) _sortDir *= -1; else { _sortCol = col; _sortDir = -1; }
+      renderKrScreener();
+    });
+  });
+
+  const fmtKrw  = v => v ? '₩' + Math.round(v).toLocaleString('ko-KR') : '—';
+  const fmtVol  = v => v >= 1e8 ? (v/1e8).toFixed(1)+'억' : v >= 1e4 ? (v/1e4).toFixed(0)+'만' : v ? v.toLocaleString() : '—';
+  const fmtCap  = v => v >= 1e12 ? (v/1e12).toFixed(1)+'조' : v >= 1e8 ? (v/1e8).toFixed(0)+'억' : '—';
+  const mktBadge = m => `<span class="sc-sector-badge badge-${m === 'KOSPI' ? 'technology' : 'finance'}">${m}</span>`;
+
+  body.innerHTML = paged.map((s, i) => {
+    const no  = start + i + 1;
+    const cls = s.change_pct > 0 ? 'pos' : s.change_pct < 0 ? 'neg' : '';
+    return `<tr style="cursor:pointer" onclick="navigateToChart('${s.ticker}')">
+      <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
+      <td class="sc-no">${no}</td>
+      <td class="td-ticker">${s.code}</td>
+      <td class="td-name">${s.name}</td>
+      <td>${mktBadge(s.market)}</td>
+      <td class="num">${fmtKrw(s.price)}</td>
+      <td class="num ${cls}">${s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>
+      <td class="num">${fmtVol(s.volume)}</td>
+      <td class="num">${fmtCap(s.market_cap)}</td>
+    </tr>`;
+  }).join('');
+
+  const countEl = document.getElementById('filter-count-label');
+  if (countEl) countEl.textContent = `${total.toLocaleString()} results`;
+  _renderPagination(total);
+}
+
+function _showUsMode() {
+  const row = document.querySelector('.sc-view-tabs-row');
+  if (row) row.style.display = '';
 }

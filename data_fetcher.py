@@ -845,6 +845,43 @@ def fetch_russell2000_iwm() -> set[str]:
     return set()
 
 
+# ── 국내주식 가격 배치 수집 ────────────────────────────────────────────────────
+def _fetch_kr_price_one(stock: dict) -> dict:
+    ticker = stock["ticker"]
+    try:
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"?interval=1d&range=2d"
+        )
+        r = requests.get(url, headers=YF_HEADERS, timeout=8)
+        r.raise_for_status()
+        data  = r.json()
+        res   = data["chart"]["result"][0]
+        meta  = res["meta"]
+        price = meta.get("regularMarketPrice") or meta.get("previousClose", 0) or 0
+        prev  = meta.get("chartPreviousClose") or meta.get("previousClose", price) or price
+        chg   = price - prev
+        chg_pct = round((chg / prev * 100), 2) if prev else 0
+        vol   = meta.get("regularMarketVolume", 0) or 0
+        cap   = meta.get("marketCap", 0) or 0
+        row   = dict(stock)
+        row.update(price=price, change=round(chg, 0),
+                   change_pct=chg_pct, volume=vol, market_cap=cap)
+        return row
+    except Exception:
+        return dict(stock)
+
+
+def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25) -> list[dict]:
+    """kr_stocks.json 기반 종목 목록에 Yahoo Finance 가격을 채워 반환."""
+    result = []
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(_fetch_kr_price_one, s): s for s in base_stocks}
+        for fut in as_completed(futs):
+            result.append(fut.result())
+    return result
+
+
 def fetch_fear_greed() -> dict | None:
     """CNN Fear & Greed Index 현재값 반환. 실패 시 None."""
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
