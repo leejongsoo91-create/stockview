@@ -195,6 +195,86 @@ function _drawReturnChart(rows) {
   </svg>`;
 }
 
+// ── 포트폴리오 평가액 히스토리 ────────────────────────────────────────────────
+const _PT_HISTORY_KEY = 'pt_history';
+const _PT_HISTORY_MAX = 200;
+
+function _recordPtSnapshot(totalValue) {
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem(_PT_HISTORY_KEY)) || []; } catch {}
+  const now = Date.now();
+  // 마지막 스냅샷과 5분 이상 간격이 있을 때만 저장 (너무 잦은 기록 방지)
+  const last = history[history.length - 1];
+  if (last && now - last.ts < 5 * 60 * 1000) {
+    last.v = totalValue; // 같은 시간대면 값만 갱신
+  } else {
+    history.push({ ts: now, v: totalValue });
+  }
+  if (history.length > _PT_HISTORY_MAX) history.splice(0, history.length - _PT_HISTORY_MAX);
+  localStorage.setItem(_PT_HISTORY_KEY, JSON.stringify(history));
+}
+
+function _drawHistoryChart() {
+  const el = document.getElementById('pt-history-chart');
+  if (!el) return;
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem(_PT_HISTORY_KEY)) || []; } catch {}
+  if (history.length < 2) {
+    el.innerHTML = '<span class="pt-history-empty">데이터가 쌓이면 차트가 표시됩니다 (방문할 때마다 기록됩니다)</span>';
+    return;
+  }
+
+  const W = el.clientWidth || 600;
+  const H = 140;
+  const PAD = { t: 12, r: 10, b: 28, l: 58 };
+  const iW = W - PAD.l - PAD.r;
+  const iH = H - PAD.t - PAD.b;
+
+  const vals = history.map(d => d.v);
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const vRange = maxV - minV || 1;
+
+  const xScale = i => PAD.l + (i / (history.length - 1)) * iW;
+  const yScale = v => PAD.t + iH - ((v - minV) / vRange) * iH;
+
+  // 라인 path
+  const points = history.map((d, i) => `${xScale(i)},${yScale(d.v)}`).join(' ');
+  const firstX = xScale(0), lastX = xScale(history.length - 1);
+  const firstY = yScale(history[0].v), lastY = yScale(history[history.length - 1].v);
+
+  // 영역 채우기
+  const areaPath = `M${firstX},${firstY} L${points.split(' ').slice(1).join(' L')} L${lastX},${PAD.t + iH} L${firstX},${PAD.t + iH} Z`;
+
+  // Y축 레이블 (최대/최소/현재)
+  const fmt = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const curVal = history[history.length - 1].v;
+  const isUp = curVal >= history[0].v;
+  const lineColor = isUp ? 'var(--green)' : 'var(--red)';
+
+  // X축 레이블 (첫/마지막 날짜)
+  const fmtDate = ts => new Date(ts).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+
+  el.innerHTML = `<svg width="${W}" height="${H}" style="overflow:visible">
+    <defs>
+      <linearGradient id="pt-hist-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaPath}" fill="url(#pt-hist-grad)"/>
+    <polyline points="${points}" fill="none" stroke="${lineColor}" stroke-width="1.5"/>
+    <circle cx="${lastX}" cy="${lastY}" r="3" fill="${lineColor}"/>
+    <text x="${PAD.l - 4}" y="${PAD.t + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmt(maxV)}</text>
+    <text x="${PAD.l - 4}" y="${PAD.t + iH + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmt(minV)}</text>
+    <text x="${lastX + 4}" y="${lastY + 4}" font-size="10" fill="${lineColor}" font-weight="600">${fmt(curVal)}</text>
+    <text x="${firstX}" y="${H - 4}" text-anchor="start" font-size="10" fill="var(--muted)">${fmtDate(history[0].ts)}</text>
+    <text x="${lastX}" y="${H - 4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtDate(history[history.length-1].ts)}</text>
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${PAD.t + iH}" stroke="var(--border)" stroke-width="1"/>
+    <line x1="${PAD.l}" y1="${PAD.t + iH}" x2="${PAD.l + iW}" y2="${PAD.t + iH}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
 // ── 포트폴리오 탭 진입 ────────────────────────────────────────────────────────
 let _ptRefreshTimer = null;
 
@@ -368,7 +448,11 @@ async function renderPortfolio() {
         <div id="pt-return-chart" class="pt-return-chart"></div>
       </div>
     </div>
-    <div id="pt-chart-tooltip" class="pt-chart-tooltip"></div>`;
+    <div id="pt-chart-tooltip" class="pt-chart-tooltip"></div>
+    <div class="pt-history-card">
+      <div class="pt-chart-title">포트폴리오 평가액 히스토리</div>
+      <div id="pt-history-chart" class="pt-history-chart"></div>
+    </div>`;
 
   const updatedAt = new Date().toLocaleTimeString('ko-KR');
   container.innerHTML = `
@@ -381,6 +465,8 @@ async function renderPortfolio() {
     ${tableHtml}`;
 
   _renderCharts(rows, totalValue);
+  if (totalValue > 0) _recordPtSnapshot(totalValue);
+  _drawHistoryChart();
 }
 
 // ── 종목 삭제 ─────────────────────────────────────────────────────────────────

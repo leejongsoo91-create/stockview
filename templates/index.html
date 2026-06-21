@@ -212,6 +212,13 @@
           <div class="sc-filter-meta">
             <span id="filter-count-label" class="sc-result-count">— results</span>
             <span id="sc-last-updated" class="sc-last-updated"></span>
+            <div class="sc-preset-wrap">
+              <select id="sc-preset-select" class="sc-preset-select" title="저장된 필터 불러오기">
+                <option value="">필터 프리셋…</option>
+              </select>
+              <button class="sc-preset-save-btn" onclick="saveScPreset()" title="현재 필터 저장">💾 저장</button>
+              <button class="sc-preset-del-btn" onclick="deleteScPreset()" title="선택 프리셋 삭제">🗑</button>
+            </div>
             <button id="sc-refresh-btn" class="sc-refresh-btn" title="새로고침">⟳</button>
           </div>
         </div>
@@ -571,6 +578,7 @@
       </div>
       <div class="stock-modal-footer">
         <span id="sm-star-wrap"></span>
+        <button class="sm-news-btn" id="sm-news-btn">All News →</button>
         <button class="sm-chart-btn" id="sm-chart-btn">Full Chart →</button>
       </div>
     </div>

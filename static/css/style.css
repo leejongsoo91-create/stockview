@@ -644,6 +644,35 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .sc-refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
 .sc-refresh-btn.spinning { animation: sc-spin .6s linear infinite; }
 @keyframes sc-spin { to { transform: rotate(360deg); } }
+.sc-preset-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sc-preset-select {
+  height: 28px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 0 6px;
+  cursor: pointer;
+  max-width: 140px;
+}
+.sc-preset-save-btn, .sc-preset-del-btn {
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sc-preset-save-btn:hover { color: var(--green); border-color: var(--green); }
+.sc-preset-del-btn:hover  { color: var(--red);   border-color: var(--red); }
 
 /* 뷰 탭 + 컬럼 설정 행 */
 .sc-view-tabs-row {
@@ -956,6 +985,14 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   transition: opacity .15s;
 }
 .sm-chart-btn:hover { opacity: .85; }
+.sm-news-btn {
+  padding: 6px 14px;
+  background: var(--bg-input);
+  color: var(--text); font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+  transition: border-color .15s;
+}
+.sm-news-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── HEATMAP ────────────────────────────────────────────────────────────────── */
 .heatmap-toolbar {
@@ -1803,6 +1840,15 @@ mark.kw-hl {
 }
 .pt-return-card { flex: 1.4; min-width: 320px; }
 .pt-return-chart { width: 100%; overflow: hidden; }
+.pt-history-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+.pt-history-chart { width: 100%; overflow: hidden; }
+.pt-history-empty { font-size: 12px; color: var(--muted); }
 .pt-chart-inner {
   display: flex;
   align-items: center;

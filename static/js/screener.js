@@ -56,7 +56,8 @@ const _VIEWS = {
 };
 
 // ── 컬럼 숨김 상태 (뷰별 독립, localStorage 저장) ───────────────────────────
-const _COL_STORAGE_KEY = 'sc_hidden_cols';
+const _COL_STORAGE_KEY  = 'sc_hidden_cols';
+const _PRESET_STORAGE_KEY = 'sc_presets';
 let _hiddenCols = { overview: new Set(), fundamental: new Set(), performance: new Set() };
 
 function _loadHiddenCols() {
@@ -74,6 +75,79 @@ function _saveHiddenCols() {
   const obj = {};
   for (const v of ['overview', 'fundamental', 'performance']) obj[v] = [..._hiddenCols[v]];
   localStorage.setItem(_COL_STORAGE_KEY, JSON.stringify(obj));
+}
+
+// ── 필터 프리셋 저장/불러오기 ─────────────────────────────────────────────────
+function _getPresets() {
+  try { return JSON.parse(localStorage.getItem(_PRESET_STORAGE_KEY)) || []; } catch { return []; }
+}
+function _savePresets(list) {
+  localStorage.setItem(_PRESET_STORAGE_KEY, JSON.stringify(list));
+}
+
+function _currentFilterValues() {
+  return {
+    sector:   document.getElementById('filter-sector')?.value   || 'all',
+    industry: document.getElementById('filter-industry')?.value || 'all',
+    country:  document.getElementById('filter-country')?.value  || 'all',
+    cap:      document.getElementById('filter-cap')?.value      || 'all',
+    pe:       document.getElementById('filter-pe')?.value       || 'all',
+    chg:      document.getElementById('filter-chg')?.value      || 'all',
+    w52:      document.getElementById('filter-52w')?.value      || 'all',
+    search:   document.getElementById('filter-search')?.value   || '',
+  };
+}
+
+function _applyFilterValues(vals) {
+  if (!vals) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('filter-sector',   vals.sector);
+  set('filter-country',  vals.country);
+  set('filter-cap',      vals.cap);
+  set('filter-pe',       vals.pe);
+  set('filter-chg',      vals.chg);
+  set('filter-52w',      vals.w52);
+  set('filter-search',   vals.search);
+  // industry: 섹터 변경 후 동적 목록이 채워진 뒤 적용
+  const secEl = document.getElementById('filter-sector');
+  if (secEl && vals.sector !== 'all') {
+    secEl.dispatchEvent(new Event('change'));
+    setTimeout(() => { set('filter-industry', vals.industry); renderScreener(true); }, 50);
+  } else {
+    set('filter-industry', vals.industry);
+    renderScreener(true);
+  }
+}
+
+function _renderPresetSelect() {
+  const sel = document.getElementById('sc-preset-select');
+  if (!sel) return;
+  const presets = _getPresets();
+  sel.innerHTML = '<option value="">필터 프리셋…</option>' +
+    presets.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
+}
+
+function saveScPreset() {
+  const name = prompt('프리셋 이름을 입력하세요:');
+  if (!name || !name.trim()) return;
+  const list = _getPresets();
+  if (list.length >= 10) { alert('최대 10개까지 저장할 수 있습니다.'); return; }
+  list.push({ name: name.trim(), filters: _currentFilterValues() });
+  _savePresets(list);
+  _renderPresetSelect();
+  const sel = document.getElementById('sc-preset-select');
+  if (sel) sel.value = list.length - 1;
+}
+
+function deleteScPreset() {
+  const sel = document.getElementById('sc-preset-select');
+  if (!sel || sel.value === '') { alert('삭제할 프리셋을 먼저 선택하세요.'); return; }
+  const idx = parseInt(sel.value);
+  const list = _getPresets();
+  if (!confirm(`"${list[idx]?.name}" 프리셋을 삭제할까요?`)) return;
+  list.splice(idx, 1);
+  _savePresets(list);
+  _renderPresetSelect();
 }
 
 // 숨김 컬럼이면 빈 문자열, 아니면 content 반환
@@ -125,6 +199,16 @@ function initScreener() {
     loadScreenerData(false);
   }
   if (typeof io === 'undefined') _startScAutoRefresh();
+  _renderPresetSelect();
+  const presetSel = document.getElementById('sc-preset-select');
+  if (presetSel) {
+    presetSel.addEventListener('change', () => {
+      if (presetSel.value === '') return;
+      const list = _getPresets();
+      const preset = list[parseInt(presetSel.value)];
+      if (preset) _applyFilterValues(preset.filters);
+    });
+  }
 }
 
 function stopScreenerRefresh() {
@@ -548,6 +632,22 @@ function openStockModal(ticker) {
   // 차트 버튼
   const chartBtn = document.getElementById('sm-chart-btn');
   chartBtn.onclick = () => { closeStockModal(); navigateToChart(ticker); };
+
+  // 뉴스 버튼 — News 탭으로 이동 후 ticker 키워드 자동 설정
+  const newsBtn = document.getElementById('sm-news-btn');
+  if (newsBtn) {
+    newsBtn.onclick = () => {
+      closeStockModal();
+      switchView('news');
+      setTimeout(() => {
+        const kwInput = document.getElementById('news-kw-search');
+        if (kwInput) {
+          kwInput.value = ticker;
+          kwInput.dispatchEvent(new Event('input'));
+        }
+      }, 80);
+    };
+  }
 
   // ESC 키 닫기
   document.onkeydown = e => { if (e.key === 'Escape') closeStockModal(); };
