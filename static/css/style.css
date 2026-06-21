@@ -84,11 +84,44 @@ header {
 }
 #main-nav { display: flex; gap: 2px; }
 .last-updated {
-  margin-left: auto;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
 }
+.global-search-wrap {
+  position: relative;
+  margin-left: auto;
+  margin-right: 8px;
+}
+.global-search-input {
+  width: 180px; height: 30px;
+  padding: 0 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text); font-size: 13px;
+  outline: none; transition: border-color .15s, width .2s;
+}
+.global-search-input:focus { border-color: var(--accent); width: 220px; }
+.global-search-dropdown {
+  display: none;
+  position: absolute; top: 34px; left: 0; right: 0;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 6px; z-index: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  min-width: 260px;
+  overflow: hidden;
+}
+.gs-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer;
+  transition: background .12s;
+}
+.gs-item:hover { background: var(--bg); }
+.gs-ticker { font-size: 13px; font-weight: 700; color: var(--accent); min-width: 48px; }
+.gs-name   { font-size: 12px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-pct    { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.gs-empty  { padding: 10px 12px; font-size: 12px; color: var(--muted); }
 .nav-btn {
   padding: 6px 16px;
   border-radius: 6px;
@@ -771,6 +804,23 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* ── SCREENER: 페이지네이션 ── */
+.sc-pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 4px; gap: 8px; flex-wrap: wrap;
+}
+.sc-page-info { font-size: 12px; color: var(--muted); }
+.sc-page-btns { display: flex; gap: 4px; }
+.sc-page-btn {
+  min-width: 30px; height: 28px; padding: 0 6px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--muted);
+  font-size: 12px; cursor: pointer; transition: all .15s;
+}
+.sc-page-btn:hover:not([disabled]) { border-color: var(--accent); color: var(--text); }
+.sc-page-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+.sc-page-btn[disabled] { opacity: .35; cursor: default; }
 
 /* ── SCREENER: CSV 버튼 ── */
 .sc-export-btn {

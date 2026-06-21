@@ -707,4 +707,76 @@ document.addEventListener('DOMContentLoaded', () => {
   const _hash = window.location.hash.slice(1);
   const _views = ['home','screener','heatmap','chart','news','brief','earnings','watchlist','portfolio'];
   if (_hash && _views.includes(_hash)) switchView(_hash);
+
+  // 글로벌 검색 초기화
+  initGlobalSearch();
 });
+
+// ── 글로벌 검색 ──────────────────────────────────────────────────────────────
+function initGlobalSearch() {
+  const input = document.getElementById('global-search');
+  const drop  = document.getElementById('global-search-dropdown');
+  if (!input || !drop) return;
+
+  let _gsTimer = null;
+
+  input.addEventListener('input', () => {
+    clearTimeout(_gsTimer);
+    const q = input.value.trim().toLowerCase();
+    if (!q) { drop.innerHTML = ''; drop.style.display = 'none'; return; }
+    _gsTimer = setTimeout(() => _gsSearch(q), 200);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { input.value = ''; drop.style.display = 'none'; }
+    if (e.key === 'Enter') {
+      const first = drop.querySelector('.gs-item');
+      if (first) first.click();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('global-search-wrap').contains(e.target))
+      drop.style.display = 'none';
+  });
+}
+
+function _gsSearch(q) {
+  const drop    = document.getElementById('global-search-dropdown');
+  const stocks  = window._scStocks || [];
+  const results = stocks.filter(s =>
+    s.ticker.toLowerCase().startsWith(q) ||
+    s.ticker.toLowerCase().includes(q)   ||
+    (s.name || '').toLowerCase().includes(q)
+  ).slice(0, 6);
+
+  if (!results.length) {
+    drop.innerHTML = `<div class="gs-empty">결과 없음</div>`;
+    drop.style.display = 'block';
+    return;
+  }
+
+  drop.innerHTML = results.map(s => {
+    const pct = s.change_pct ?? 0;
+    const cls = pct >= 0 ? 'up' : 'down';
+    return `<div class="gs-item" onclick="_gsSelect('${s.ticker}')">
+      <span class="gs-ticker">${s.ticker}</span>
+      <span class="gs-name">${s.name || ''}</span>
+      <span class="gs-pct ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
+    </div>`;
+  }).join('');
+  drop.style.display = 'block';
+}
+
+function _gsSelect(ticker) {
+  const input = document.getElementById('global-search');
+  const drop  = document.getElementById('global-search-dropdown');
+  if (input) input.value = '';
+  if (drop)  drop.style.display = 'none';
+
+  if (typeof openStockModal === 'function' && window._scStocks && window._scStocks.length) {
+    openStockModal(ticker);
+  } else {
+    navigateToChart(ticker);
+  }
+}

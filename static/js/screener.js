@@ -3,11 +3,14 @@
    ═══════════════════════════════════════════════════════════════ */
 
 let _scStocks       = [];
+window._scStocks    = _scStocks;   // 히트맵 등 타 모듈에서 참조용
 let _sortCol        = 'change_pct';
 let _sortDir        = -1;   // -1: 내림차순, 1: 오름차순
 let _scRefreshTimer = null;
 let _scLoading      = false;
 let _scView         = 'overview';   // overview | fundamental | performance
+let _scPage         = 1;
+const _SC_PAGE_SIZE = 100;
 
 // ── 뷰별 컬럼 정의 (fixed: true = 항상 표시, 숨김 불가) ─────────────────────
 const _VIEWS = {
@@ -95,6 +98,7 @@ async function loadScreenerData(showSpinner = false) {
 
   try {
     _scStocks = await api('/api/stocks');
+    window._scStocks = _scStocks;
     _populateIndustryFilter();
     _populateCountryFilter();
     renderScreener();
@@ -257,20 +261,65 @@ function _renderHead() {
 }
 
 // ── 테이블 바디 렌더링 ───────────────────────────────────────────────────────
-function renderScreener() {
+function renderScreener(resetPage = false) {
+  if (resetPage) _scPage = 1;
   _renderHead();
-  const list = getFilteredStocks();
-  document.getElementById('filter-count-label').textContent = `${list.length.toLocaleString()} results`;
+  const list  = getFilteredStocks();
+  const total = list.length;
+  const start = (_scPage - 1) * _SC_PAGE_SIZE;
+  const page  = list.slice(start, start + _SC_PAGE_SIZE);
+
+  document.getElementById('filter-count-label').textContent = `${total.toLocaleString()} results`;
 
   const body = document.getElementById('screener-body');
-
   if (_scView === 'overview') {
-    body.innerHTML = list.map((s, idx) => _rowOverview(s, idx + 1)).join('');
+    body.innerHTML = page.map((s, idx) => _rowOverview(s, start + idx + 1)).join('');
   } else if (_scView === 'fundamental') {
-    body.innerHTML = list.map((s, idx) => _rowFundamental(s, idx + 1)).join('');
+    body.innerHTML = page.map((s, idx) => _rowFundamental(s, start + idx + 1)).join('');
   } else {
-    body.innerHTML = list.map((s, idx) => _rowPerformance(s, idx + 1)).join('');
+    body.innerHTML = page.map((s, idx) => _rowPerformance(s, start + idx + 1)).join('');
   }
+
+  _renderPagination(total);
+}
+
+// ── 페이지네이션 렌더링 ───────────────────────────────────────────────────────
+function _renderPagination(total) {
+  const el = document.getElementById('sc-pagination');
+  if (!el) return;
+
+  const totalPages = Math.ceil(total / _SC_PAGE_SIZE);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  const start = (_scPage - 1) * _SC_PAGE_SIZE + 1;
+  const end   = Math.min(_scPage * _SC_PAGE_SIZE, total);
+
+  // 표시할 페이지 번호 범위 (현재 ±2)
+  const range = [];
+  for (let p = Math.max(1, _scPage - 2); p <= Math.min(totalPages, _scPage + 2); p++) range.push(p);
+
+  const btnCls = p => `sc-page-btn${p === _scPage ? ' active' : ''}`;
+  const nums = range.map(p =>
+    `<button class="${btnCls(p)}" onclick="_goPage(${p})">${p}</button>`
+  ).join('');
+
+  el.innerHTML = `
+    <span class="sc-page-info">${start.toLocaleString()}–${end.toLocaleString()} / ${total.toLocaleString()}</span>
+    <div class="sc-page-btns">
+      <button class="sc-page-btn" onclick="_goPage(1)" ${_scPage===1?'disabled':''}>«</button>
+      <button class="sc-page-btn" onclick="_goPage(${_scPage-1})" ${_scPage===1?'disabled':''}>‹</button>
+      ${nums}
+      <button class="sc-page-btn" onclick="_goPage(${_scPage+1})" ${_scPage===totalPages?'disabled':''}>›</button>
+      <button class="sc-page-btn" onclick="_goPage(${totalPages})" ${_scPage===totalPages?'disabled':''}>»</button>
+    </div>`;
+}
+
+function _goPage(p) {
+  const total = getFilteredStocks().length;
+  const totalPages = Math.ceil(total / _SC_PAGE_SIZE);
+  _scPage = Math.max(1, Math.min(p, totalPages));
+  renderScreener();
+  document.getElementById('screener-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── 행 렌더링: Overview ──────────────────────────────────────────────────────
@@ -412,7 +461,7 @@ function bindScreenerEvents() {
   ['filter-sector','filter-industry','filter-country','filter-change',
    'filter-cap','filter-pe','filter-52w'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('change', renderScreener);
+    if (el) el.addEventListener('change', () => renderScreener(true));
   });
 
   // 섹터 변경 → 업종 필터 재구성
@@ -427,7 +476,7 @@ function bindScreenerEvents() {
     renderScreener();
   });
 
-  document.getElementById('filter-search').addEventListener('input', renderScreener);
+  document.getElementById('filter-search').addEventListener('input', () => renderScreener(true));
 
   // 새로고침 버튼
   const btn = document.getElementById('sc-refresh-btn');
@@ -443,6 +492,7 @@ function bindScreenerEvents() {
       document.querySelectorAll('.sc-view-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _scView = btn.dataset.scview;
+      _scPage = 1;
       // 기본 정렬 컬럼 설정
       if (_scView === 'fundamental') _sortCol = 'market_cap';
       else if (_scView === 'performance') _sortCol = 'change_pct';

@@ -402,7 +402,12 @@ function renderHeatmap() {
       event.stopPropagation();
       tooltip.style.display = 'none';
     })
-    .on('click', (event, d) => navigateToChart(d.data.ticker));
+    .on('click', (event, d) => {
+      if (typeof openStockModal === 'function' && window._scStocks && window._scStocks.length)
+        openStockModal(d.data.ticker);
+      else
+        navigateToChart(d.data.ticker);
+    });
 
   // ── 셀 텍스트 ────────────────────────────────────────────────────────────
   leaf.each(function(d) {
