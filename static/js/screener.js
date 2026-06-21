@@ -287,7 +287,7 @@ function _rowOverview(s, no) {
     ? `<span class="${cls}">${s.change >= 0 ? '+' : ''}${fmt$(s.change)}</span>`
     : '—';
 
-  return `<tr onclick="navigateToChart('${s.ticker}')">
+  return `<tr onclick="openStockModal('${s.ticker}')">
     <td onclick="event.stopPropagation()">${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
@@ -311,7 +311,7 @@ function _rowFundamental(s, no) {
     ? (s.eps >= 0 ? fmt$(s.eps) : `<span class="down">${fmt$(s.eps)}</span>`)
     : '—';
 
-  return `<tr onclick="navigateToChart('${s.ticker}')">
+  return `<tr onclick="openStockModal('${s.ticker}')">
     <td onclick="event.stopPropagation()">${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
@@ -337,7 +337,7 @@ function _rowPerformance(s, no) {
     ? `<div class="sc-52w-bar"><div class="sc-52w-fill" style="width:${pos}%"></div><span class="sc-52w-val">${pos}%</span></div>`
     : '—';
 
-  return `<tr onclick="navigateToChart('${s.ticker}')">
+  return `<tr onclick="openStockModal('${s.ticker}')">
     <td onclick="event.stopPropagation()">${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
@@ -433,6 +433,10 @@ function bindScreenerEvents() {
   const btn = document.getElementById('sc-refresh-btn');
   if (btn) btn.addEventListener('click', () => loadScreenerData(false));
 
+  // CSV 내보내기 버튼
+  const exportBtn = document.getElementById('sc-export-btn');
+  if (exportBtn) exportBtn.addEventListener('click', exportScreenerCSV);
+
   // 뷰 탭 전환
   document.querySelectorAll('.sc-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -450,4 +454,120 @@ function bindScreenerEvents() {
       renderScreener();
     });
   });
+}
+
+// ── 종목 상세 모달 ────────────────────────────────────────────────────────────
+function openStockModal(ticker) {
+  const s = _scStocks.find(x => x.ticker === ticker);
+  if (!s) return;
+
+  const modal = document.getElementById('stock-modal');
+  if (!modal) return;
+
+  // 헤더
+  const pct = s.change_pct ?? 0;
+  const cls = pct >= 0 ? 'up' : 'down';
+  document.getElementById('sm-ticker').textContent = s.ticker;
+  document.getElementById('sm-name').textContent   = s.name + (s.name_ko ? ` (${s.name_ko})` : '');
+  document.getElementById('sm-price').textContent  = s.price ? fmt$(s.price) : '—';
+  const chgEl = document.getElementById('sm-change');
+  chgEl.textContent = s.price ? `${pct >= 0 ? '+' : ''}${fmtPct(pct)}` : '—';
+  chgEl.className   = 'sm-change ' + cls;
+
+  // 통계 그리드
+  const pos = _calc52wPos(s);
+  const stats = [
+    { label: 'Sector',    value: s.sector   || '—' },
+    { label: 'Industry',  value: s.industry || '—' },
+    { label: 'Country',   value: s.country  || '—' },
+    { label: 'Mkt Cap',   value: s.market_cap ? fmtCap(s.market_cap) : '—' },
+    { label: 'Volume',    value: s.volume     ? fmtVol(s.volume)      : '—' },
+    { label: 'P/E',       value: s.pe  != null ? s.pe.toFixed(1)  : '—' },
+    { label: 'EPS (TTM)', value: s.eps != null ? fmt$(s.eps)       : '—' },
+    { label: '52W High',  value: s.week52_high ? fmt$(s.week52_high) : '—' },
+    { label: '52W Low',   value: s.week52_low  ? fmt$(s.week52_low)  : '—' },
+    { label: '52W Pos',   value: pos !== null ? pos + '%' : '—' },
+  ];
+  document.getElementById('sm-stats').innerHTML = stats.map(st =>
+    `<div class="sm-stat"><span class="sm-stat-label">${st.label}</span><span class="sm-stat-value">${st.value}</span></div>`
+  ).join('');
+
+  // ★ 워치리스트 버튼
+  document.getElementById('sm-star-wrap').innerHTML = starBtn(ticker);
+
+  // 차트 버튼
+  const chartBtn = document.getElementById('sm-chart-btn');
+  chartBtn.onclick = () => { closeStockModal(); navigateToChart(ticker); };
+
+  // ESC 키 닫기
+  document.onkeydown = e => { if (e.key === 'Escape') closeStockModal(); };
+
+  // 모달 표시
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  // 뉴스 비동기 로드
+  document.getElementById('sm-news').innerHTML = '<div class="sm-news-loading">Loading…</div>';
+  api('/api/stock-news/' + ticker).then(items => {
+    const news = (items || []).slice(0, 3);
+    if (!news.length) {
+      document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">No recent news.</div>';
+      return;
+    }
+    document.getElementById('sm-news').innerHTML = news.map(n => {
+      const dot = n.sentiment === 'positive' ? '🟢' : n.sentiment === 'negative' ? '🔴' : '⚪';
+      return `<div class="sm-news-item" onclick="window.open('${n.url}','_blank')">
+        <span class="sm-news-dot">${dot}</span>
+        <div class="sm-news-body">
+          <div class="sm-news-title">${n.title}</div>
+          <div class="sm-news-meta">${n.source || ''} · ${n.time || ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }).catch(() => {
+    document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">Failed to load news.</div>';
+  });
+}
+
+function closeStockModal(e) {
+  if (e && e.target !== document.getElementById('stock-modal')) return;
+  const modal = document.getElementById('stock-modal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+  document.onkeydown = null;
+}
+
+// ── CSV 내보내기 ──────────────────────────────────────────────────────────────
+function exportScreenerCSV() {
+  const list = getFilteredStocks();
+  if (!list.length) return;
+
+  const headers = ['No','Ticker','Name','Sector','Industry','Country',
+    'Price','Change%','Volume','MarketCap(B)','PE','EPS','52W_High','52W_Low'];
+
+  const rows = list.map((s, i) => [
+    i + 1,
+    s.ticker,
+    `"${(s.name || '').replace(/"/g, '""')}"`,
+    s.sector   || '',
+    s.industry || '',
+    s.country  || '',
+    s.price       != null ? s.price       : '',
+    s.change_pct  != null ? s.change_pct  : '',
+    s.volume      != null ? s.volume      : '',
+    s.market_cap  != null ? s.market_cap  : '',
+    s.pe          != null ? s.pe          : '',
+    s.eps         != null ? s.eps         : '',
+    s.week52_high != null ? s.week52_high : '',
+    s.week52_low  != null ? s.week52_low  : '',
+  ].join(','));
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

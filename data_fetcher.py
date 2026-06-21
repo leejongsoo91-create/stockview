@@ -857,7 +857,7 @@ def fetch_fear_greed() -> dict | None:
             return None
         return {
             "score":      round(float(score), 1),
-            "rating":     d.get("rating", ""),
+            "rating":     d.get("rating", "").title(),
             "prev_close": round(float(d.get("previous_close") or 0), 1),
             "prev_1w":    round(float(d.get("previous_1_week") or 0), 1),
             "prev_1m":    round(float(d.get("previous_1_month") or 0), 1),

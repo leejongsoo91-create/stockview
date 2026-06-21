@@ -628,7 +628,9 @@ APScheduler>=3.10.4
 ### Phase 4-15 — Heatmap 세부 업종 분류 + 섹터 호버 하이라이트 ✅ 완료 (2026-06-10)
 - [x] `data_fetcher.py` — Nasdaq API `industry` 필드 파싱, `_clean_industry()` 헬퍼로 80개+ 업종명 단축 매핑 (실제 API 반환값 기준)
 - [x] `static/js/heatmap.js` — sector → industry → stock 3단계 트리맵, 업종 레이블 표시 (충분한 크기일 때)
-- [x] `static/js/heatmap.js` — 섹터 투명 rect 호버: 흰 테두리 + 평균등락률·상승/하락 종목수·시총·업종수 툴팁
+- [x] `
+
+잊잊static/js/heatmap.js` — 섹터 투명 rect 호버: 흰 테두리 + 평균등락률·상승/하락 종목수·시총·업종수 툴팁
 - [x] `static/js/heatmap.js` — 업종(industry) rect 호버: 테두리 + 평균등락률·종목수·대표 티커 툴팁
 - [x] `static/css/style.css` — sector-group / industry-group hover transition 스타일
 - 검증: industry 필드 2927/2927개 채워짐, Nasdaq 100에서 Software·Semiconductors·Hardware 업종 분류 확인

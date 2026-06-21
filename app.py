@@ -736,7 +736,14 @@ def stock_detail(ticker):
     stock = next((s for s in data if s["ticker"] == t), None)
     if not stock:
         return jsonify({"error": "Not found"}), 404
-    return jsonify(stock)
+    row    = dict(stock)
+    extras = cache.get("extra_fields") or {}
+    pe_eps = cache.get("pe_eps") or {}
+    if extras.get(t):
+        row.update(extras[t])
+    if pe_eps.get(t):
+        row.update(pe_eps[t])
+    return jsonify(row)
 
 
 @app.route("/api/fear-greed")

@@ -221,6 +221,7 @@
         <div class="sc-col-settings-wrap">
           <button class="sc-col-btn" id="sc-col-btn" title="컬럼 표시/숨김 설정">⚙ 컬럼</button>
           <div class="sc-col-panel" id="sc-col-panel"></div>
+          <button class="sc-export-btn" id="sc-export-btn" title="현재 필터 결과를 CSV로 저장">↓ CSV</button>
         </div>
       </div>
 
@@ -542,6 +543,32 @@
   <script src="/static/js/brief.js"></script>
   <script src="/static/js/main.js"></script>
   <script src="/static/js/heatmap.js"></script>
+  <!-- 종목 상세 모달 -->
+  <div id="stock-modal" class="stock-modal-overlay" style="display:none" onclick="closeStockModal(event)">
+    <div class="stock-modal-box" onclick="event.stopPropagation()">
+      <button class="stock-modal-close" onclick="closeStockModal()">✕</button>
+      <div class="stock-modal-header">
+        <div class="smh-left">
+          <span id="sm-ticker" class="sm-ticker"></span>
+          <span id="sm-name"   class="sm-name"></span>
+        </div>
+        <div class="smh-right">
+          <span id="sm-price"  class="sm-price"></span>
+          <span id="sm-change" class="sm-change"></span>
+        </div>
+      </div>
+      <div class="stock-modal-stats" id="sm-stats"></div>
+      <div class="stock-modal-news-title">Recent News</div>
+      <div class="stock-modal-news" id="sm-news">
+        <div class="sm-news-loading">Loading news…</div>
+      </div>
+      <div class="stock-modal-footer">
+        <span id="sm-star-wrap"></span>
+        <button class="sm-chart-btn" id="sm-chart-btn">Full Chart →</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/js/screener.js"></script>
   <script src="/static/js/chart.js"></script>
   <script src="/static/js/watchlist.js"></script>

@@ -772,6 +772,103 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   white-space: nowrap;
 }
 
+/* ── SCREENER: CSV 버튼 ── */
+.sc-export-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.sc-export-btn:hover { color: var(--text); border-color: var(--accent); }
+
+/* ── SCREENER: 종목 상세 모달 ── */
+.stock-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.stock-modal-box {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 100%; max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 24px;
+  animation: smFadeIn .18s ease;
+}
+@keyframes smFadeIn { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:none; } }
+.stock-modal-close {
+  position: absolute; top: 14px; right: 16px;
+  background: none; border: none;
+  color: var(--muted); font-size: 18px;
+  cursor: pointer; line-height: 1;
+}
+.stock-modal-close:hover { color: var(--text); }
+.stock-modal-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 16px; gap: 12px;
+}
+.smh-left { display: flex; flex-direction: column; gap: 2px; }
+.sm-ticker { font-size: 22px; font-weight: 700; color: var(--text); }
+.sm-name   { font-size: 12px; color: var(--muted); }
+.smh-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.sm-price  { font-size: 20px; font-weight: 600; color: var(--text); }
+.sm-change { font-size: 13px; font-weight: 600; }
+.stock-modal-stats {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 8px; margin-bottom: 18px;
+}
+.sm-stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.sm-stat-label { font-size: 11px; color: var(--muted); }
+.sm-stat-value { font-size: 13px; font-weight: 500; color: var(--text); }
+.stock-modal-news-title {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  letter-spacing: .05em; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.stock-modal-news { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.sm-news-loading, .sm-news-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
+.sm-news-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px;
+  cursor: pointer; transition: border-color .15s;
+}
+.sm-news-item:hover { border-color: var(--accent); }
+.sm-news-dot  { font-size: 10px; margin-top: 3px; flex-shrink: 0; }
+.sm-news-body { min-width: 0; }
+.sm-news-title { font-size: 12px; color: var(--text); line-height: 1.4; margin-bottom: 2px; }
+.sm-news-meta  { font-size: 11px; color: var(--muted); }
+.stock-modal-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  border-top: 1px solid var(--border); padding-top: 14px;
+}
+.sm-chart-btn {
+  padding: 6px 16px;
+  background: var(--accent);
+  color: #000; font-size: 13px; font-weight: 600;
+  border: none; border-radius: 6px; cursor: pointer;
+  transition: opacity .15s;
+}
+.sm-chart-btn:hover { opacity: .85; }
+
 /* ── HEATMAP ────────────────────────────────────────────────────────────────── */
 .heatmap-toolbar {
   display: flex;
