@@ -8,6 +8,9 @@ let _hmIndex    = 'all';
 let _hmPeriod   = '1d';
 let _hmPerfData = {};   // { '1w': {ticker: perf_pct}, '1m': {ticker: perf_pct} }
 let _hmMembers  = {};
+let _hmMarket   = 'us';  // 'us' | 'kr'
+let _krHmStocks = [];
+let _krHmFilter = 'all'; // 'all' | 'kospi200' | 'kosdaq150'
 
 const _colorScale = d3.scaleLinear()
   .domain([-5, -2, -0.5, 0, 0.5, 2, 5])
@@ -26,6 +29,45 @@ async function initHeatmap() {
     dow30:       new Set(members.dow30),
     russell2000: new Set(members.russell2000),
   };
+
+  // 시장 탭 (US / KR)
+  document.querySelectorAll('.hm-mkt-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      document.querySelectorAll('.hm-mkt-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _hmMarket = btn.dataset.hmmarket;
+      const usIndexBar = document.getElementById('hm-index-bar');
+      const krIndexBar = document.getElementById('hm-kr-index-bar');
+      const toolbar    = document.querySelector('.heatmap-toolbar');
+      if (_hmMarket === 'kr') {
+        if (usIndexBar) usIndexBar.style.display = 'none';
+        if (krIndexBar) krIndexBar.style.display = '';
+        if (toolbar)    toolbar.style.display    = 'none';
+        if (!_krHmStocks.length) {
+          document.getElementById('heatmap-container').innerHTML =
+            '<div style="text-align:center;padding:80px;color:var(--muted)">🇰🇷 국내주식 로딩 중…</div>';
+          _krHmStocks = await api('/api/kr-stocks');
+        }
+        renderKrHeatmap();
+      } else {
+        if (usIndexBar) usIndexBar.style.display = '';
+        if (krIndexBar) krIndexBar.style.display = 'none';
+        if (toolbar)    toolbar.style.display    = '';
+        renderHeatmap();
+      }
+    });
+  });
+
+  // KR 인덱스 탭 (전체 / KOSPI 200 / KOSDAQ 150)
+  document.querySelectorAll('.hm-kr-idx-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.hm-kr-idx-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _krHmFilter = btn.dataset.krindex;
+      renderKrHeatmap();
+    });
+  });
+
   renderHeatmap();
 
   // 인덱스 탭
@@ -76,7 +118,9 @@ async function initHeatmap() {
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(() => {
-      if (document.getElementById('view-heatmap').classList.contains('active')) renderHeatmap();
+      if (document.getElementById('view-heatmap').classList.contains('active')) {
+        if (_hmMarket === 'kr') renderKrHeatmap(); else renderHeatmap();
+      }
     }, 200);
   });
 }
@@ -446,4 +490,250 @@ function renderHeatmap() {
         .text(fmtPct(d.data.change_pct));
     }
   });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// KR 히트맵 (4-70) — 시장(KOSPI/KOSDAQ) → 업종 → 종목 3단계 트리맵
+// ══════════════════════════════════════════════════════════════════
+function renderKrHeatmap() {
+  const container = document.getElementById('heatmap-container');
+  container.innerHTML = '';
+
+  const W = container.clientWidth || window.innerWidth - 40;
+  const H = Math.max(window.innerHeight - 240, 480);
+
+  const allStocks = _krHmStocks.filter(s => s.market_cap > 0 && s.price > 0);
+  if (!allStocks.length) {
+    container.innerHTML = '<div style="text-align:center;padding:80px;color:var(--muted)">데이터 없음</div>';
+    return;
+  }
+
+  // 인덱스 필터 적용
+  let stocks;
+  if (_krHmFilter === 'kospi') {
+    stocks = allStocks.filter(s => s.market === 'KOSPI');
+  } else if (_krHmFilter === 'kosdaq') {
+    stocks = allStocks.filter(s => s.market === 'KOSDAQ');
+  } else if (_krHmFilter === 'kospi200') {
+    stocks = [...allStocks]
+      .filter(s => s.market === 'KOSPI')
+      .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
+      .slice(0, 200);
+  } else if (_krHmFilter === 'kosdaq150') {
+    stocks = [...allStocks]
+      .filter(s => s.market === 'KOSDAQ')
+      .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
+      .slice(0, 150);
+  } else {
+    stocks = allStocks;
+  }
+
+  const countEl = document.getElementById('hm-kr-count-label');
+  if (countEl) {
+    if (_krHmFilter === 'kospi') {
+      countEl.textContent = `KOSPI ${stocks.length}개`;
+    } else if (_krHmFilter === 'kosdaq') {
+      countEl.textContent = `KOSDAQ ${stocks.length}개`;
+    } else if (_krHmFilter === 'kospi200') {
+      countEl.textContent = `KOSPI 200 (시총 상위 ${stocks.length}개)`;
+    } else if (_krHmFilter === 'kosdaq150') {
+      countEl.textContent = `KOSDAQ 150 (시총 상위 ${stocks.length}개)`;
+    } else {
+      const kospi  = stocks.filter(s => s.market === 'KOSPI').length;
+      const kosdaq = stocks.filter(s => s.market === 'KOSDAQ').length;
+      countEl.textContent = `KOSPI ${kospi}개 · KOSDAQ ${kosdaq}개`;
+    }
+  }
+
+  // 시장 → 업종 → 종목 3단계 그룹화
+  const byMarket = {};
+  for (const s of stocks) {
+    const mkt = s.market || 'KOSPI';
+    const sec = s.sector || '기타';
+    if (!byMarket[mkt]) byMarket[mkt] = {};
+    if (!byMarket[mkt][sec]) byMarket[mkt][sec] = [];
+    byMarket[mkt][sec].push(s);
+  }
+
+  const root = d3.hierarchy({
+    name: 'root',
+    children: ['KOSPI', 'KOSDAQ'].filter(m => byMarket[m]).map(mkt => ({
+      name: mkt,
+      children: Object.entries(byMarket[mkt]).map(([sec, items]) => ({
+        name:   sec,
+        market: mkt,
+        children: items.map(s => ({
+          code:       s.code,
+          ticker:     s.ticker,
+          label:      s.name,
+          market:     s.market,
+          sector:     s.sector,
+          market_cap: s.market_cap,
+          change_pct: s.change_pct || 0,
+          price:      s.price,
+        })),
+      })),
+    })),
+  }).sum(d => d.market_cap || 0);
+
+  d3.treemap()
+    .size([W, H])
+    .paddingOuter(4)
+    .paddingTop(20)
+    .paddingInner(1)
+    (root);
+
+  const svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
+  const defs = svg.append('defs');
+  const tooltip = document.getElementById('heatmap-tooltip');
+
+  // ── 시장 레이어 (depth=1) KOSPI/KOSDAQ ──────────────────────────
+  (root.children || []).forEach(mkt => {
+    const mw = mkt.x1 - mkt.x0, mh = mkt.y1 - mkt.y0;
+    const mLeaves = mkt.leaves();
+    const mAvg = mLeaves.reduce((s, d) => s + (d.data.change_pct || 0), 0) / (mLeaves.length || 1);
+    const isKosdaq = mkt.data.name === 'KOSDAQ';
+
+    svg.append('rect')
+      .attr('x', mkt.x0).attr('y', mkt.y0)
+      .attr('width', mw).attr('height', mh)
+      .attr('fill', _avgFillKr(mAvg, 0.08))
+      .attr('stroke', isKosdaq ? 'rgba(251,191,36,.4)' : 'rgba(99,102,241,.4)')
+      .attr('stroke-width', 2)
+      .attr('rx', 4);
+
+    // 시장 레이블
+    svg.append('text')
+      .attr('x', mkt.x0 + 5).attr('y', mkt.y0 + 14)
+      .attr('fill', isKosdaq ? '#fbbf24' : '#818cf8')
+      .attr('font-size', '12px').attr('font-weight', '800')
+      .attr('pointer-events', 'none')
+      .text(mkt.data.name);
+  });
+
+  // ── 업종 레이어 (depth=2) ─────────────────────────────────────────
+  root.descendants().filter(d => d.depth === 2).forEach(sec => {
+    const sw = sec.x1 - sec.x0, sh = sec.y1 - sec.y0;
+    const sLeaves = sec.leaves();
+    const sAvg = sLeaves.reduce((s, d) => s + (d.data.change_pct || 0), 0) / (sLeaves.length || 1);
+
+    svg.append('rect')
+      .attr('x', sec.x0).attr('y', sec.y0)
+      .attr('width', sw).attr('height', sh)
+      .attr('fill', _avgFillKr(sAvg, 0.12))
+      .attr('rx', 2)
+      .on('mouseover', (e) => {
+        tooltip.style.display = 'block';
+        const pos = sLeaves.filter(d => (d.data.change_pct || 0) >= 0).length;
+        tooltip.innerHTML =
+          `<strong style="font-size:13px;color:#fff">${sec.data.name}</strong>
+           <span style="color:#6e7681;font-size:11px;margin-left:4px">${sec.data.market}</span><br>
+           <span style="color:${sAvg >= 0 ? '#4ade80' : '#f87171'};font-size:14px;font-weight:700">
+             ${sAvg >= 0 ? '+' : ''}${sAvg.toFixed(2)}%
+           </span>
+           <span style="color:#8b949e;font-size:11px;margin-left:6px">업종 평균</span><br>
+           <div style="font-size:11px;margin-top:4px">
+             <span style="color:#4ade80">▲ ${pos}개</span>&nbsp;
+             <span style="color:#f87171">▼ ${sLeaves.length - pos}개</span>
+           </div>`;
+      })
+      .on('mousemove', (e) => {
+        const pad = 12;
+        let x = e.clientX + pad, y = e.clientY + pad;
+        if (x + tooltip.offsetWidth  > window.innerWidth  - 8) x = e.clientX - tooltip.offsetWidth  - pad;
+        if (y + tooltip.offsetHeight > window.innerHeight - 8) y = e.clientY - tooltip.offsetHeight - pad;
+        tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
+      })
+      .on('mouseout', () => { tooltip.style.display = 'none'; });
+
+    if (sw > 50 && sh > 16) {
+      const distFromParent = sec.y0 - sec.parent.y0;
+      if (distFromParent >= 18) {
+        svg.append('text')
+          .attr('x', sec.x0 + 3).attr('y', sec.y0 + 12)
+          .attr('fill', 'rgba(255,255,255,.5)').attr('font-size', '9px').attr('font-weight', '600')
+          .attr('pointer-events', 'none')
+          .text(sec.data.name.length > 10 ? sec.data.name.slice(0, 9) + '…' : sec.data.name);
+      }
+    }
+  });
+
+  // ── 종목 셀 (depth=3 / leaves) ───────────────────────────────────
+  root.leaves().forEach(d => {
+    const cw = d.x1 - d.x0, ch = d.y1 - d.y0;
+    const clipId = 'krc_' + d.data.code;
+    defs.append('clipPath').attr('id', clipId)
+      .append('rect').attr('x', 1).attr('y', 1)
+      .attr('width', Math.max(0, cw - 2)).attr('height', Math.max(0, ch - 2));
+
+    const g = svg.append('g')
+      .attr('transform', `translate(${d.x0},${d.y0})`)
+      .attr('cursor', 'pointer')
+      .on('click', () => navigateToChart(d.data.ticker))
+      .on('mouseover', (e) => {
+        e.stopPropagation();
+        tooltip.style.display = 'block';
+        const pct = d.data.change_pct || 0;
+        tooltip.innerHTML =
+          `<strong style="font-size:14px">${d.data.label}</strong>
+           <span style="color:#8b949e;font-size:12px;margin-left:5px">${d.data.code}</span><br>
+           <span style="color:#6e7681;font-size:11px">${d.data.market} · ${d.data.sector || '—'}</span><br>
+           현재가: <strong>₩${Math.round(d.data.price).toLocaleString('ko-KR')}</strong>
+           <strong style="margin-left:6px;color:${pct >= 0 ? '#4ade80' : '#f87171'}">
+             ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%
+           </strong>`;
+      })
+      .on('mousemove', (e) => {
+        e.stopPropagation();
+        const pad = 12;
+        let x = e.clientX + pad, y = e.clientY + pad;
+        if (x + tooltip.offsetWidth  > window.innerWidth  - 8) x = e.clientX - tooltip.offsetWidth  - pad;
+        if (y + tooltip.offsetHeight > window.innerHeight - 8) y = e.clientY - tooltip.offsetHeight - pad;
+        tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
+      })
+      .on('mouseout', (e) => { e.stopPropagation(); tooltip.style.display = 'none'; });
+
+    g.append('rect')
+      .attr('width', cw).attr('height', ch)
+      .attr('fill', _colorScale(d.data.change_pct || 0))
+      .attr('stroke', '#0d1117').attr('stroke-width', 0.8);
+
+    if (cw > 20 && ch > 12) {
+      const fs = Math.max(7, Math.min(12, cw / 5));
+      const showPct = ch >= 28 && cw >= 26;
+      // 종목명 표시 (이름이 길면 앞 글자 자름)
+      const label = d.data.label || d.data.code;
+      const maxChars = Math.max(2, Math.floor(cw / (fs * 0.65)));
+      const displayName = label.length > maxChars ? label.slice(0, maxChars - 1) + '…' : label;
+
+      g.append('text')
+        .attr('x', cw / 2).attr('y', showPct ? ch / 2 - 7 : ch / 2 + 1)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+        .attr('fill', 'rgba(255,255,255,.95)')
+        .attr('font-size', fs + 'px').attr('font-weight', '700')
+        .attr('pointer-events', 'none')
+        .attr('clip-path', 'url(#' + clipId + ')')
+        .text(displayName);
+
+      if (showPct) {
+        const pct = d.data.change_pct || 0;
+        g.append('text')
+          .attr('x', cw / 2).attr('y', ch / 2 + 9)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('fill', 'rgba(255,255,255,.80)')
+          .attr('font-size', Math.max(7, fs - 1) + 'px')
+          .attr('pointer-events', 'none')
+          .attr('clip-path', 'url(#' + clipId + ')')
+          .text((pct >= 0 ? '+' : '') + pct.toFixed(2) + '%');
+      }
+    }
+  });
+}
+
+function _avgFillKr(avg, alpha) {
+  if (avg >=  0.5) return `rgba(22,163,74,${alpha})`;
+  if (avg >=  0.1) return `rgba(22,163,74,${alpha * 0.55})`;
+  if (avg <= -0.5) return `rgba(185,28,28,${alpha})`;
+  if (avg <= -0.1) return `rgba(185,28,28,${alpha * 0.55})`;
+  return `rgba(55,65,81,${alpha})`;
 }

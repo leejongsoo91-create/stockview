@@ -230,6 +230,12 @@
         <button class="sc-market-btn active" data-market="us">🇺🇸 US</button>
         <button class="sc-market-btn" data-market="kr">🇰🇷 KR</button>
       </div>
+      <!-- KR 시장 버튼 (KOSPI / KOSDAQ) — KR 모드에서만 표시 -->
+      <div class="sc-kr-mkt-bar" id="sc-kr-mkt-bar" style="display:none">
+        <button class="sc-kr-mkt-btn active" data-krmkt="all">전체</button>
+        <button class="sc-kr-mkt-btn" data-krmkt="KOSPI">KOSPI</button>
+        <button class="sc-kr-mkt-btn" data-krmkt="KOSDAQ">KOSDAQ</button>
+      </div>
 
       <div class="sc-view-tabs-row">
         <div class="sc-view-tabs">
@@ -255,14 +261,28 @@
 
     <!-- ─── HEATMAP ───────────────────────────────────────────────────── -->
     <div id="view-heatmap" class="view">
-      <!-- 인덱스 탭 -->
-      <div class="hm-index-bar">
+      <!-- 시장 탭 (US / KR) -->
+      <div class="hm-market-bar">
+        <button class="hm-mkt-btn active" data-hmmarket="us">🇺🇸 US</button>
+        <button class="hm-mkt-btn" data-hmmarket="kr">🇰🇷 KR</button>
+      </div>
+      <!-- 인덱스 탭 (US 전용) -->
+      <div class="hm-index-bar" id="hm-index-bar">
         <button class="hm-idx-btn active" data-index="all">All</button>
         <button class="hm-idx-btn" data-index="sp500">S&amp;P 500</button>
         <button class="hm-idx-btn" data-index="nasdaq100">Nasdaq 100</button>
         <button class="hm-idx-btn" data-index="dow30">Dow 30</button>
         <button class="hm-idx-btn" data-index="russell2000">Russell 2000</button>
         <span id="hm-count-label" class="hm-count-label"></span>
+      </div>
+      <!-- 인덱스 탭 (KR 전용) -->
+      <div class="hm-index-bar" id="hm-kr-index-bar" style="display:none">
+        <button class="hm-kr-idx-btn active" data-krindex="all">전체</button>
+        <button class="hm-kr-idx-btn" data-krindex="kospi">KOSPI</button>
+        <button class="hm-kr-idx-btn" data-krindex="kosdaq">KOSDAQ</button>
+        <button class="hm-kr-idx-btn" data-krindex="kospi200">KOSPI 200</button>
+        <button class="hm-kr-idx-btn" data-krindex="kosdaq150">KOSDAQ 150</button>
+        <span id="hm-kr-count-label" class="hm-count-label"></span>
       </div>
       <div class="heatmap-toolbar">
         <div class="heatmap-legend">
@@ -364,6 +384,7 @@
           <button class="ind-btn ind-ma60"   data-ind="ma60">MA 60</button>
           <button class="ind-btn ind-bb"     data-ind="bb">BB</button>
           <button class="ind-btn ind-rsi"    data-ind="rsi">RSI</button>
+          <button class="ind-btn ind-macd"   data-ind="macd">MACD</button>
           <button class="ind-btn ind-volma"  data-ind="volma">Vol MA</button>
         </div>
       </div>
@@ -399,6 +420,10 @@
             <div class="rsi-panel-label">RSI (14)</div>
             <div id="rsi-chart"></div>
           </div>
+          <div id="macd-panel" style="display:none">
+            <div class="rsi-panel-label">MACD (12, 26, 9)</div>
+            <div id="macd-chart"></div>
+          </div>
         </div>
         <aside class="chart-sidebar">
           <div id="stock-info-panel">
@@ -410,10 +435,11 @@
 
     <!-- ─── NEWS ──────────────────────────────────────────────────────── -->
     <div id="view-news" class="view">
-      <!-- 서브탭: News / Reports -->
+      <!-- 서브탭: News / Reports / 공시 -->
       <div class="news-subtab-bar">
         <button class="news-subtab active" data-subtab="news">📰 News</button>
         <button class="news-subtab" data-subtab="reports">📋 Reports</button>
+        <button class="news-subtab" data-subtab="disclosures">📢 공시</button>
       </div>
 
       <!-- News 패널 -->
@@ -441,6 +467,15 @@
           <button class="report-tag" data-rtype="Fed">🏦 Fed</button>
         </div>
         <div id="reports-list"></div>
+      </div>
+
+      <!-- 공시 패널 -->
+      <div id="disclosures-panel" style="display:none">
+        <div class="news-filter-bar">
+          <span style="color:var(--muted);font-size:11px">KRX KIND 오늘 공시 (자동 30분 갱신)</span>
+          <button id="disclosures-refresh-btn" style="margin-left:auto;background:var(--border);border:none;color:var(--fg);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px">새로고침</button>
+        </div>
+        <div id="disclosures-list"></div>
       </div>
     </div>
 

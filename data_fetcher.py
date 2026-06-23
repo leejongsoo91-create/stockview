@@ -890,6 +890,106 @@ def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25) -> list[dict
     return result
 
 
+# ── 국내주식 수급 동향 ────────────────────────────────────────────────────────
+def fetch_kr_investor(code: str) -> list[dict]:
+    """
+    네이버 금융 수급 동향: 외국인·기관 최근 5일 순매수(주) 반환.
+    URL: https://finance.naver.com/item/frgn.naver?code={code}
+    컬럼: 날짜 | 종가 | 전일비 | 등락률 | 거래량 | 외국인순매수 | 기관합계 | 외국인보유
+    """
+    try:
+        url = f"https://finance.naver.com/item/frgn.naver?code={code}"
+        resp = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": f"https://finance.naver.com/item/main.naver?code={code}",
+        }, timeout=8)
+        resp.encoding = "euc-kr"
+        html = resp.text
+
+        rows = []
+        for row_html in re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL):
+            cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
+            def clean(s):
+                s = re.sub(r'<[^>]+>', '', s).strip()
+                return s.replace(',', '').replace('+', '').replace('\xa0', '').replace('&nbsp;', '')
+            texts = [clean(c) for c in cells]
+            texts = [t for t in texts if t]
+            if not texts or not re.match(r'\d{4}\.\d{2}\.\d{2}', texts[0]):
+                continue
+            def to_int(s):
+                try:
+                    return int(s.replace(',', '').replace('+', '')) if s else 0
+                except ValueError:
+                    return 0
+            if len(texts) >= 7:
+                foreign     = to_int(texts[5])
+                institution = to_int(texts[6])
+                rows.append({
+                    "date":        texts[0],
+                    "foreign":     foreign,
+                    "institution": institution,
+                    "individual":  -(foreign + institution),  # 시장 제로섬 근사값
+                })
+            if len(rows) >= 5:
+                break
+
+        return rows
+    except Exception as e:
+        log.warning(f"KR investor fetch failed ({code}): {e}")
+        return []
+
+
+# ── 국내주식 공시 피드 (KRX KIND) ─────────────────────────────────────────────
+def fetch_kr_disclosures(page_size: int = 20) -> list[dict]:
+    """
+    KRX KIND 오늘 공시 목록 반환.
+    POST https://kind.krx.co.kr/disclosure/todaydisclosure.do
+    컬럼: 시간 | 회사명 | 공시제목 | 유형
+    """
+    url = "https://kind.krx.co.kr/disclosure/todaydisclosure.do"
+    hdrs = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://kind.krx.co.kr/",
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    body = (
+        f"method=searchTodayDisclosureSub&currentPageSize={page_size}"
+        "&pageIndex=1&orderMode=0&orderStat=D"
+        "&forward=todaydisclosure_sub&chose=S&todayFlag=Y&isuCd="
+    )
+    try:
+        resp = requests.post(url, headers=hdrs, data=body.encode("euc-kr"), timeout=10)
+        html = resp.content.decode("euc-kr", errors="replace")
+
+        results = []
+        for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.DOTALL):
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.DOTALL)
+            def _cl(s):
+                return re.sub(r"<[^>]+>", "", s).strip().replace("\xa0", "").replace("&nbsp;", "")
+            texts = [_cl(c) for c in cells]
+            texts = [t for t in texts if t]
+            if not texts or not re.match(r"\d{2}:\d{2}", texts[0]):
+                continue
+            artcl_m = re.search(r"artclId=(\w+)", row_html)
+            artcl_id = artcl_m.group(1) if artcl_m else ""
+            link = (
+                f"https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptNo={artcl_id}"
+                if artcl_id else "https://kind.krx.co.kr/"
+            )
+            results.append({
+                "time":    texts[0] if len(texts) > 0 else "",
+                "company": texts[1] if len(texts) > 1 else "",
+                "title":   texts[2] if len(texts) > 2 else "",
+                "type":    texts[3] if len(texts) > 3 else "",
+                "link":    link,
+            })
+        return results
+    except Exception as e:
+        log.warning(f"KR disclosures fetch failed: {e}")
+        return []
+
+
 def fetch_fear_greed() -> dict | None:
     """CNN Fear & Greed Index 현재값 반환. 실패 시 None."""
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"

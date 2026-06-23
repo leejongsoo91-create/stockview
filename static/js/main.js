@@ -498,10 +498,14 @@ function initNews() {
       document.querySelectorAll('.news-subtab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _activeSubtab = btn.dataset.subtab;
-      document.getElementById('news-panel').style.display    = _activeSubtab === 'news'    ? '' : 'none';
-      document.getElementById('reports-panel').style.display = _activeSubtab === 'reports' ? '' : 'none';
+      document.getElementById('news-panel').style.display         = _activeSubtab === 'news'         ? '' : 'none';
+      document.getElementById('reports-panel').style.display      = _activeSubtab === 'reports'      ? '' : 'none';
+      document.getElementById('disclosures-panel').style.display  = _activeSubtab === 'disclosures'  ? '' : 'none';
       if (_activeSubtab === 'reports' && _allReports.length === 0) {
         loadReports();
+      }
+      if (_activeSubtab === 'disclosures') {
+        loadDisclosures();
       }
     });
   });
@@ -543,6 +547,40 @@ function initNews() {
       renderReports(btn.dataset.rtype);
     });
   });
+
+  // 공시 새로고침 버튼
+  document.getElementById('disclosures-refresh-btn')?.addEventListener('click', () => {
+    loadDisclosures(true);
+  });
+}
+
+let _disclosuresLoaded = false;
+
+function loadDisclosures(force = false) {
+  if (_disclosuresLoaded && !force) return;
+  const el = document.getElementById('disclosures-list');
+  el.innerHTML = '<div style="color:var(--muted);padding:20px 0">Loading...</div>';
+  api('/api/kr-disclosures').then(data => {
+    _disclosuresLoaded = true;
+    renderDisclosures(data);
+  }).catch(() => {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">데이터를 불러올 수 없습니다.</div>';
+  });
+}
+
+function renderDisclosures(items) {
+  const el = document.getElementById('disclosures-list');
+  if (!items || !items.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">오늘 공시가 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.map(d => `
+    <div class="disclosure-card" onclick="window.open('${d.link}','_blank')">
+      <span class="disclosure-time">${d.time}</span>
+      <span class="disclosure-company">${d.company}</span>
+      <span class="disclosure-title">${d.title}</span>
+      <span class="disclosure-type">${d.type}</span>
+    </div>`).join('');
 }
 
 function loadReports() {

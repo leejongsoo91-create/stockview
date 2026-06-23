@@ -651,13 +651,77 @@ APScheduler>=3.10.4
 | 4-25 | Heatmap 섹터·업종 배경 색상 오버레이 — 평균 등락률 기반 반투명 초록/빨강 배경 상시 표시, hover 시 강조 + 상위 상승/하락 종목 목록 툴팁 | 2026-06-13 |
 | 4-26 | URL hash 탭 직접 진입 (`#screener`, `#heatmap` 등 URL로 탭 바로 열기) | 2026-06-13 |
 
-### Phase 4-27 이후 — 미구현 항목
+### Phase 4-27 ~ 4-63 — 완료 항목 (이전 세션)
 
-| 기능 | 설명 | 우선순위 |
-|------|------|---------|
-| FinBERT 감성 분석 | VADER → 금융 특화 BERT 모델 | 낮음 |
-| 재무제표 페이지 | yfinance financials 데이터 | 낮음 |
-| Russell 2000 정확한 구성종목 | 현재는 S&P500 외 나머지로 근사치 적용 | 낮음 |
+국내주식(KR) 기본 기능 추가, 스크리너 KR 탭, 차트 KR 지원 등 다수 완료.
+
+### Phase 4-64 — KR 기본 데이터 강화 (52W High/Low, PER, EPS) ✅ 완료 (2026-06-22)
+- [x] `scripts/fetch_kr_stocks.py` — 52W High/Low Yahoo Finance v8 range=1y 수집, PER Naver 시가총액 페이지 파싱
+- [x] `data_fetcher.py` — `_fetch_kr_price_one()` 52W/PER/EPS 필드 보존 및 갱신
+- [x] `static/js/chart.js` — `renderStockInfo()` KR 종목 ₩ 표기, fmtKrCap, 52W 한국 원화 표시
+- [x] `app.py` — `/api/stock/<ticker>` KR 종목 조회 폴백 추가
+
+### Phase 4-65 — KR 업종 분류 ✅ 완료 (2026-06-22)
+- [x] `scripts/fetch_kr_stocks.py` — Naver Finance 업종 목록(79개) 수집 → 업종별 종목 매핑 → 488개 전 종목 업종 필드 채움
+- [x] `static/js/screener.js` — KR 모드에서 `filter-sector` 드롭다운을 업종명으로 동적 채우기, `_populateKrSectorFilter()`, `_restoreUsSectorFilter()` 추가
+- [x] `static/js/screener.js` — `_getKrFiltered()` 업종 필터링 로직 추가 (KOSPI/KOSDAQ 시장 필터 + 업종명 필터 겸용)
+- [x] `static/js/screener.js` — `bindScreenerEvents()` guard 추가, KR/US 모드 이벤트 분기
+- [x] `data/kr_stocks.json` — 488개 종목 업종 필드 포함 재생성
+- 업종 분포: 반도체와반도체장비(61개), 기타(77개), 은행(26개), 제약(20개) 등 79개 업종
+
+### Phase 4-66 — KR 스크리너 멀티뷰 ✅ 완료 (2026-06-22)
+- [x] `static/js/screener.js` — `_initKrViewTabs()` 추가, Overview/Fundamental/Performance 3개 탭
+- [x] `static/js/screener.js` — `renderKrScreener()` colSets 3종 (overview/fundamental/performance) 지원
+- [x] `static/js/screener.js` — 탭별 컬럼 동적 전환 (No, 종목코드, 종목명, 시장, 업종, 현재가, 등락률, P/E, EPS, 52W, 시가총액 등)
+
+### Phase 4-67 — KR 종목 모달 ✅ 완료 (2026-06-22)
+- [x] `static/js/screener.js` — `openKrStockModal()` 추가, 기존 stock-modal HTML 재사용
+- [x] KRW 가격 표기, 업종 배지, 52W 한국어 라벨, KR 뉴스 연동
+- [x] `/api/kr-news/{code}` 호출로 모달 내 KR 뉴스 표시
+
+### Phase 4-68 — KR CSV 내보내기 ✅ 완료 (2026-06-22)
+- [x] `static/js/screener.js` — `exportKrCSV()` 추가
+- [x] KR 컬럼(종목코드, 종목명, 시장, 업종, 현재가, 등락률, 거래량, 시가총액, P/E, EPS, 52W고, 52W저)
+- [x] KR 모드에서 export 버튼 → `exportKrCSV()` 연결
+
+### Phase 4-69 — KR 차트 업종 배지 ✅ 완료 (2026-06-22)
+- [x] `static/js/chart.js` — `renderStockInfo()` 업종/Sector 라벨 KR 분기 처리
+- [x] `static/css/style.css` — `.info-sector-badge` 스타일 추가 (보라색 배지)
+- [x] KR 종목 차트 사이드바에 업종 배지 표시
+
+### Phase 4-70 — KR 히트맵 ✅ 완료 (2026-06-22)
+- [x] `templates/index.html` — 히트맵 탭 상단에 US/KR 시장 전환 버튼 추가
+- [x] `static/js/heatmap.js` — `_hmMarket` 변수, `.hm-mkt-btn` 이벤트 핸들러 추가
+- [x] `static/js/heatmap.js` — `renderKrHeatmap()` 2-레벨 트리맵 (업종→종목) 구현
+- [x] `static/js/heatmap.js` — 리사이즈 이벤트 KR 모드 분기 수정
+- [x] `static/css/style.css` — `.hm-market-bar`, `.hm-mkt-btn` 스타일 추가
+
+### Phase 4-71 — KR 종목별 뉴스 ✅ 완료 (2026-06-22)
+- [x] `app.py` — `/api/kr-news/<code>` 엔드포인트 추가 (Naver Finance EUC-KR 파싱)
+- [x] 네이버 금융 `news_news.naver?code=XXXXXX` AJAX 스크래핑, TTL 30분 캐시
+- [x] KR 모달에서 종목별 최신 뉴스 5건 표시
+
+### Phase 4-73 — RSI/MACD 기술적 지표 ✅ 완료 (2026-06-24)
+- [x] `static/js/chart.js` — MACD 지표 패널 추가 (EMA 12/26/9, 히스토그램 + MACD·Signal 라인)
+- [x] `templates/index.html` — MACD 버튼 + `#macd-panel` div 추가
+- [x] `static/css/style.css` — `#macd-panel` 스타일 공유
+
+### Phase 4-74 — KR 외인·기관 수급 동향 ✅ 완료 (2026-06-24)
+- [x] `data_fetcher.py` — `fetch_kr_investor()` (Naver frgn.naver EUC-KR 스크래핑)
+- [x] `app.py` — `/api/kr-investor/<code>` 엔드포인트 추가 (1시간 캐시)
+- [x] `static/js/chart.js` — `_loadKrInvestor()` 사이드바 수급 테이블 렌더링
+- [x] `static/css/style.css` — `.investor-table` 그리드 스타일 추가
+
+### Phase 4-75 — DART/KRX 공시 피드 ✅ 완료 (2026-06-24)
+- [x] `data_fetcher.py` — `fetch_kr_disclosures()` (KRX KIND POST EUC-KR 파싱)
+- [x] `app.py` — `/api/kr-disclosures` 엔드포인트 추가 (30분 캐시)
+- [x] `templates/index.html` — News 탭에 "📢 공시" 서브탭 + `#disclosures-panel` 추가
+- [x] `static/js/main.js` — `loadDisclosures()` / `renderDisclosures()` 렌더링 로직 추가
+- [x] `static/css/style.css` — `.disclosure-card` 그리드 스타일 추가
+
+### Phase 4-76 이후 — 예정 항목
+| FinBERT 감성 분석 | — | VADER → 금융 특화 BERT 모델 | 낮음 |
+| 재무제표 페이지 | — | financials 데이터 표시 | 낮음 |
 
 ---
 
@@ -691,4 +755,4 @@ python app.py
 | Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신 |
 | Earnings | ✅ | Nasdaq API, This Week/Next Week/Today, EPS 예상치·전년 비교 |
 
-*최종 수정: 2026-06-13*
+*최종 수정: 2026-06-22*

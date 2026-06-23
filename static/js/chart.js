@@ -19,6 +19,10 @@ let   _rsiChart   = null;
 let   _rsiSeries  = null;
 let   _rsiOb      = null;   // 과매수 기준선
 let   _rsiOs      = null;   // 과매도 기준선
+let   _macdChart  = null;
+let   _macdLine   = null;
+let   _macdSignal = null;
+let   _macdHist   = null;
 
 // ── 가격 알림 상태 ────────────────────────────────────────────────────────────
 const _ALERT_KEY = 'stockview_price_alerts';
@@ -298,6 +302,49 @@ function _calcBB(closes, period = 20, mult = 2) {
   return { upper, mid, lower };
 }
 
+function _calcEMA(closes, period) {
+  const k = 2 / (period + 1);
+  const ema = [];
+  let prev = null;
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) { ema.push(null); continue; }
+    if (i === period - 1) {
+      prev = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      ema.push(prev);
+    } else {
+      prev = closes[i] * k + prev * (1 - k);
+      ema.push(prev);
+    }
+  }
+  return ema;
+}
+
+function _calcMACD(closes, fast = 12, slow = 26, signal = 9) {
+  const ema12 = _calcEMA(closes, fast);
+  const ema26 = _calcEMA(closes, slow);
+  const macdVals = ema12.map((v, i) => v != null && ema26[i] != null ? v - ema26[i] : null);
+
+  // Signal = EMA(signal) of MACD line
+  const firstIdx = macdVals.findIndex(v => v != null);
+  const signalVals = new Array(macdVals.length).fill(null);
+  if (firstIdx === -1 || firstIdx + signal - 1 >= macdVals.length) {
+    return { macd: macdVals, signal: signalVals, hist: signalVals };
+  }
+  const sigK = 2 / (signal + 1);
+  let prevSig = macdVals.slice(firstIdx, firstIdx + signal).reduce((a, b) => a + b, 0) / signal;
+  signalVals[firstIdx + signal - 1] = prevSig;
+  for (let i = firstIdx + signal; i < macdVals.length; i++) {
+    if (macdVals[i] == null) { signalVals[i] = null; continue; }
+    prevSig = macdVals[i] * sigK + prevSig * (1 - sigK);
+    signalVals[i] = prevSig;
+  }
+
+  const hist = macdVals.map((v, i) =>
+    v != null && signalVals[i] != null ? v - signalVals[i] : null
+  );
+  return { macd: macdVals, signal: signalVals, hist };
+}
+
 function _calcRSI(closes, period = 14) {
   if (closes.length < period + 1) return [];
   const rsi = new Array(period).fill(null);
@@ -389,12 +436,28 @@ function _applyIndicators() {
     const rsiVals = _calcRSI(closes);
     const rsiData = rsiVals.map((v, i) => v != null ? { time: times[i], value: +v.toFixed(2) } : null).filter(Boolean);
     _rsiSeries.setData(rsiData);
-    // 기준선 데이터 업데이트
     const t0 = times[0], t1 = times[times.length - 1];
     _rsiOb.setData([{ time: t0, value: 70 }, { time: t1, value: 70 }]);
     _rsiOs.setData([{ time: t0, value: 30 }, { time: t1, value: 30 }]);
   } else {
     rsiPanel.style.display = 'none';
+  }
+
+  // MACD
+  const macdPanel = document.getElementById('macd-panel');
+  if (_activeInds.has('macd')) {
+    macdPanel.style.display = '';
+    if (!_macdChart) _createMACDChart();
+    const { macd, signal: sig, hist } = _calcMACD(closes);
+    const toD = (vals) => vals.map((v, i) => v != null ? { time: times[i], value: +v.toFixed(4) } : null).filter(Boolean);
+    _macdLine.setData(toD(macd));
+    _macdSignal.setData(toD(sig));
+    _macdHist.setData(hist.map((v, i) => v != null ? {
+      time: times[i], value: +v.toFixed(4),
+      color: v >= 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)',
+    } : null).filter(Boolean));
+  } else {
+    macdPanel.style.display = 'none';
   }
 }
 
@@ -414,6 +477,32 @@ function _createRSIChart() {
   _rsiSeries = _rsiChart.addLineSeries({ color: '#e3b341', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
   _rsiOb     = _rsiChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
   _rsiOs     = _rsiChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+}
+
+function _createMACDChart() {
+  const container = document.getElementById('macd-chart');
+  _macdChart = LightweightCharts.createChart(container, {
+    width:  container.clientWidth || 900,
+    height: 120,
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontSize: 11 },
+    grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.15, bottom: 0.15 } },
+    timeScale: { borderColor: '#30363d', timeVisible: true, fixLeftEdge: true, fixRightEdge: true },
+    handleScroll: false,
+    handleScale: false,
+  });
+  _macdHist   = _macdChart.addHistogramSeries({
+    color: 'rgba(63,185,80,0.7)', priceLineVisible: false, lastValueVisible: false,
+  });
+  _macdLine   = _macdChart.addLineSeries({
+    color: '#58a6ff', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,
+    crosshairMarkerVisible: false,
+  });
+  _macdSignal = _macdChart.addLineSeries({
+    color: '#ffa64d', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,
+    crosshairMarkerVisible: false,
+  });
 }
 
 // ── 지표 버튼 이벤트 ─────────────────────────────────────────────────────────
@@ -562,7 +651,8 @@ async function _loadCompareChart(ticker2) {
   // 캔들/볼륨 숨김
   _candleSeries.applyOptions({ visible: false });
   _volSeries.applyOptions({ visible: false });
-  document.getElementById('rsi-panel').style.display = 'none';
+  document.getElementById('rsi-panel').style.display  = 'none';
+  document.getElementById('macd-panel').style.display = 'none';
   document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = true; b.style.opacity = '.4'; });
 
   // 기존 비교 시리즈 제거
@@ -607,6 +697,10 @@ function _exitCompare() {
 
   _candleSeries.applyOptions({ visible: true });
   _volSeries.applyOptions({ visible: true });
+
+  // 활성 지표 패널 복원
+  if (_activeInds.has('rsi'))  document.getElementById('rsi-panel').style.display  = '';
+  if (_activeInds.has('macd')) document.getElementById('macd-panel').style.display = '';
 
   document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = false; b.style.opacity = ''; });
 
@@ -798,8 +892,8 @@ function renderStockInfo(s) {
       <span class="info-val">${epsStr}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Sector</span>
-      <span class="info-val" style="font-size:11.5px">${s.sector || '—'}</span>
+      <span class="info-label">${isKr ? '업종' : 'Sector'}</span>
+      <span class="info-val info-sector-badge" style="font-size:11px">${s.sector || '—'}</span>
     </div>
     <div class="info-section-title" style="margin-top:4px">52-Week Range</div>
     <div class="info-row">
@@ -817,7 +911,44 @@ function renderStockInfo(s) {
       </span>
     </div>
     <div id="stock-news-section"></div>
+    ${isKr ? '<div id="kr-investor-section"></div>' : ''}
   `;
+  if (isKr) _loadKrInvestor(s.ticker);
+}
+
+async function _loadKrInvestor(ticker) {
+  const section = document.getElementById('kr-investor-section');
+  if (!section) return;
+  const code = ticker.replace(/\.(KS|KQ)$/, '');
+  section.innerHTML = `<div class="info-section-title" style="margin-top:10px">수급 동향 (최근 5일)</div>
+    <div style="color:#8b949e;font-size:11px;padding:4px 0">Loading…</div>`;
+  try {
+    const rows = await api(`/api/kr-investor/${code}`);
+    if (!rows || !rows.length) {
+      section.innerHTML = `<div class="info-section-title" style="margin-top:10px">수급 동향</div>
+        <div style="color:#8b949e;font-size:11px;padding:4px 0">정보 없음</div>`;
+      return;
+    }
+    const fmtV = v => {
+      if (!v) return '<span style="color:#8b949e">—</span>';
+      const abs = Math.abs(v).toLocaleString('ko-KR');
+      return v >= 0
+        ? `<span class="up">+${abs}</span>`
+        : `<span class="down">-${abs}</span>`;
+    };
+    const header = `<div class="investor-row investor-header">
+      <span>날짜</span><span>개인</span><span>외인</span><span>기관</span>
+    </div>`;
+    const body = rows.map(r => `
+      <div class="investor-row">
+        <span class="investor-date">${r.date.slice(5)}</span>
+        ${fmtV(r.individual)}${fmtV(r.foreign)}${fmtV(r.institution)}
+      </div>`).join('');
+    section.innerHTML = `<div class="info-section-title" style="margin-top:10px">수급 동향 (최근 5일)</div>
+      <div class="investor-table">${header}${body}</div>`;
+  } catch {
+    section.innerHTML = '';
+  }
 }
 
 async function _loadStockNews(ticker) {

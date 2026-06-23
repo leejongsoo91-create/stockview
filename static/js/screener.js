@@ -14,6 +14,7 @@ let _scView         = 'overview';   // overview | fundamental | performance
 let _scPage         = 1;
 const _SC_PAGE_SIZE = 100;
 let _scMarket       = 'us';        // 'us' | 'kr'
+let _krMarket       = 'all';       // 'all' | 'KOSPI' | 'KOSDAQ'
 
 // ── 뷰별 컬럼 정의 (fixed: true = 항상 표시, 숨김 불가) ─────────────────────
 const _VIEWS = {
@@ -205,19 +206,30 @@ function initScreener() {
         _scMarket = btn.dataset.market;
         _scPage = 1;
         if (_scMarket === 'kr') {
+          _showKrMktBar();
           loadKrScreener(true);
         } else {
+          _hideKrMktBar();
           _showUsMode();
           loadScreenerData(true);
         }
       });
     });
+    document.querySelectorAll('.sc-kr-mkt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.sc-kr-mkt-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _krMarket = btn.dataset.krmkt;
+        _scPage = 1;
+        renderKrScreener();
+      });
+    });
   }
 
+  bindScreenerEvents();
   if (_scMarket === 'kr') {
     loadKrScreener(false);
   } else if (!_scStocks.length) {
-    bindScreenerEvents();
     loadScreenerData(true);
   } else {
     loadScreenerData(false);
@@ -563,18 +575,24 @@ function _bindColSettingsEvents() {
 
 // ── 이벤트 바인딩 ────────────────────────────────────────────────────────────
 function bindScreenerEvents() {
+  if (bindScreenerEvents._bound) return;
+  bindScreenerEvents._bound = true;
   _loadHiddenCols();
   _bindColSettingsEvents();
 
-  // 필터 변경
+  // 필터 변경 (US/KR 모드에 따라 분기)
   ['filter-sector','filter-industry','filter-country','filter-change',
    'filter-cap','filter-pe','filter-52w'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('change', () => renderScreener(true));
+    if (el) el.addEventListener('change', () => {
+      if (_scMarket === 'kr') renderKrScreener();
+      else renderScreener(true);
+    });
   });
 
-  // 섹터 변경 → 업종 필터 재구성
+  // 섹터 변경 → US 모드에서만 업종 필터 재구성
   document.getElementById('filter-sector').addEventListener('change', () => {
+    if (_scMarket === 'kr') return;
     const sector = document.getElementById('filter-sector').value;
     const sel = document.getElementById('filter-industry');
     if (!sel) return;
@@ -585,7 +603,10 @@ function bindScreenerEvents() {
     renderScreener();
   });
 
-  document.getElementById('filter-search').addEventListener('input', () => renderScreener(true));
+  document.getElementById('filter-search').addEventListener('input', () => {
+    if (_scMarket === 'kr') renderKrScreener();
+    else renderScreener(true);
+  });
 
   // 새로고침 버튼
   const btn = document.getElementById('sc-refresh-btn');
@@ -754,6 +775,7 @@ function exportScreenerCSV() {
 async function loadKrScreener(showSpinner = false) {
   if (_scLoading) return;
   _scLoading = true;
+  _showKrMktBar();
   const body = document.getElementById('screener-body');
   if (showSpinner && body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">🇰🇷 국내주식 로딩 중…</td></tr>';
   try {
@@ -761,6 +783,14 @@ async function loadKrScreener(showSpinner = false) {
     const url = '/api/kr-stocks' + (q ? `?q=${encodeURIComponent(q)}` : '');
     _krStocks = await api(url);
     window._krStocks = _krStocks;
+    _populateKrSectorFilter();
+    // KR 모드에서 CSV 버튼 연결
+    const exportBtn = document.getElementById('sc-export-btn');
+    if (exportBtn && !exportBtn._krBound) {
+      exportBtn._krBound = true;
+      exportBtn._origClick = exportBtn.onclick;
+    }
+    if (exportBtn) exportBtn.onclick = exportKrCSV;
     renderKrScreener();
   } catch (e) {
     if (body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--red)">데이터 로드 실패</td></tr>';
@@ -769,11 +799,57 @@ async function loadKrScreener(showSpinner = false) {
   }
 }
 
+function _populateKrSectorFilter() {
+  const sel = document.getElementById('filter-sector');
+  if (!sel) return;
+  const sectors = [...new Set(_krStocks.map(s => s.sector).filter(Boolean))].sort();
+  sel.innerHTML =
+    '<option value="all">전체 업종</option>' +
+    sectors.map(s => `<option value="${s}">${s}</option>`).join('');
+  const lbl = sel.closest('.filter-group')?.querySelector('label');
+  if (lbl) lbl.textContent = '업종';
+  // Industry, Country 숨기기
+  ['filter-industry', 'filter-country'].forEach(id => {
+    const el = document.getElementById(id)?.closest('.filter-group');
+    if (el) el.style.display = 'none';
+  });
+}
+
+function _restoreUsSectorFilter() {
+  const sel = document.getElementById('filter-sector');
+  if (!sel) return;
+  sel.innerHTML = `
+    <option value="all">All Sectors</option>
+    <option value="Technology">Technology</option>
+    <option value="Finance">Finance</option>
+    <option value="Healthcare">Healthcare</option>
+    <option value="Energy">Energy</option>
+    <option value="Consumer Disc.">Consumer Disc.</option>
+    <option value="Consumer Staples">Consumer Staples</option>
+    <option value="Industrial">Industrial</option>
+    <option value="Communication">Communication</option>
+    <option value="Real Estate">Real Estate</option>
+    <option value="Materials">Materials</option>
+    <option value="Utilities">Utilities</option>`;
+  const lbl = sel.closest('.filter-group')?.querySelector('label');
+  if (lbl) lbl.textContent = 'Sector';
+  ['filter-industry', 'filter-country'].forEach(id => {
+    const el = document.getElementById(id)?.closest('.filter-group');
+    if (el) el.style.display = '';
+  });
+}
+
 function _getKrFiltered() {
   let list = [..._krStocks];
-  // 마켓 필터 (KOSPI/KOSDAQ) — sector 필터 재활용
+  // 시장 버튼 필터 (전체 / KOSPI / KOSDAQ)
+  if (_krMarket !== 'all') {
+    list = list.filter(s => s.market === _krMarket);
+  }
+  // 업종 필터
   const sec = document.getElementById('filter-sector')?.value || 'all';
-  if (sec === 'KOSPI' || sec === 'KOSDAQ') list = list.filter(s => s.market === sec);
+  if (sec !== 'all') {
+    list = list.filter(s => s.sector === sec);
+  }
   // 등락률 필터
   const chg = document.getElementById('filter-change')?.value || 'all';
   if (chg === 'up')    list = list.filter(s => (s.change_pct || 0) > 0);
@@ -804,30 +880,95 @@ function _getKrFiltered() {
   return list;
 }
 
-function renderKrScreener() {
-  // 뷰탭 숨김 (KR 모드에선 단일 뷰)
-  document.querySelector('.sc-view-tabs-row').style.display = 'none';
+// ── KR 공통 포맷 헬퍼 ─────────────────────────────────────────────────────────
+const _fmtKrw  = v => v ? '₩' + Math.round(v).toLocaleString('ko-KR') : '—';
+const _fmtKrVol = v => v >= 1e8 ? (v/1e8).toFixed(1)+'억' : v >= 1e4 ? (v/1e4).toFixed(0)+'만' : v ? v.toLocaleString() : '—';
+const _fmtKrCap = v => v >= 1e12 ? (v/1e12).toFixed(1)+'조' : v >= 1e8 ? (v/1e8).toFixed(0)+'억' : '—';
+const _mktBadge = m => `<span class="sc-sector-badge badge-${m === 'KOSPI' ? 'technology' : 'finance'}">${m}</span>`;
+function _calc52wPosKr(s) {
+  const range = (s.week52_high || 0) - (s.week52_low || 0);
+  if (!range || !s.price) return null;
+  return Math.round(((s.price - s.week52_low) / range) * 100);
+}
 
-  const all    = _getKrFiltered();
-  const total  = all.length;
-  const start  = (_scPage - 1) * _SC_PAGE_SIZE;
-  const paged  = all.slice(start, start + _SC_PAGE_SIZE);
+// ── KR 뷰 탭 초기화 ───────────────────────────────────────────────────────────
+function _initKrViewTabs() {
+  const row = document.querySelector('.sc-view-tabs-row');
+  if (!row) return;
+  row.style.display = '';
+  // KR 뷰 탭 이벤트가 이미 등록된 경우 재등록 방지
+  if (!_initKrViewTabs._bound) {
+    _initKrViewTabs._bound = true;
+    document.querySelectorAll('.sc-view-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (_scMarket !== 'kr') return;
+        document.querySelectorAll('.sc-view-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _scView = btn.dataset.scview;
+        _scPage = 1;
+        renderKrScreener();
+      });
+    });
+  }
+  // 현재 활성 탭 동기화
+  document.querySelectorAll('.sc-view-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.scview === _scView);
+  });
+}
+
+function renderKrScreener() {
+  _initKrViewTabs();
+
+  const all   = _getKrFiltered();
+  const total = all.length;
+  const start = (_scPage - 1) * _SC_PAGE_SIZE;
+  const paged = all.slice(start, start + _SC_PAGE_SIZE);
 
   const head = document.getElementById('screener-head');
   const body = document.getElementById('screener-body');
   if (!head || !body) return;
 
-  const cols = [
-    { key: null,         label: '',          cls: '' },
-    { key: '_no',        label: 'No',        cls: 'sc-no' },
-    { key: 'code',       label: '종목코드',  cls: 'td-ticker' },
-    { key: 'name',       label: '종목명',    cls: 'td-name' },
-    { key: 'market',     label: '시장',      cls: '' },
-    { key: 'price',      label: '현재가',    cls: 'num' },
-    { key: 'change_pct', label: '등락률',    cls: 'num' },
-    { key: 'volume',     label: '거래량',    cls: 'num' },
-    { key: 'market_cap', label: '시가총액',  cls: 'num' },
-  ];
+  // 뷰별 컬럼 정의
+  const colSets = {
+    overview: [
+      { key: null,         label: '',         cls: '' },
+      { key: '_no',        label: 'No',       cls: 'sc-no' },
+      { key: 'code',       label: '종목코드', cls: 'td-ticker' },
+      { key: 'name',       label: '종목명',   cls: 'td-name' },
+      { key: 'market',     label: '시장',     cls: '' },
+      { key: 'sector',     label: '업종',     cls: 'td-name' },
+      { key: 'price',      label: '현재가',   cls: 'num' },
+      { key: 'change_pct', label: '등락률',   cls: 'num' },
+      { key: 'volume',     label: '거래량',   cls: 'num' },
+      { key: 'market_cap', label: '시가총액', cls: 'num' },
+    ],
+    fundamental: [
+      { key: null,         label: '',         cls: '' },
+      { key: '_no',        label: 'No',       cls: 'sc-no' },
+      { key: 'code',       label: '종목코드', cls: 'td-ticker' },
+      { key: 'name',       label: '종목명',   cls: 'td-name' },
+      { key: 'market',     label: '시장',     cls: '' },
+      { key: 'price',      label: '현재가',   cls: 'num' },
+      { key: 'pe',         label: 'P/E',      cls: 'num' },
+      { key: 'eps',        label: 'EPS',      cls: 'num' },
+      { key: 'week52_high',label: '52W 고',   cls: 'num' },
+      { key: 'week52_low', label: '52W 저',   cls: 'num' },
+      { key: 'market_cap', label: '시가총액', cls: 'num' },
+    ],
+    performance: [
+      { key: null,         label: '',         cls: '' },
+      { key: '_no',        label: 'No',       cls: 'sc-no' },
+      { key: 'code',       label: '종목코드', cls: 'td-ticker' },
+      { key: 'name',       label: '종목명',   cls: 'td-name' },
+      { key: 'market',     label: '시장',     cls: '' },
+      { key: 'price',      label: '현재가',   cls: 'num' },
+      { key: 'change_pct', label: '등락률',   cls: 'num' },
+      { key: '_52w_pos',   label: '52W 위치', cls: 'num' },
+      { key: 'volume',     label: '거래량',   cls: 'num' },
+      { key: 'market_cap', label: '시가총액', cls: 'num' },
+    ],
+  };
+  const cols = colSets[_scView] || colSets.overview;
 
   head.innerHTML = '<tr>' + cols.map(c => {
     if (!c.key) return '<th style="width:28px"></th>';
@@ -844,25 +985,31 @@ function renderKrScreener() {
     });
   });
 
-  const fmtKrw  = v => v ? '₩' + Math.round(v).toLocaleString('ko-KR') : '—';
-  const fmtVol  = v => v >= 1e8 ? (v/1e8).toFixed(1)+'억' : v >= 1e4 ? (v/1e4).toFixed(0)+'만' : v ? v.toLocaleString() : '—';
-  const fmtCap  = v => v >= 1e12 ? (v/1e12).toFixed(1)+'조' : v >= 1e8 ? (v/1e8).toFixed(0)+'억' : '—';
-  const mktBadge = m => `<span class="sc-sector-badge badge-${m === 'KOSPI' ? 'technology' : 'finance'}">${m}</span>`;
-
   body.innerHTML = paged.map((s, i) => {
-    const no  = start + i + 1;
-    const cls = s.change_pct > 0 ? 'pos' : s.change_pct < 0 ? 'neg' : '';
-    return `<tr style="cursor:pointer" onclick="navigateToChart('${s.ticker}')">
-      <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
-      <td class="sc-no">${no}</td>
-      <td class="td-ticker">${s.code}</td>
-      <td class="td-name">${s.name}</td>
-      <td>${mktBadge(s.market)}</td>
-      <td class="num">${fmtKrw(s.price)}</td>
-      <td class="num ${cls}">${s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>
-      <td class="num">${fmtVol(s.volume)}</td>
-      <td class="num">${fmtCap(s.market_cap)}</td>
-    </tr>`;
+    const no   = start + i + 1;
+    const cls  = (s.change_pct || 0) > 0 ? 'pos' : (s.change_pct || 0) < 0 ? 'neg' : '';
+    const pos52 = _calc52wPosKr(s);
+    const cells = cols.map(c => {
+      if (!c.key) return `<td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>`;
+      switch (c.key) {
+        case '_no':        return `<td class="sc-no">${no}</td>`;
+        case 'code':       return `<td class="td-ticker">${s.code}</td>`;
+        case 'name':       return `<td class="td-name">${s.name}</td>`;
+        case 'market':     return `<td>${_mktBadge(s.market)}</td>`;
+        case 'sector':     return `<td class="td-name" style="font-size:11px;color:var(--muted)">${s.sector || '—'}</td>`;
+        case 'price':      return `<td class="num">${_fmtKrw(s.price)}</td>`;
+        case 'change_pct': return `<td class="num ${cls}">${s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>`;
+        case 'volume':     return `<td class="num">${_fmtKrVol(s.volume)}</td>`;
+        case 'market_cap': return `<td class="num">${_fmtKrCap(s.market_cap)}</td>`;
+        case 'pe':         return `<td class="num">${s.pe ? s.pe.toFixed(1) : '—'}</td>`;
+        case 'eps':        return `<td class="num">${s.eps ? _fmtKrw(s.eps) : '—'}</td>`;
+        case 'week52_high':return `<td class="num up">${s.week52_high ? _fmtKrw(s.week52_high) : '—'}</td>`;
+        case 'week52_low': return `<td class="num down">${s.week52_low ? _fmtKrw(s.week52_low) : '—'}</td>`;
+        case '_52w_pos':   return `<td class="num">${pos52 !== null ? pos52 + '%' : '—'}</td>`;
+        default:           return `<td>—</td>`;
+      }
+    }).join('');
+    return `<tr style="cursor:pointer" onclick="openKrStockModal('${s.ticker}')">${cells}</tr>`;
   }).join('');
 
   const countEl = document.getElementById('filter-count-label');
@@ -870,7 +1017,123 @@ function renderKrScreener() {
   _renderPagination(total);
 }
 
+function _showKrMktBar() {
+  const bar = document.getElementById('sc-kr-mkt-bar');
+  if (bar) bar.style.display = '';
+}
+
+function _hideKrMktBar() {
+  const bar = document.getElementById('sc-kr-mkt-bar');
+  if (bar) bar.style.display = 'none';
+  _krMarket = 'all';
+  document.querySelectorAll('.sc-kr-mkt-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.krmkt === 'all');
+  });
+}
+
 function _showUsMode() {
   const row = document.querySelector('.sc-view-tabs-row');
   if (row) row.style.display = '';
+  _restoreUsSectorFilter();
+  const exportBtn = document.getElementById('sc-export-btn');
+  if (exportBtn) exportBtn.onclick = exportScreenerCSV;
+  const newsBtn = document.getElementById('sm-news-btn');
+  if (newsBtn) newsBtn.style.display = '';
+}
+
+// ── KR 종목 모달 (4-67) ──────────────────────────────────────────────────────
+function openKrStockModal(ticker) {
+  const s = _krStocks.find(x => x.ticker === ticker);
+  if (!s) { navigateToChart(ticker); return; }
+
+  const modal = document.getElementById('stock-modal');
+  if (!modal) { navigateToChart(ticker); return; }
+
+  const pct = s.change_pct ?? 0;
+  const cls = pct >= 0 ? 'up' : 'down';
+  document.getElementById('sm-ticker').textContent = s.code;
+  document.getElementById('sm-name').textContent   = s.name;
+  document.getElementById('sm-price').textContent  = s.price ? _fmtKrw(s.price) : '—';
+  const chgEl = document.getElementById('sm-change');
+  chgEl.textContent = s.price ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
+  chgEl.className   = 'sm-change ' + cls;
+
+  const pos = _calc52wPosKr(s);
+  const stats = [
+    { label: '업종',     value: s.sector || '—' },
+    { label: '시장',     value: s.market || '—' },
+    { label: '시가총액', value: s.market_cap ? _fmtKrCap(s.market_cap) : '—' },
+    { label: '거래량',   value: s.volume ? _fmtKrVol(s.volume) : '—' },
+    { label: 'P/E',      value: s.pe ? s.pe.toFixed(1) : '—' },
+    { label: 'EPS',      value: s.eps ? _fmtKrw(s.eps) : '—' },
+    { label: '52W 고',   value: s.week52_high ? _fmtKrw(s.week52_high) : '—' },
+    { label: '52W 저',   value: s.week52_low  ? _fmtKrw(s.week52_low)  : '—' },
+    { label: '52W 위치', value: pos !== null ? pos + '%' : '—' },
+  ];
+  document.getElementById('sm-stats').innerHTML = stats.map(st =>
+    `<div class="sm-stat"><span class="sm-stat-label">${st.label}</span><span class="sm-stat-value">${st.value}</span></div>`
+  ).join('');
+
+  document.getElementById('sm-star-wrap').innerHTML = starBtn(ticker);
+
+  const chartBtn = document.getElementById('sm-chart-btn');
+  chartBtn.onclick = () => { closeStockModal(); navigateToChart(ticker); };
+
+  const newsBtn = document.getElementById('sm-news-btn');
+  if (newsBtn) newsBtn.style.display = 'none';
+
+  document.onkeydown = e => { if (e.key === 'Escape') closeStockModal(); };
+  modal.style.display   = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  // KR 뉴스 로드
+  const newsEl = document.getElementById('sm-news');
+  newsEl.innerHTML = '<div class="sm-news-loading">뉴스 로딩 중…</div>';
+  api(`/api/kr-news/${s.code}`).then(items => {
+    const news = (items || []).slice(0, 4);
+    if (!news.length) { newsEl.innerHTML = '<div class="sm-news-empty">최근 뉴스가 없습니다.</div>'; return; }
+    newsEl.innerHTML = news.map(n =>
+      `<div class="sm-news-item" onclick="window.open('${n.url}','_blank')">
+        <span class="sm-news-dot">📰</span>
+        <div class="sm-news-body">
+          <div class="sm-news-title">${n.title}</div>
+          <div class="sm-news-meta">${n.source || ''} · ${n.time || ''}</div>
+        </div>
+      </div>`
+    ).join('');
+  }).catch(() => {
+    newsEl.innerHTML = '<div class="sm-news-empty">뉴스를 불러올 수 없습니다.</div>';
+  });
+}
+
+// ── KR CSV 내보내기 (4-68) ───────────────────────────────────────────────────
+function exportKrCSV() {
+  const list = _getKrFiltered();
+  if (!list.length) return;
+
+  const headers = ['No','종목코드','종목명','시장','업종','현재가(₩)','등락률(%)','거래량','시가총액(억)','P/E','EPS(₩)','52W고','52W저'];
+  const rows = list.map((s, i) => [
+    i + 1,
+    s.code,
+    `"${(s.name || '').replace(/"/g, '""')}"`,
+    s.market   || '',
+    `"${(s.sector || '').replace(/"/g, '""')}"`,
+    s.price       != null ? Math.round(s.price)      : '',
+    s.change_pct  != null ? s.change_pct.toFixed(2)  : '',
+    s.volume      != null ? s.volume                  : '',
+    s.market_cap  != null ? Math.round(s.market_cap / 1e8) : '',
+    s.pe          != null ? s.pe.toFixed(1)           : '',
+    s.eps         != null ? Math.round(s.eps)         : '',
+    s.week52_high != null ? Math.round(s.week52_high) : '',
+    s.week52_low  != null ? Math.round(s.week52_low)  : '',
+  ].join(','));
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `kr_screener_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

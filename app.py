@@ -574,6 +574,75 @@ def kr_stocks():
     return jsonify(data)
 
 
+@app.route("/api/kr-investor/<code>")
+def kr_investor(code: str):
+    """국내주식 수급 동향: 외국인·기관·개인 최근 5일 (Naver, 1시간 lazy 캐시)"""
+    import re as _re
+    code = _re.sub(r"[^0-9]", "", code)[:6]
+    if not code:
+        return jsonify([])
+    key = f"kr_investor_{code}"
+    cached = cache.get(key)
+    if cached is not None:
+        return jsonify(cached)
+    data = df.fetch_kr_investor(code)
+    cache.set(key, data, ttl=3600)
+    return jsonify(data)
+
+
+@app.route("/api/kr-disclosures")
+def kr_disclosures():
+    """KRX KIND 오늘 공시 목록 (30분 lazy 캐시)"""
+    key = "kr_disclosures"
+    cached = cache.get(key)
+    if cached is not None:
+        return jsonify(cached)
+    data = df.fetch_kr_disclosures(page_size=20)
+    cache.set(key, data, ttl=1800)
+    return jsonify(data)
+
+
+@app.route("/api/kr-news/<code>")
+def kr_news(code: str):
+    """국내주식 종목별 뉴스 (Naver Finance, 30분 lazy 캐시)"""
+    import re, html
+    code = re.sub(r"[^0-9]", "", code)[:6]
+    if not code:
+        return jsonify([])
+    key    = f"kr_news_{code}"
+    cached = cache.get(key)
+    if cached is not None:
+        return jsonify(cached)
+    try:
+        import requests as _req
+        hdrs = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.naver.com"}
+        url  = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1&sm=title_entity_id.basic&clusterId="
+        r    = _req.get(url, headers=hdrs, timeout=8)
+        content = r.content.decode("euc-kr", errors="replace")
+        # td.title + td.info + td.date 파싱
+        result = []
+        for row in re.findall(r'<tr[^>]*>(.*?)</tr>', content, re.DOTALL):
+            title_m = re.search(r'class=["\'\s]*title["\'\s]*>(.*?)</td>', row, re.DOTALL)
+            info_m  = re.search(r'class=["\'\s]*info["\'\s]*>(.*?)</td>',  row, re.DOTALL)
+            date_m  = re.search(r'class=["\'\s]*date["\'\s]*>(.*?)</td>',  row, re.DOTALL)
+            if not (title_m and info_m):
+                continue
+            title  = html.unescape(re.sub(r"<[^>]+>", "", title_m.group(1)).strip())
+            source = html.unescape(re.sub(r"<[^>]+>", "", info_m.group(1)).strip())
+            date   = re.sub(r"<[^>]+>", "", date_m.group(1)).strip() if date_m else ""
+            link_m = re.search(r'href=["\'](/item/news_read[^"\']+)', title_m.group(1))
+            raw_url = "https://finance.naver.com" + link_m.group(1) if link_m else ""
+            if title and len(title) > 5:
+                result.append({"title": title, "source": source, "time": date, "url": raw_url})
+            if len(result) >= 5:
+                break
+        cache.set(key, result, ttl=1800)
+        return jsonify(result)
+    except Exception as e:
+        log.warning(f"KR 뉴스 조회 실패 {code}: {e}")
+        return jsonify([])
+
+
 @app.route("/api/stock-news/<ticker>")
 def stock_news(ticker: str):
     """종목별 뉴스 (Finnhub company-news, 30분 lazy 캐시)"""

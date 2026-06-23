@@ -698,6 +698,31 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 }
 .sc-market-btn:not(.active):hover { border-color: var(--accent); color: var(--text); }
 .gs-kr-badge { font-size: 11px; margin-right: 3px; }
+
+/* KR 시장 버튼 (KOSPI / KOSDAQ) */
+.sc-kr-mkt-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.sc-kr-mkt-btn {
+  padding: 4px 18px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.sc-kr-mkt-btn.active {
+  background: #1a6fc4;
+  color: #fff;
+  border-color: #1a6fc4;
+}
+.sc-kr-mkt-btn:not(.active):hover { border-color: #1a6fc4; color: var(--text); }
+
 .sc-view-tabs-row {
   display: flex;
   align-items: center;
@@ -1082,6 +1107,48 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   min-width: 180px;
 }
 
+/* ── Heatmap 시장 탭 (US/KR) ────────────────────────────────────────────────── */
+.hm-market-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+.hm-mkt-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 5px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.hm-mkt-btn:hover { background: var(--bg-input); color: var(--text); }
+.hm-mkt-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+/* ── KR 수급 동향 테이블 ─────────────────────────────────────────────────────── */
+.investor-table { margin-top: 4px; font-size: 10px; }
+.investor-row   { display: grid; grid-template-columns: 54px 1fr 1fr 1fr; gap: 2px; padding: 2px 0; border-bottom: 1px solid var(--border); }
+.investor-header { color: var(--muted); font-weight: 600; font-size: 9px; }
+.investor-date  { color: var(--muted); }
+.investor-row span.up   { color: #3fb950; text-align: right; }
+.investor-row span.down { color: #f85149; text-align: right; }
+
+/* ── 차트 업종 배지 ──────────────────────────────────────────────────────────── */
+.info-sector-badge {
+  display: inline-block;
+  background: rgba(99,102,241,.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 100%;
+  word-break: keep-all;
+}
+
 /* ── Heatmap 인덱스 탭 ──────────────────────────────────────────────────────── */
 .hm-index-bar {
   display: flex;
@@ -1090,7 +1157,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   padding: 10px 0 6px;
   flex-wrap: wrap;
 }
-.hm-idx-btn {
+.hm-idx-btn,
+.hm-kr-idx-btn {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1101,13 +1169,20 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   cursor: pointer;
   transition: background .15s, color .15s, border-color .15s;
 }
-.hm-idx-btn:hover {
+.hm-idx-btn:hover,
+.hm-kr-idx-btn:hover {
   background: var(--bg-input);
   color: var(--text);
 }
 .hm-idx-btn.active {
   background: var(--accent);
   border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.hm-kr-idx-btn.active {
+  background: #1a6fc4;
+  border-color: #1a6fc4;
   color: #fff;
   font-weight: 600;
 }
@@ -1319,8 +1394,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .alert-del-btn:hover { color: #f85149; }
 .alert-empty { font-size: 12px; color: var(--muted); padding: 4px 0; }
 
-/* RSI 패널 */
-#rsi-panel { margin-top: 2px; position: relative; }
+/* RSI / MACD 패널 */
+#rsi-panel, #macd-panel { margin-top: 2px; position: relative; }
 .rsi-panel-label {
   position: absolute;
   top: 4px; left: 8px;
@@ -1711,6 +1786,25 @@ mark.kw-hl {
   border-radius: 2px;
   padding: 0 1px;
 }
+
+/* ── NEWS — 공시 피드 ───────────────────────────────────────────────────────── */
+#disclosures-list { display: flex; flex-direction: column; }
+.disclosure-card {
+  display: grid;
+  grid-template-columns: 44px 100px 1fr 80px;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background .12s;
+}
+.disclosure-card:hover { background: #21262d; }
+.disclosure-time   { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.disclosure-company { font-weight: 600; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.disclosure-title  { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disclosure-type   { color: var(--muted); font-size: 10px; text-align: right; white-space: nowrap; }
 
 /* ── WATCHLIST ─────────────────────────────────────────────────────────────── */
 .wl-nav-btn { color: #e3b341 !important; }

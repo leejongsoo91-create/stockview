@@ -112,7 +112,7 @@
 | 항목 | 내용 |
 |------|------|
 | 프로젝트명 | StockView |
-| 목표 | Finviz 스타일 미국 주식 시장 분석 웹앱 |
+| 목표 | Finviz 스타일 미국·국내 주식 시장 분석 웹앱 |
 | 실행 | `python app.py` → http://127.0.0.1:5001 |
 | 스택 | Flask + Vanilla JS + D3.js + Lightweight Charts |
 | 환경 | Python 3.15 알파 (pandas/numpy 설치 불가) |
@@ -122,23 +122,43 @@
 - **Phase 1** ✅ — Flask SPA, 5탭 구조 (Home/Screener/Heatmap/Chart/News)
 - **Phase 2** ✅ — fetch_stocks.py (S&P500 수집), screener_api.py (FastAPI 별도 서비스)
 - **Phase 3** ✅ — 실시간 데이터 연동 (cache.py, data_fetcher.py, 자동 새로고침)
+- **Phase 4-65** ✅ — 국내주식(KR) 업종 분류, 스크리너 업종 필터
 
 ## 핵심 파일 역할
 
-| 파일 | 역할 |
-|------|------|
-| `app.py` | Flask 서버, API 엔드포인트, APScheduler |
-| `cache.py` | Thread-Safe TTL 캐시 (stale-while-revalidate) |
-| `data_fetcher.py` | Yahoo Finance API 호출, RSS 뉴스, VADER 감성 분석 |
-| `templates/index.html` | SPA 단일 HTML 파일 |
-| `static/js/main.js` | 홈, 뷰 전환, 자동 새로고침 |
-| `static/js/screener.js` | 스크리너 탭 |
-| `static/js/heatmap.js` | D3.js 히트맵 |
-| `static/js/chart.js` | Lightweight Charts 캔들스틱 |
-| `scripts/fetch_stocks.py` | S&P500 전체 데이터 수집 (수동 실행, 서버와 무관) |
-| `scripts/collect_pe_eps.py` | PE/EPS 캐시 수집 (수동 실행, 서버와 무관) |
-| `scripts/screener_api.py` | FastAPI 고급 스크리너 (별도 서비스, pandas 필요) |
-| `data/pe_eps_cache.json` | PE/EPS 캐시 데이터 (app.py가 읽기 전용) |
+> **US = 미국주식 전용 / KR = 국내주식 포함 / 공통 = US+KR 공용**
+
+| 파일 | 구분 | 역할 |
+|------|------|------|
+| `app.py` | 공통 | Flask 서버, API 엔드포인트, APScheduler |
+| `cache.py` | 공통 | Thread-Safe TTL 캐시 (stale-while-revalidate) |
+| `data_fetcher.py` | 공통 | Yahoo Finance(US·KR) 가격, Nasdaq API, RSS 뉴스, VADER 감성 분석 |
+| `templates/index.html` | 공통 | SPA 단일 HTML 파일 (US·KR 탭 공용) |
+| `static/js/main.js` | 공통 | 홈, 뷰 전환, 자동 새로고침, WebSocket |
+| `static/js/screener.js` | **공통(US+KR)** | US 스크리너(상단) + KR 스크리너(하단 `// ══ 국내주식 ══` 구분선 이하) |
+| `static/js/heatmap.js` | US | D3.js 히트맵 (현재 US 전용) |
+| `static/js/chart.js` | **공통(US+KR)** | Lightweight Charts 캔들스틱 (`isKr` 분기로 KR 처리) |
+| `static/js/brief.js` | US | Market Brief 탭 |
+| `static/js/watchlist.js` | 공통 | 관심종목 (US·KR 모두 저장 가능) |
+| `static/js/portfolio.js` | 공통 | 포트폴리오 손익 계산 |
+| `static/js/earnings.js` | US | Earnings Calendar 탭 |
+| `static/css/style.css` | 공통 | 다크 테마 전체 스타일 |
+| `scripts/fetch_stocks.py` | US | S&P500 전체 데이터 수집 (수동 실행) |
+| `scripts/fetch_kr_stocks.py` | **KR** | KOSPI·KOSDAQ 488개 수집, 업종·52W·PER 포함 (수동 실행) |
+| `scripts/collect_pe_eps.py` | US | PE/EPS 캐시 수집 (수동 실행) |
+| `scripts/screener_api.py` | US | FastAPI 고급 스크리너 (별도 서비스, pandas 필요) |
+| `data/pe_eps_cache.json` | US | PE/EPS 캐시 (app.py 읽기 전용) |
+| `data/kr_stocks.json` | **KR** | 국내주식 기본 데이터 (fetch_kr_stocks.py가 생성, app.py 읽기 전용) |
+
+### KR 기능 수정 시 주요 파일
+
+| 작업 | 수정 파일 |
+|------|-----------|
+| 국내주식 데이터 재수집 | `scripts/fetch_kr_stocks.py` 실행 |
+| KR 가격 갱신 로직 | `data_fetcher.py` → `_fetch_kr_price_one()`, `fetch_kr_prices()` |
+| KR 스크리너 필터/렌더 | `static/js/screener.js` 하단 (`// ══ 국내주식 ══` 이하) |
+| KR 차트 정보 표시 | `static/js/chart.js` → `renderStockInfo()` 내 `isKr` 분기 |
+| KR API 엔드포인트 | `app.py` → `/api/kr-stocks`, `refresh_kr_stocks()` |
 
 ## 파일 위치 규칙
 
