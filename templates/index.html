@@ -385,6 +385,7 @@
           <button class="ind-btn ind-bb"     data-ind="bb">BB</button>
           <button class="ind-btn ind-rsi"    data-ind="rsi">RSI</button>
           <button class="ind-btn ind-macd"   data-ind="macd">MACD</button>
+          <button class="ind-btn ind-sto"    data-ind="sto">STO</button>
           <button class="ind-btn ind-volma"  data-ind="volma">Vol MA</button>
         </div>
       </div>
@@ -424,8 +425,13 @@
             <div class="rsi-panel-label">MACD (12, 26, 9)</div>
             <div id="macd-chart"></div>
           </div>
+          <div id="sto-panel" style="display:none">
+            <div class="rsi-panel-label">Stochastic (14, 3)</div>
+            <div id="sto-chart"></div>
+          </div>
         </div>
         <aside class="chart-sidebar">
+          <div id="signal-card" style="display:none"></div>
           <div id="stock-info-panel">
             <div class="info-placeholder">Select a ticker to view chart</div>
           </div>

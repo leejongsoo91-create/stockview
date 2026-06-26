@@ -13,8 +13,8 @@ let _candleTimer    = null;
 let _lastOhlcv      = [];
 
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
-const _activeInds = new Set();
-const _indSeries  = { ma5: null, ma20: null, ma60: null, bbU: null, bbM: null, bbL: null, volma: null };
+const _activeInds = new Set(['ma5','ma20','ma60','bb','rsi','macd','sto','volma']);
+const _indSeries  = { ma5: null, ma20: null, ma60: null, bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null };
 let   _rsiChart   = null;
 let   _rsiSeries  = null;
 let   _rsiOb      = null;   // 과매수 기준선
@@ -23,6 +23,11 @@ let   _macdChart  = null;
 let   _macdLine   = null;
 let   _macdSignal = null;
 let   _macdHist   = null;
+let   _stoChart   = null;
+let   _stoK       = null;   // %K 빠른선
+let   _stoD       = null;   // %D 시그널선
+let   _stoOb      = null;   // 과매수 80
+let   _stoOs      = null;   // 과매도 20
 
 // ── 가격 알림 상태 ────────────────────────────────────────────────────────────
 const _ALERT_KEY = 'stockview_price_alerts';
@@ -84,8 +89,8 @@ function stopChartTimers() {
 // ── LW 차트 생성 ─────────────────────────────────────────────────────────────
 function _createLWChart() {
   const container = document.getElementById('lw-chart');
-  const W = container.clientWidth  || 900;
-  const H = 500;
+  const W = container.clientWidth || 900;
+  const H = Math.max(window.innerHeight - (container.getBoundingClientRect().top || 280) - 24, 300);
 
   _lwChart = LightweightCharts.createChart(container, {
     width:  W,
@@ -125,6 +130,18 @@ function _createLWChart() {
     wickDownColor:   '#f85149',
   });
 
+  // BB 밴드 fill/mask — volSeries 보다 먼저 생성해야 볼륨 바가 마스크 위에 렌더됨
+  _indSeries.bbFill = _lwChart.addAreaSeries({
+    topColor: 'rgba(188,140,255,0.22)', bottomColor: 'rgba(188,140,255,0.22)',
+    lineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  _indSeries.bbMask = _lwChart.addAreaSeries({
+    topColor: '#161b22', bottomColor: '#161b22',
+    lineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+
   _volSeries = _lwChart.addHistogramSeries({
     priceFormat:  { type: 'volume' },
     priceScaleId: 'vol',
@@ -132,6 +149,25 @@ function _createLWChart() {
   _lwChart.priceScale('vol').applyOptions({
     scaleMargins: { top: 0.78, bottom: 0 },
     borderVisible: false,
+  });
+
+  // 서브 패널(RSI·MACD) 시간축 동기화
+  _lwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (!range) return;
+    if (_rsiChart)  _rsiChart.timeScale().setVisibleLogicalRange(range);
+    if (_macdChart) _macdChart.timeScale().setVisibleLogicalRange(range);
+  });
+
+  // 서브 패널 크로스헤어 동기화
+  _lwChart.subscribeCrosshairMove(param => {
+    if (!param.point) {
+      if (_rsiChart)  _rsiChart.clearCrosshairPosition();
+      if (_macdChart) _macdChart.clearCrosshairPosition();
+      return;
+    }
+    const x = param.point.x;
+    if (_rsiChart  && _rsiSeries)  _rsiChart.setCrosshairPosition(x, 50, _rsiSeries);
+    if (_macdChart && _macdLine)   _macdChart.setCrosshairPosition(x, 0,  _macdLine);
   });
 }
 
@@ -187,7 +223,12 @@ function _bindPeriodEvents() {
 function _bindResizeObserver() {
   const resizeObs = new ResizeObserver(entries => {
     for (const entry of entries) {
-      if (_lwChart) _lwChart.resize(entry.contentRect.width, entry.contentRect.height);
+      const w = entry.contentRect.width;
+      if (_rsiChart)  _rsiChart.resize(w, 105);
+      if (_macdChart) _macdChart.resize(w, 105);
+      if (_stoChart)  _stoChart.resize(w, 105);
+      // 메인 차트 높이는 _resizeChartPanels()가 관리
+      _resizeChartPanels();
     }
   });
   resizeObs.observe(document.getElementById('lw-chart'));
@@ -345,6 +386,32 @@ function _calcMACD(closes, fast = 12, slow = 26, signal = 9) {
   return { macd: macdVals, signal: signalVals, hist };
 }
 
+function _calcStochastic(ohlcv, period = 14, smoothD = 3) {
+  const len = ohlcv.length;
+  const rawK = new Array(len).fill(null);
+  for (let i = period - 1; i < len; i++) {
+    const slice  = ohlcv.slice(i - period + 1, i + 1);
+    const highest = Math.max(...slice.map(d => d.high));
+    const lowest  = Math.min(...slice.map(d => d.low));
+    rawK[i] = highest === lowest ? 50 : ((ohlcv[i].close - lowest) / (highest - lowest)) * 100;
+  }
+  const dVals = _calcMA(rawK, smoothD);   // %D = SMA(%K, 3)
+  return { k: rawK, d: dVals };
+}
+
+// line1이 line2를 돌파하는 시점 감지 → LW markers 배열 반환
+function _findCrossovers(line1, line2, times) {
+  const markers = [];
+  for (let i = 1; i < line1.length; i++) {
+    if (line1[i] == null || line2[i] == null || line1[i-1] == null || line2[i-1] == null) continue;
+    const crossUp   = line1[i-1] <= line2[i-1] && line1[i] > line2[i];
+    const crossDown = line1[i-1] >= line2[i-1] && line1[i] < line2[i];
+    if (crossUp)   markers.push({ time: times[i], position: 'belowBar', color: '#3fb950', shape: 'arrowUp',   size: 1 });
+    if (crossDown) markers.push({ time: times[i], position: 'aboveBar', color: '#f85149', shape: 'arrowDown', size: 1 });
+  }
+  return markers;
+}
+
 function _calcRSI(closes, period = 14) {
   if (closes.length < period + 1) return [];
   const rsi = new Array(period).fill(null);
@@ -406,13 +473,20 @@ function _applyIndicators() {
   // Bollinger Bands
   if (_activeInds.has('bb')) {
     const bb = _calcBB(closes);
-    _setLine('bbU', 'rgba(188,140,255,0.7)', 1);
-    _setLine('bbM', 'rgba(188,140,255,0.4)', 1);
-    _setLine('bbL', 'rgba(188,140,255,0.7)', 1);
+    // fill·mask는 _createLWChart()에서 이미 생성됨 — 데이터만 세팅
+    _indSeries.bbFill.setData(_toData(bb.upper));
+    _indSeries.bbMask.setData(_toData(bb.lower));
+    _setLine('bbU', 'rgba(188,140,255,0.85)', 1);
+    _setLine('bbM', 'rgba(188,140,255,0.45)', 1);
+    _setLine('bbL', 'rgba(188,140,255,0.85)', 1);
     _indSeries.bbU.setData(_toData(bb.upper));
     _indSeries.bbM.setData(_toData(bb.mid));
     _indSeries.bbL.setData(_toData(bb.lower));
-  } else { _rmLine('bbU'); _rmLine('bbM'); _rmLine('bbL'); }
+  } else {
+    _indSeries.bbFill.setData([]);
+    _indSeries.bbMask.setData([]);
+    _rmLine('bbU'); _rmLine('bbM'); _rmLine('bbL');
+  }
 
   // Volume MA (20일, vol 스케일에 오버레이)
   if (_activeInds.has('volma')) {
@@ -456,39 +530,349 @@ function _applyIndicators() {
       time: times[i], value: +v.toFixed(4),
       color: v >= 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)',
     } : null).filter(Boolean));
+    // MACD × Signal 크로스오버 마커
+    _macdLine.setMarkers(_findCrossovers(macd, sig, times));
   } else {
     macdPanel.style.display = 'none';
   }
+
+  // Stochastic
+  const stoPanel = document.getElementById('sto-panel');
+  if (_activeInds.has('sto')) {
+    stoPanel.style.display = '';
+    if (!_stoChart) _createSTOChart();
+    const { k, d } = _calcStochastic(_lastOhlcv);
+    const fixedScale = () => ({ priceRange: { minValue: 0, maxValue: 100 } });
+    const toS = (vals) => vals.map((v, i) => v != null ? { time: times[i], value: +v.toFixed(2) } : null).filter(Boolean);
+    _stoK.setData(toS(k));
+    _stoD.setData(toS(d));
+    const t0 = times[0], t1 = times[times.length - 1];
+    _stoOb.setData([{ time: t0, value: 80 }, { time: t1, value: 80 }]);
+    _stoOs.setData([{ time: t0, value: 20 }, { time: t1, value: 20 }]);
+    // %K × %D 크로스오버 마커
+    _stoK.setMarkers(_findCrossovers(k, d, times));
+  } else {
+    stoPanel.style.display = 'none';
+  }
+
+  _applySignalMarkers();
+  _renderSignalCard();
+  _resizeChartPanels();
+}
+
+// ── 복합 매수/매도 시그널 ────────────────────────────────────────────────────
+function _calcSignals() {
+  if (!_lastOhlcv.length) return null;
+  const closes = _lastOhlcv.map(d => d.close);
+  const times  = _lastOhlcv.map(d => d.time);
+  const n      = closes.length;
+  const sig    = new Array(n).fill(0);  // 각 시점 합산 점수
+
+  // MACD: 골든크로스→+1, 데드크로스는 MACD값이 음수일 때만 -1 (제로라인 필터)
+  if (_activeInds.has('macd')) {
+    const { macd, signal: msig } = _calcMACD(closes);
+    let state = 0;
+    for (let i = 1; i < n; i++) {
+      if (macd[i] == null || msig[i] == null) continue;
+      if (macd[i-1] != null && msig[i-1] != null) {
+        if (macd[i-1] <= msig[i-1] && macd[i] > msig[i]) state = 1;
+        else if (macd[i-1] >= msig[i-1] && macd[i] < msig[i])
+          state = macd[i] < 0 ? -1 : 0;  // 데드크로스 + MACD 음수만 매도
+      }
+      sig[i] += state;
+    }
+  }
+
+  // RSI: 과매도 탈출(30 상향) → +1 매수, 과매수 탈출(70 하향) → -1 매도
+  if (_activeInds.has('rsi')) {
+    const rsi = _calcRSI(closes);
+    let state = 0;
+    for (let i = 1; i < rsi.length; i++) {
+      if (rsi[i] == null || rsi[i-1] == null) continue;
+      if (rsi[i-1] < 30 && rsi[i] >= 30) state = 1;       // 과매도 탈출 → 매수
+      else if (rsi[i-1] >= 30 && rsi[i] < 30) state = -1; // 과매도 진입 → 하락 추세
+      else if (rsi[i-1] > 70 && rsi[i] <= 70) state = -1; // 과매수 탈출 → 매도 (핵심 수정)
+      else if (rsi[i-1] <= 70 && rsi[i] > 70) state = 1;  // 과매수 진입 → 강한 상승 모멘텀
+      sig[i] += state;
+    }
+  }
+
+  // STO: 과매도 존(이전봉 ≤30)에서 골든크로스 → +1, 과매수 존(이전봉 ≥70)에서 데드크로스 → -1
+  if (_activeInds.has('sto')) {
+    const { k, d } = _calcStochastic(_lastOhlcv);
+    let state = 0;
+    for (let i = 1; i < n; i++) {
+      if (k[i] == null || d[i] == null || k[i-1] == null || d[i-1] == null) continue;
+      const crossUp   = k[i-1] <= d[i-1] && k[i] > d[i];
+      const crossDown = k[i-1] >= d[i-1] && k[i] < d[i];
+      if (crossUp   && k[i-1] <= 30) state = 1;   // 과매도 존 골든크로스 → 매수
+      if (crossDown && k[i-1] >= 70) state = -1;  // 과매수 존 데드크로스 → 매도
+      sig[i] += state;
+    }
+  }
+
+  // ── MA50 추세 필터 ──────────────────────────────────────────────────────────
+  // 상승 추세(가격 > MA50): 매도 신호 무효화 / 하락 추세(가격 < MA50): 매수 신호 무효화
+  const ma50 = _calcMA(closes, 50);
+  for (let i = 0; i < n; i++) {
+    if (ma50[i] == null) continue;
+    if (closes[i] > ma50[i] && sig[i] < 0) sig[i] = 0;
+    if (closes[i] < ma50[i] && sig[i] > 0) sig[i] = 0;
+  }
+
+  // ── BB %B 필터 ──────────────────────────────────────────────────────────────
+  // 매수(sig≥2): 가격이 BB 하단 35% 이하일 때만 유효 (과매도 구간 확인)
+  // 매도(sig≤-2): 가격이 BB 상단 65% 이상일 때만 유효 (과매수 구간 확인)
+  const { upper: _bbU, lower: _bbL } = _calcBB(closes, 20, 2);
+  for (let i = 0; i < n; i++) {
+    const bw = _bbU[i] != null ? _bbU[i] - _bbL[i] : null;
+    if (bw == null || bw === 0) continue;
+    const pb = (closes[i] - _bbL[i]) / bw;
+    if (sig[i] >= 2  && pb >= 0.35) sig[i] = 0;  // 매수인데 하단 근처 아님 → 차단
+    if (sig[i] <= -2 && pb <= 0.65) sig[i] = 0;  // 매도인데 상단 근처 아님 → 차단
+  }
+
+  const activeCount = (_activeInds.has('macd') ? 1 : 0) +
+                      (_activeInds.has('rsi')  ? 1 : 0) +
+                      (_activeInds.has('sto')  ? 1 : 0);
+  const lastMa50  = ma50[n - 1];
+  const lastClose = closes[n - 1];
+  const trend = lastMa50 == null ? 'neutral'
+              : lastClose > lastMa50 ? 'up' : 'down';
+
+  return { sig, times, activeCount, trend };
+}
+
+function _applySignalMarkers() {
+  if (!_candleSeries || !_lastOhlcv.length) return;
+  const result = _calcSignals();
+  if (!result || result.activeCount === 0) { _candleSeries.setMarkers([]); return; }
+
+  const { sig, times, activeCount } = result;
+  const threshold = activeCount >= 3 ? 2 : 1;  // 3지표면 2개 이상, 1~2지표면 1개 이상
+  const markers   = [];
+  let   prevScore = 0;
+
+  for (let i = 1; i < sig.length; i++) {
+    const s = sig[i];
+    if (s === prevScore) continue;  // 점수 변화 없으면 skip
+    prevScore = s;
+    if (s >= threshold) {
+      markers.push({
+        time: times[i], position: 'belowBar',
+        color: s >= 3 ? '#3fb950' : '#58a6ff',
+        shape: 'arrowUp', size: s >= 3 ? 2 : 1,
+        text: s >= 3 ? 'BUY' : 'buy',
+      });
+    } else if (s <= -threshold) {
+      markers.push({
+        time: times[i], position: 'aboveBar',
+        color: s <= -3 ? '#f85149' : '#ffa64d',
+        shape: 'arrowDown', size: s <= -3 ? 2 : 1,
+        text: s <= -3 ? 'SELL' : 'sell',
+      });
+    }
+  }
+  _candleSeries.setMarkers(markers);
+}
+
+function _renderSignalCard() {
+  const card = document.getElementById('signal-card');
+  if (!card) return;
+
+  const activeCount = (_activeInds.has('macd') ? 1 : 0) +
+                      (_activeInds.has('rsi')  ? 1 : 0) +
+                      (_activeInds.has('sto')  ? 1 : 0);
+  if (activeCount === 0 || !_lastOhlcv.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+
+  const closes = _lastOhlcv.map(d => d.close);
+  const n      = closes.length;
+  const rows   = [];
+  let   total  = 0;
+
+  // MACD 최신 상태 (제로라인 필터)
+  if (_activeInds.has('macd')) {
+    const { macd, signal: msig } = _calcMACD(closes);
+    let s = 0;
+    for (let i = 1; i < n; i++) {
+      if (macd[i] == null || msig[i] == null || macd[i-1] == null || msig[i-1] == null) continue;
+      if (macd[i-1] <= msig[i-1] && macd[i] > msig[i]) s = 1;
+      else if (macd[i-1] >= msig[i-1] && macd[i] < msig[i])
+        s = macd[i] < 0 ? -1 : 0;
+    }
+    total += s;
+    const val = macd[n-1] != null ? macd[n-1].toFixed(3) : '—';
+    rows.push({ label: 'MACD', score: s, detail: val });
+  }
+
+  // RSI 최신 상태
+  if (_activeInds.has('rsi')) {
+    const rsi = _calcRSI(closes);
+    let s = 0;
+    for (let i = 1; i < rsi.length; i++) {
+      if (rsi[i] == null || rsi[i-1] == null) continue;
+      if (rsi[i-1] < 30 && rsi[i] >= 30) s = 1;
+      else if (rsi[i-1] >= 30 && rsi[i] < 30) s = -1;
+      else if (rsi[i-1] > 70 && rsi[i] <= 70) s = -1;
+      else if (rsi[i-1] <= 70 && rsi[i] > 70) s = 1;
+    }
+    total += s;
+    const last = rsi[rsi.length - 1];
+    const val  = last != null ? last.toFixed(1) : '—';
+    rows.push({ label: 'RSI', score: s, detail: val });
+  }
+
+  // STO 최신 상태
+  if (_activeInds.has('sto')) {
+    const { k, d } = _calcStochastic(_lastOhlcv);
+    let s = 0;
+    for (let i = 1; i < n; i++) {
+      if (k[i] == null || d[i] == null || k[i-1] == null || d[i-1] == null) continue;
+      if (k[i-1] <= d[i-1] && k[i] > d[i] && k[i-1] <= 30) s = 1;
+      if (k[i-1] >= d[i-1] && k[i] < d[i] && k[i-1] >= 70) s = -1;
+    }
+    total += s;
+    const last = k[k.length - 1];
+    const val  = last != null ? last.toFixed(1) : '—';
+    rows.push({ label: 'STO', score: s, detail: val });
+  }
+
+  // MA50 추세 방향 계산
+  const ma50arr   = _calcMA(closes, 50);
+  const lastMa50  = ma50arr[n - 1];
+  const lastClose = closes[n - 1];
+  const trendUp   = lastMa50 != null && lastClose > lastMa50;
+  const trendDown = lastMa50 != null && lastClose < lastMa50;
+
+  // MA50 필터: 추세 반대 신호 무효화
+  const filteredByMA50 = lastMa50 == null ? total
+    : (trendUp && total < 0) ? 0
+    : (trendDown && total > 0) ? 0
+    : total;
+
+  // BB %B 계산 및 필터
+  const { upper: _bbU2, lower: _bbL2 } = _calcBB(closes, 20, 2);
+  const lastBbU = _bbU2[n - 1]; const lastBbL = _bbL2[n - 1];
+  const lastBw  = (lastBbU != null) ? lastBbU - lastBbL : null;
+  const lastPb  = (lastBw != null && lastBw > 0) ? (lastClose - lastBbL) / lastBw : null;
+  const filteredTotal = (lastPb == null) ? filteredByMA50
+    : (filteredByMA50 >= 2  && lastPb >= 0.35) ? 0
+    : (filteredByMA50 <= -2 && lastPb <= 0.65) ? 0
+    : filteredByMA50;
+
+  const scoreColor = filteredTotal > 0 ? '#3fb950' : filteredTotal < 0 ? '#f85149' : '#8b949e';
+  const scoreLabel = filteredTotal >= 3 ? 'STRONG BUY'  : filteredTotal === 2  ? 'BUY'
+                   : filteredTotal <= -3 ? 'STRONG SELL' : filteredTotal === -2 ? 'SELL'
+                   : filteredTotal === 1 ? 'Weak Buy'    : filteredTotal === -1 ? 'Weak Sell' : 'Neutral';
+
+  const trendColor = trendUp ? '#3fb950' : trendDown ? '#f85149' : '#8b949e';
+  const trendLabel = trendUp ? '▲ 상승 추세' : trendDown ? '▼ 하락 추세' : '— 중립';
+  const ma50Val    = lastMa50 != null ? lastMa50.toFixed(2) : '—';
+  const trendRow   = `<div class="sc-row sc-trend-row">
+    <span class="sc-label">MA50</span>
+    <span class="sc-val">${ma50Val}</span>
+    <span class="sc-sig" style="color:${trendColor}">${trendLabel}</span>
+  </div>`;
+
+  // BB %B 행
+  const pbPct = lastPb != null ? `${(lastPb * 100).toFixed(0)}%` : '—';
+  const bbBlocked = lastPb != null && (
+    (filteredByMA50 >= 2  && lastPb >= 0.35) ||
+    (filteredByMA50 <= -2 && lastPb <= 0.65)
+  );
+  const pbColor = bbBlocked ? '#ffa64d'
+    : lastPb == null   ? '#8b949e'
+    : lastPb < 0.20    ? '#3fb950'
+    : lastPb < 0.35    ? '#58a6ff'
+    : lastPb > 0.80    ? '#f85149'
+    : lastPb > 0.65    ? '#ffa64d'
+    : '#8b949e';
+  const pbLabel = bbBlocked       ? '⚡ 신호 차단'
+    : lastPb == null   ? '—'
+    : lastPb < 0.20    ? '하단권 (강한 반등)'
+    : lastPb < 0.35    ? '하단 근처'
+    : lastPb > 0.80    ? '상단권 (강한 조정)'
+    : lastPb > 0.65    ? '상단 근처'
+    : '중립 구간';
+  const bbRow = `<div class="sc-row">
+    <span class="sc-label">%B</span>
+    <span class="sc-val">${pbPct}</span>
+    <span class="sc-sig" style="color:${pbColor}">${pbLabel}</span>
+  </div>`;
+
+  const rowsHtml = rows.map(r => {
+    // 추세 반대 신호는 회색으로 표시 (필터됨)
+    const filtered = (trendUp && r.score < 0) || (trendDown && r.score > 0);
+    const ic = filtered ? '#444c56'
+             : r.score > 0 ? '#3fb950' : r.score < 0 ? '#f85149' : '#8b949e';
+    const il = filtered
+             ? (r.score > 0 ? '▲ 매수 (필터)' : '▼ 매도 (필터)')
+             : r.score > 0 ? '▲ 매수' : r.score < 0 ? '▼ 매도' : '— 중립';
+    return `<div class="sc-row">
+      <span class="sc-label">${r.label}</span>
+      <span class="sc-val">${r.detail}</span>
+      <span class="sc-sig" style="color:${ic}">${il}</span>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="sc-title">SIGNAL</div>
+    <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
+    <div class="sc-score-num" style="color:${scoreColor}">${filteredTotal > 0 ? '+' : ''}${filteredTotal} / ${activeCount}</div>
+    <div class="sc-divider"></div>
+    ${trendRow}
+    ${bbRow}
+    <div class="sc-divider"></div>
+    ${rowsHtml}`;
+}
+
+// 서브 패널 수에 따라 메인 차트 높이 동적 조절 (뷰포트 기반)
+function _resizeChartPanels() {
+  const PANEL_H   = 105;
+  const PANEL_GAP = 2;
+  const count   = (_activeInds.has('rsi') ? 1 : 0) + (_activeInds.has('macd') ? 1 : 0) + (_activeInds.has('sto') ? 1 : 0);
+  const el      = document.getElementById('lw-chart');
+  const topY    = el.getBoundingClientRect().top || 280;
+  const TOTAL_H = Math.max(window.innerHeight - topY - 24, 300);
+  const mainH   = Math.max(TOTAL_H - count * (PANEL_H + PANEL_GAP), 200);
+  const w       = el.clientWidth || 900;
+  if (_lwChart) _lwChart.resize(w, mainH);
 }
 
 function _createRSIChart() {
   const container = document.getElementById('rsi-chart');
   _rsiChart = LightweightCharts.createChart(container, {
     width:  container.clientWidth || 900,
-    height: 120,
+    height: 105,
     layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontSize: 11 },
     grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.1, bottom: 0.1 } },
-    timeScale: { borderColor: '#30363d', timeVisible: true, fixLeftEdge: true, fixRightEdge: true },
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
     handleScroll: false,
     handleScale: false,
   });
-  _rsiSeries = _rsiChart.addLineSeries({ color: '#e3b341', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
-  _rsiOb     = _rsiChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-  _rsiOs     = _rsiChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  // y축 0~100 고정을 위해 모든 RSI 시리즈에 autoscaleInfoProvider 적용
+  const _fixedRsiScale = () => ({ priceRange: { minValue: 0, maxValue: 100 } });
+  _rsiSeries = _rsiChart.addLineSeries({ color: '#e3b341', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, autoscaleInfoProvider: _fixedRsiScale });
+  _rsiOb     = _rsiChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: _fixedRsiScale });
+  _rsiOs     = _rsiChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: _fixedRsiScale });
 }
 
 function _createMACDChart() {
   const container = document.getElementById('macd-chart');
   _macdChart = LightweightCharts.createChart(container, {
     width:  container.clientWidth || 900,
-    height: 120,
+    height: 105,
     layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontSize: 11 },
     grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.15, bottom: 0.15 } },
-    timeScale: { borderColor: '#30363d', timeVisible: true, fixLeftEdge: true, fixRightEdge: true },
+    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
     handleScroll: false,
     handleScale: false,
   });
@@ -505,9 +889,39 @@ function _createMACDChart() {
   });
 }
 
+function _createSTOChart() {
+  const container = document.getElementById('sto-chart');
+  _stoChart = LightweightCharts.createChart(container, {
+    width:  container.clientWidth || 900,
+    height: 105,
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontSize: 11 },
+    grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.05, bottom: 0.05 } },
+    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
+    handleScroll: false,
+    handleScale: false,
+  });
+  const fixedScale = () => ({ priceRange: { minValue: 0, maxValue: 100 } });
+  _stoK  = _stoChart.addLineSeries({ color: '#c9d1d9', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,  autoscaleInfoProvider: fixedScale });
+  _stoD  = _stoChart.addLineSeries({ color: '#ffa64d', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,  autoscaleInfoProvider: fixedScale });
+  _stoOb = _stoChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: fixedScale });
+  _stoOs = _stoChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: fixedScale });
+  // 메인 차트와 시간축·크로스헤어 동기화
+  _lwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (range && _stoChart) _stoChart.timeScale().setVisibleLogicalRange(range);
+  });
+  _lwChart.subscribeCrosshairMove(param => {
+    if (!param.point) { if (_stoChart) _stoChart.clearCrosshairPosition(); return; }
+    if (_stoChart && _stoK) _stoChart.setCrosshairPosition(param.point.x, 50, _stoK);
+  });
+}
+
 // ── 지표 버튼 이벤트 ─────────────────────────────────────────────────────────
 function _bindIndicatorEvents() {
   document.querySelectorAll('.ind-btn').forEach(btn => {
+    // 초기 상태: _activeInds에 있으면 버튼 active 표시
+    if (_activeInds.has(btn.dataset.ind)) btn.classList.add('active');
     btn.addEventListener('click', () => {
       const ind = btn.dataset.ind;
       if (_activeInds.has(ind)) {
@@ -653,6 +1067,7 @@ async function _loadCompareChart(ticker2) {
   _volSeries.applyOptions({ visible: false });
   document.getElementById('rsi-panel').style.display  = 'none';
   document.getElementById('macd-panel').style.display = 'none';
+  document.getElementById('sto-panel').style.display  = 'none';
   document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = true; b.style.opacity = '.4'; });
 
   // 기존 비교 시리즈 제거
@@ -701,6 +1116,7 @@ function _exitCompare() {
   // 활성 지표 패널 복원
   if (_activeInds.has('rsi'))  document.getElementById('rsi-panel').style.display  = '';
   if (_activeInds.has('macd')) document.getElementById('macd-panel').style.display = '';
+  if (_activeInds.has('sto'))  document.getElementById('sto-panel').style.display  = '';
 
   document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = false; b.style.opacity = ''; });
 
