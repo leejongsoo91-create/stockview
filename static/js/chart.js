@@ -343,6 +343,44 @@ function _calcBB(closes, period = 20, mult = 2) {
   return { upper, mid, lower };
 }
 
+// ── RSI 다이버전스 탐지 ────────────────────────────────────────────────────────
+// 강세 다이버전스: 가격 저점↓ + RSI 저점↑ → 하락 모멘텀 약화 → +1
+// 약세 다이버전스: 가격 고점↑ + RSI 고점↓ → 상승 모멘텀 약화 → -1
+function _calcRSIDivergence(closes, order = 5) {
+  const rsi    = _calcRSI(closes);
+  const n      = closes.length;
+  const divSig = new Array(n).fill(0);
+  const pivotLows = [], pivotHighs = [];
+
+  for (let i = order; i < n - order; i++) {
+    if (rsi[i] == null) continue;
+    let isLow = true, isHigh = true;
+    for (let j = i - order; j <= i + order; j++) {
+      if (j === i) continue;
+      if (closes[j] <= closes[i]) isLow  = false;
+      if (closes[j] >= closes[i]) isHigh = false;
+    }
+    if (isLow)  pivotLows.push(i);
+    if (isHigh) pivotHighs.push(i);
+  }
+
+  for (let k = 1; k < pivotLows.length; k++) {
+    const [i1, i2] = [pivotLows[k-1], pivotLows[k]];
+    const gap = i2 - i1;
+    if (gap < 5 || gap > 60) continue;
+    if (closes[i2] < closes[i1] && rsi[i2] > rsi[i1]) divSig[i2] = 1;
+  }
+
+  for (let k = 1; k < pivotHighs.length; k++) {
+    const [i1, i2] = [pivotHighs[k-1], pivotHighs[k]];
+    const gap = i2 - i1;
+    if (gap < 5 || gap > 60) continue;
+    if (closes[i2] > closes[i1] && rsi[i2] < rsi[i1]) divSig[i2] = -1;
+  }
+
+  return divSig;
+}
+
 function _calcEMA(closes, period) {
   const k = 2 / (period + 1);
   const ema = [];
@@ -611,6 +649,12 @@ function _calcSignals() {
     }
   }
 
+  // RSI 다이버전스 보너스 (RSI 활성 시 각 다이버전스 포인트에 ±1 추가)
+  if (_activeInds.has('rsi')) {
+    const divSig = _calcRSIDivergence(closes);
+    for (let i = 0; i < n; i++) sig[i] += divSig[i];
+  }
+
   // ── MA50 추세 필터 ──────────────────────────────────────────────────────────
   // 상승 추세(가격 > MA50): 매도 신호 무효화 / 하락 추세(가격 < MA50): 매수 신호 무효화
   const ma50 = _calcMA(closes, 50);
@@ -649,13 +693,14 @@ function _applySignalMarkers() {
   if (!result || result.activeCount === 0) { _candleSeries.setMarkers([]); return; }
 
   const { sig, times, activeCount } = result;
-  const threshold = activeCount >= 3 ? 2 : 1;  // 3지표면 2개 이상, 1~2지표면 1개 이상
+  // score>=2 + BB%B 통과 시 마커 표시 (score=3 시도 후 되돌림: 매도 신호 소멸 문제)
+  const threshold = activeCount >= 3 ? 2 : 1;
   const markers   = [];
   let   prevScore = 0;
 
   for (let i = 1; i < sig.length; i++) {
     const s = sig[i];
-    if (s === prevScore) continue;  // 점수 변화 없으면 skip
+    if (s === prevScore) continue;
     prevScore = s;
     if (s >= threshold) {
       markers.push({
@@ -741,6 +786,21 @@ function _renderSignalCard() {
     rows.push({ label: 'STO', score: s, detail: val });
   }
 
+  // RSI 다이버전스 최신 상태 (RSI 활성 시, 최근 20봉 내 마지막 감지값)
+  let divScore = 0;
+  if (_activeInds.has('rsi')) {
+    const divArr = _calcRSIDivergence(closes);
+    for (let i = n - 1; i >= Math.max(0, n - 20); i--) {
+      if (divArr[i] !== 0) { divScore = divArr[i]; break; }
+    }
+    total += divScore;
+    rows.push({
+      label: 'DIV',
+      score: divScore,
+      detail: divScore > 0 ? '강세' : divScore < 0 ? '약세' : '—',
+    });
+  }
+
   // MA50 추세 방향 계산
   const ma50arr   = _calcMA(closes, 50);
   const lastMa50  = ma50arr[n - 1];
@@ -819,10 +879,11 @@ function _renderSignalCard() {
     </div>`;
   }).join('');
 
+  const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0);
   card.innerHTML = `
     <div class="sc-title">SIGNAL</div>
     <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
-    <div class="sc-score-num" style="color:${scoreColor}">${filteredTotal > 0 ? '+' : ''}${filteredTotal} / ${activeCount}</div>
+    <div class="sc-score-num" style="color:${scoreColor}">${filteredTotal > 0 ? '+' : ''}${filteredTotal} / ${totalSlots}</div>
     <div class="sc-divider"></div>
     ${trendRow}
     ${bbRow}

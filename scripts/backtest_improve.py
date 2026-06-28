@@ -97,6 +97,29 @@ def calc_volma(ohlcv,p=20):
     vols=[d['volume'] for d in ohlcv]
     return _sma(vols,p)
 
+def calc_rsi_divergence(ohlcv, order=5, min_gap=5, max_gap=60):
+    """RSI 다이버전스 탐지: 강세(+1), 약세(-1), 없음(0)"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    rsi=calc_rsi(c); div=[0]*n
+    lows=[]; highs=[]
+    for i in range(order, n-order):
+        if rsi[i] is None: continue
+        is_low  = all(c[j]>=c[i] for j in range(i-order, i+order+1) if j!=i)
+        is_high = all(c[j]<=c[i] for j in range(i-order, i+order+1) if j!=i)
+        if is_low:  lows.append(i)
+        if is_high: highs.append(i)
+    for k in range(1,len(lows)):
+        i1,i2=lows[k-1],lows[k]
+        if not (min_gap<=i2-i1<=max_gap): continue
+        if rsi[i1] is None or rsi[i2] is None: continue
+        if c[i2]<c[i1] and rsi[i2]>rsi[i1]: div[i2]=1
+    for k in range(1,len(highs)):
+        i1,i2=highs[k-1],highs[k]
+        if not (min_gap<=i2-i1<=max_gap): continue
+        if rsi[i1] is None or rsi[i2] is None: continue
+        if c[i2]>c[i1] and rsi[i2]<rsi[i1]: div[i2]=-1
+    return div
+
 # ── 기본 sig 계산 (공통) ──────────────────────────────────────────────────────
 def base_sig(ohlcv):
     c=[d['close'] for d in ohlcv]; n=len(c); sig=[0]*n
@@ -193,6 +216,31 @@ def strategy_strict_volume(ohlcv):
             filtered[i]=sig[i]
     return filtered, 3
 
+def strategy_score3_bb(ohlcv):
+    """전략6: score=3 + BB %B 필터 -- 3개 지표 모두 동의 + BB 위치 확인"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); pb=calc_bb(c)
+    filtered=[0]*n
+    for i in range(n):
+        if sig[i]>=3 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=sig[i]
+        elif sig[i]<=-3 and pb[i] is not None and pb[i]>0.65:
+            filtered[i]=sig[i]
+    return filtered, 3
+
+def strategy_rsi_div_bb(ohlcv):
+    """[신규] RSI 다이버전스 + BB %B: base_sig + 다이버전스 보너스, BB 위치 필터"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv); pb=calc_bb(c)
+    combined=[sig[i]+div[i] for i in range(n)]
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.65:
+            filtered[i]=combined[i]
+    return filtered, 2
+
 # ── 백테스트 집계 ─────────────────────────────────────────────────────────────
 def backtest(ohlcv, signals, threshold):
     c=[d['close'] for d in ohlcv]; n=len(c)
@@ -209,12 +257,14 @@ def backtest(ohlcv, signals, threshold):
     return total,buy,buy_ok,sell,sell_ok
 
 STRATEGIES = [
-    ('기준선 (score>=2)',   strategy_baseline),
-    ('1. score=3',          strategy_strict),
-    ('2. BB %B 필터',       strategy_bb),
-    ('3. 거래량 필터',      strategy_volume),
-    ('4. BB+거래량',        strategy_bb_volume),
-    ('5. score=3+거래량',   strategy_strict_volume),
+    ('[현재] score>=2+BB',      strategy_bb),
+    ('[신규] RSI다이버전스+BB', strategy_rsi_div_bb),
+    ('--- 비교군 ---',           None),
+    ('기준선 (score>=2)',        strategy_baseline),
+    ('1. score=3만',             strategy_strict),
+    ('3. 거래량 필터',           strategy_volume),
+    ('4. BB+거래량',             strategy_bb_volume),
+    ('5. score=3+거래량',        strategy_strict_volume),
 ]
 
 def load_kr_top50():
@@ -240,6 +290,9 @@ def run_group(label, tickers):
 
     results = {}
     for name, fn in STRATEGIES:
+        if fn is None:  # 구분선
+            results[name] = None
+            continue
         agg = {'total':0,'buy':0,'buy_ok':0,'sell':0,'sell_ok':0}
         for ticker, ohlcv in all_ohlcv.items():
             try:
@@ -252,11 +305,14 @@ def run_group(label, tickers):
 
     def p(ok, tot): return f"{ok/tot*100:6.1f}%" if tot else "    N/A"
     print(f"\n  [{label}] 결과 (10일 기준)")
-    print(f"  {'전략':<22} {'전체':>6} {'전체%':>7}  {'매수건':>5} {'매수%':>7}  {'매도건':>5} {'매도%':>7}")
-    print("  " + "-"*70)
+    print(f"  {'전략':<24} {'전체':>6} {'전체%':>7}  {'매수건':>5} {'매수%':>7}  {'매도건':>5} {'매도%':>7}")
+    print("  " + "-"*72)
     for name, a in results.items():
+        if a is None:
+            print(f"  {name}")
+            continue
         total_pct = p(a['buy_ok']+a['sell_ok'], a['total'])
-        print(f"  {name:<22} {a['total']:>6}  {total_pct}  "
+        print(f"  {name:<24} {a['total']:>6}  {total_pct}  "
               f"{a['buy']:>5}  {p(a['buy_ok'],a['buy'])}  "
               f"{a['sell']:>5}  {p(a['sell_ok'],a['sell'])}")
     return results
