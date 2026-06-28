@@ -3,13 +3,13 @@ backtest_300.py -- 300종목 확대 백테스트 (전략A+B 신뢰도 검증)
 US/KR 각 300종목 / 핵심 4전략 비교
 실행: python scripts/backtest_300.py
 """
-import json, time, sys, os
+import json, time, sys, os, bisect
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-FWD = 10  # 10일 기준
+FWD = int(sys.argv[1]) if len(sys.argv) > 1 else 10  # 인자 없으면 10일 기준
 
 # S&P500 시총 상위 300종목 (중복 제거용 dict.fromkeys 사용)
 _US_RAW = [
@@ -132,6 +132,42 @@ def calc_bb(c, p=20, mult=2.0):
 def calc_volma(ohlcv, p=20):
     vols = [d['volume'] for d in ohlcv]
     return _sma(vols, p)
+
+# ── 시장 추세 (SPY / KOSPI) ────────────────────────────────────────────────────
+_MKT_SORTED_KEYS = []
+_MKT_SORTED_VALS = []
+
+def load_market_trend(ticker):
+    global _MKT_SORTED_KEYS, _MKT_SORTED_VALS
+    print(f"  [{ticker}] 시장 추세 로드...", end='  ', flush=True)
+    ohlcv = fetch_ohlcv(ticker)
+    if not ohlcv:
+        print("실패")
+        _MKT_SORTED_KEYS = []; _MKT_SORTED_VALS = []
+        return
+    weekly = resample_weekly(ohlcv)
+    wc = [w['close'] for w in weekly]
+    wma = _sma(wc, 13)
+    trend_map = {}
+    for i, w in enumerate(weekly):
+        d = datetime.utcfromtimestamp(w['time'])
+        mon = (d - timedelta(days=d.weekday())).strftime('%Y%m%d')
+        trend_map[mon] = 0 if wma[i] is None else (1 if wc[i] > wma[i] else -1)
+    keys = sorted(trend_map.keys())
+    _MKT_SORTED_KEYS = keys
+    _MKT_SORTED_VALS = [trend_map[k] for k in keys]
+    # 시장 추세 분포 출력
+    up   = sum(1 for v in _MKT_SORTED_VALS if v ==  1)
+    down = sum(1 for v in _MKT_SORTED_VALS if v == -1)
+    print(f"OK ({len(keys)}주: 상승 {up}주 / 하락 {down}주)")
+
+def get_mkt_trend(ts):
+    if not _MKT_SORTED_KEYS:
+        return 0
+    d = datetime.utcfromtimestamp(ts)
+    mon = (d - timedelta(days=d.weekday())).strftime('%Y%m%d')
+    idx = bisect.bisect_right(_MKT_SORTED_KEYS, mon) - 1
+    return _MKT_SORTED_VALS[idx] if idx >= 0 else 0
 
 def calc_rsi_divergence(ohlcv, order=5, min_gap=5, max_gap=60):
     c = [d['close'] for d in ohlcv]; n = len(c)
@@ -407,6 +443,52 @@ def strategy_full_bb(ohlcv):
     return filtered, 2
 
 
+def strategy_mkt_sell(ohlcv):
+    """[시장 매도 필터] 현재 전략 + 시장 주봉 하락/중립 시에만 매도 허용"""
+    c = [d['close'] for d in ohlcv]; n = len(c)
+    sig = base_sig(ohlcv); div = calc_rsi_divergence(ohlcv)
+    wtrend = get_weekly_trend_array(ohlcv); pb = calc_bb(c)
+    mkt = [get_mkt_trend(ohlcv[i]['time']) for i in range(n)]
+    combined = [sig[i] + div[i] for i in range(n)]
+    for i in range(n):
+        if wtrend[i] ==  1 and combined[i] < 0: combined[i] = 0
+        if wtrend[i] == -1 and combined[i] > 0: combined[i] = 0
+    filtered = [0] * n
+    for i in range(n):
+        if combined[i] >= 2 and pb[i] is not None and pb[i] < 0.35:
+            filtered[i] = combined[i]
+        elif combined[i] <= -2 and pb[i] is not None and pb[i] > 0.65:
+            if mkt[i] != 1:  # 시장 상승 추세일 때 매도 차단
+                filtered[i] = combined[i]
+    return filtered, 2
+
+def strategy_mkt_both(ohlcv):
+    """[시장 양방향 필터] 시장 상승/중립 시 매수, 시장 하락/중립 시 매도만"""
+    c = [d['close'] for d in ohlcv]; n = len(c)
+    sig = base_sig(ohlcv); div = calc_rsi_divergence(ohlcv)
+    wtrend = get_weekly_trend_array(ohlcv); pb = calc_bb(c)
+    mkt = [get_mkt_trend(ohlcv[i]['time']) for i in range(n)]
+    combined = [sig[i] + div[i] for i in range(n)]
+    for i in range(n):
+        if wtrend[i] ==  1 and combined[i] < 0: combined[i] = 0
+        if wtrend[i] == -1 and combined[i] > 0: combined[i] = 0
+    filtered = [0] * n
+    for i in range(n):
+        if combined[i] >= 2 and pb[i] is not None and pb[i] < 0.35:
+            if mkt[i] >= 0:  # 시장 상승/중립 시 매수
+                filtered[i] = combined[i]
+        elif combined[i] <= -2 and pb[i] is not None and pb[i] > 0.65:
+            if mkt[i] <= 0:  # 시장 하락/중립 시 매도
+                filtered[i] = combined[i]
+    return filtered, 2
+
+
+SPY_STRATEGIES = [
+    ('[현재] MTF+DIV+BB (기준)',             strategy_current),
+    ('[시장매도필터] 시장 하락시만 매도',      strategy_mkt_sell),
+    ('[시장양방향] 시장 방향 일치만',          strategy_mkt_both),
+]
+
 STRATEGIES = [
     # ── 현재 및 개선 전략 ──
     ('[현재] MTF+DIV+BB',        strategy_current),
@@ -455,7 +537,11 @@ def load_kr_top300():
     return tickers
 
 
-def run_group(label, tickers):
+def run_group(label, tickers, strategies=None, market_ticker=None):
+    if strategies is None:
+        strategies = STRATEGIES
+    if market_ticker:
+        load_market_trend(market_ticker)
     print(f"\n  {label} ({len(tickers)}종목) -- 데이터 수집 중...", flush=True)
     all_ohlcv = {}
     for i, ticker in enumerate(tickers, 1):
@@ -470,7 +556,7 @@ def run_group(label, tickers):
 
     print(f"\n  [{label}] 집계 중... (유효 {len(all_ohlcv)}종목)", flush=True)
     results = {}
-    for name, fn in STRATEGIES:
+    for name, fn in strategies:
         agg = {'total': 0, 'buy': 0, 'buy_ok': 0, 'sell': 0, 'sell_ok': 0}
         for ticker, ohlcv in all_ohlcv.items():
             try:
@@ -483,7 +569,7 @@ def run_group(label, tickers):
         results[name] = agg
 
     def p(ok, tot): return f"{ok / tot * 100:6.1f}%" if tot else "    N/A"
-    print(f"\n  == [{label}] 결과 (10일 기준) ==")
+    print(f"\n  == [{label}] 결과 ({FWD}일 기준) ==")
     print(f"  {'전략':<26} {'전체':>6} {'전체%':>7}  {'매수건':>5} {'매수%':>7}  {'매도건':>5} {'매도%':>7}")
     print("  " + "-" * 74)
     for name, a in results.items():
@@ -495,16 +581,28 @@ def run_group(label, tickers):
 
 
 if __name__ == '__main__':
-    print(f"\n  신호 적중률 개선 전략 비교 -- US/KR 300종목 확대 백테스트 / 10일 기준")
+    print(f"\n  신호 적중률 개선 전략 비교 -- US/KR 300종목 확대 백테스트 / {FWD}일 기준")
     print("  " + "=" * 74)
-    print(f"  US 대상: {len(US_300)}종목 (S&P500 시총 상위)")
+    print(f"  US 대상: {len(US_300)}종목 (S&P500 시총 상위) / FWD={FWD}일")
 
-    us_results = run_group("US 미국 시총 300", US_300)
+    mode = sys.argv[2] if len(sys.argv) > 2 else 'all'
 
-    try:
-        kr300 = load_kr_top300()
-        kr_results = run_group("KR 국내 시총 300", kr300)
-    except Exception as e:
-        print(f"\n  KR 로드 오류: {e}")
+    if mode == 'spy':
+        # SPY/KOSPI 시장 추세 필터 테스트
+        us_results = run_group("US 미국 시총 300", US_300,
+                               strategies=SPY_STRATEGIES, market_ticker='SPY')
+        try:
+            kr300 = load_kr_top300()
+            kr_results = run_group("KR 국내 시총 300", kr300,
+                                   strategies=SPY_STRATEGIES, market_ticker='^KS11')
+        except Exception as e:
+            print(f"\n  KR 로드 오류: {e}")
+    else:
+        us_results = run_group("US 미국 시총 300", US_300)
+        try:
+            kr300 = load_kr_top300()
+            kr_results = run_group("KR 국내 시총 300", kr300)
+        except Exception as e:
+            print(f"\n  KR 로드 오류: {e}")
 
     print("\n  완료.")
