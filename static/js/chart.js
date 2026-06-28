@@ -381,6 +381,30 @@ function _calcRSIDivergence(closes, order = 5) {
   return divSig;
 }
 
+// ── 캔들 패턴 탐지 ────────────────────────────────────────────────────────────
+// Hammer(+1), Shooting Star(-1), Bullish/Bearish Engulfing(±1)
+function _calcCandlePatterns(ohlcv) {
+  const n   = ohlcv.length;
+  const pat = new Array(n).fill(0);
+
+  for (let i = 1; i < n; i++) {
+    const { open: o, high: h, low: l, close: c } = ohlcv[i];
+    const { open: po, close: pc } = ohlcv[i - 1];
+    const body  = Math.abs(c - o);
+    const range = h - l;
+    if (range === 0 || body === 0) continue;
+    const upper = h - Math.max(o, c);  // 위 꼬리
+    const lower = Math.min(o, c) - l;  // 아래 꼬리
+
+    if      (lower >= 2 * body && upper <= body * 0.3)               pat[i] =  1; // Hammer
+    else if (upper >= 2 * body && lower <= body * 0.3)               pat[i] = -1; // Shooting Star
+    else if (pc < po && c > o && o <= pc && c >= po)                 pat[i] =  1; // Bullish Engulfing
+    else if (pc > po && c < o && o >= pc && c <= po)                 pat[i] = -1; // Bearish Engulfing
+  }
+
+  return pat;
+}
+
 function _calcEMA(closes, period) {
   const k = 2 / (period + 1);
   const ema = [];
@@ -655,6 +679,8 @@ function _calcSignals() {
     for (let i = 0; i < n; i++) sig[i] += divSig[i];
   }
 
+  // 캔들 패턴: 백테스트에서 정확도 저하 확인 → 스코어 미반영, UI 표시만
+
   // ── MA50 추세 필터 ──────────────────────────────────────────────────────────
   // 상승 추세(가격 > MA50): 매도 신호 무효화 / 하락 추세(가격 < MA50): 매수 신호 무효화
   const ma50 = _calcMA(closes, 50);
@@ -801,6 +827,18 @@ function _renderSignalCard() {
     });
   }
 
+  // 캔들 패턴 (정보 표시용, 스코어 미반영)
+  const patArr   = _calcCandlePatterns(_lastOhlcv);
+  const patScore = patArr[n - 1] !== 0 ? patArr[n - 1]
+                 : patArr[n - 2] !== 0 ? patArr[n - 2]
+                 : patArr[n - 3] !== 0 ? patArr[n - 3] : 0;
+  const patName  = patScore > 0
+    ? (patArr[n-1] !== 0 ? 'Hammer' : 'Bullish Eng.')
+    : patScore < 0
+    ? (patArr[n-1] !== 0 ? 'Shooting Star' : 'Bearish Eng.')
+    : '—';
+  rows.push({ label: 'CANDLE', score: 0, detail: patName, infoOnly: true });
+
   // MA50 추세 방향 계산
   const ma50arr   = _calcMA(closes, 50);
   const lastMa50  = ma50arr[n - 1];
@@ -865,6 +903,14 @@ function _renderSignalCard() {
   </div>`;
 
   const rowsHtml = rows.map(r => {
+    if (r.infoOnly) {
+      const ic = r.detail === '—' ? '#8b949e' : r.detail.startsWith('B') ? '#58a6ff' : '#ffa64d';
+      return `<div class="sc-row">
+        <span class="sc-label">${r.label}</span>
+        <span class="sc-val" style="color:${ic}">${r.detail}</span>
+        <span class="sc-sig" style="color:#555e6b">참고</span>
+      </div>`;
+    }
     // 추세 반대 신호는 회색으로 표시 (필터됨)
     const filtered = (trendUp && r.score < 0) || (trendDown && r.score > 0);
     const ic = filtered ? '#444c56'
@@ -879,7 +925,7 @@ function _renderSignalCard() {
     </div>`;
   }).join('');
 
-  const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0);
+  const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0); // DIV는 RSI 활성 시 포함
   card.innerHTML = `
     <div class="sc-title">SIGNAL</div>
     <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>

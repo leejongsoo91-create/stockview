@@ -120,6 +120,22 @@ def calc_rsi_divergence(ohlcv, order=5, min_gap=5, max_gap=60):
         if c[i2]>c[i1] and rsi[i2]<rsi[i1]: div[i2]=-1
     return div
 
+def calc_candle_patterns(ohlcv):
+    """캔들 패턴 탐지: Hammer(+1), Shooting Star(-1), Engulfing(±1)"""
+    n=len(ohlcv); pat=[0]*n
+    for i in range(1,n):
+        o,h,l,c=ohlcv[i]['open'],ohlcv[i]['high'],ohlcv[i]['low'],ohlcv[i]['close']
+        po,pc=ohlcv[i-1]['open'],ohlcv[i-1]['close']
+        if None in (o,h,l,c,po,pc): continue
+        body=abs(c-o); rng=h-l
+        if rng==0 or body==0: continue
+        upper=h-max(o,c); lower=min(o,c)-l
+        if   lower>=2*body and upper<=body*0.3:         pat[i]= 1  # Hammer
+        elif upper>=2*body and lower<=body*0.3:         pat[i]=-1  # Shooting Star
+        elif pc<po and c>o and o<=pc and c>=po:         pat[i]= 1  # Bullish Engulfing
+        elif pc>po and c<o and o>=pc and c<=po:         pat[i]=-1  # Bearish Engulfing
+    return pat
+
 # ── 기본 sig 계산 (공통) ──────────────────────────────────────────────────────
 def base_sig(ohlcv):
     c=[d['close'] for d in ohlcv]; n=len(c); sig=[0]*n
@@ -229,10 +245,24 @@ def strategy_score3_bb(ohlcv):
     return filtered, 3
 
 def strategy_rsi_div_bb(ohlcv):
-    """[신규] RSI 다이버전스 + BB %B: base_sig + 다이버전스 보너스, BB 위치 필터"""
+    """[이전] RSI 다이버전스 + BB %B"""
     c=[d['close'] for d in ohlcv]; n=len(c)
     sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv); pb=calc_bb(c)
     combined=[sig[i]+div[i] for i in range(n)]
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.65:
+            filtered[i]=combined[i]
+    return filtered, 2
+
+def strategy_full_bb(ohlcv):
+    """[신규] RSI 다이버전스 + 캔들 패턴 + BB %B (전체 결합)"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv)
+    pat=calc_candle_patterns(ohlcv); pb=calc_bb(c)
+    combined=[sig[i]+div[i]+pat[i] for i in range(n)]
     filtered=[0]*n
     for i in range(n):
         if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
@@ -257,14 +287,14 @@ def backtest(ohlcv, signals, threshold):
     return total,buy,buy_ok,sell,sell_ok
 
 STRATEGIES = [
-    ('[현재] score>=2+BB',      strategy_bb),
-    ('[신규] RSI다이버전스+BB', strategy_rsi_div_bb),
+    ('[현재] DIV+BB',           strategy_rsi_div_bb),
+    ('[신규] DIV+캔들+BB',      strategy_full_bb),
     ('--- 비교군 ---',           None),
+    ('BB만 (Phase 1)',           strategy_bb),
     ('기준선 (score>=2)',        strategy_baseline),
     ('1. score=3만',             strategy_strict),
     ('3. 거래량 필터',           strategy_volume),
     ('4. BB+거래량',             strategy_bb_volume),
-    ('5. score=3+거래량',        strategy_strict_volume),
 ]
 
 def load_kr_top50():
