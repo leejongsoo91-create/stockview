@@ -308,6 +308,40 @@ def strategy_mtf_div_bb(ohlcv):
             filtered[i]=combined[i]
     return filtered, 2
 
+def strategy_mtf_div_bb_sellA(ohlcv):
+    """[전략A] MTF+DIV+BB, 매도 기준 강화: %B > 0.75 (현재 0.65)"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv)
+    wtrend=get_weekly_trend_array(ohlcv); pb=calc_bb(c)
+    combined=[sig[i]+div[i] for i in range(n)]
+    for i in range(n):
+        if wtrend[i]== 1 and combined[i]<0: combined[i]=0
+        if wtrend[i]==-1 and combined[i]>0: combined[i]=0
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.75:  # 0.65 -> 0.75
+            filtered[i]=combined[i]
+    return filtered, 2
+
+def strategy_mtf_div_bb_sellA2(ohlcv):
+    """[전략A2] MTF+DIV+BB, 매도 기준 더 강화: %B > 0.85"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv)
+    wtrend=get_weekly_trend_array(ohlcv); pb=calc_bb(c)
+    combined=[sig[i]+div[i] for i in range(n)]
+    for i in range(n):
+        if wtrend[i]== 1 and combined[i]<0: combined[i]=0
+        if wtrend[i]==-1 and combined[i]>0: combined[i]=0
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.85:  # 0.65 -> 0.85
+            filtered[i]=combined[i]
+    return filtered, 2
+
 def strategy_full_bb(ohlcv):
     """[신규] RSI 다이버전스 + 캔들 패턴 + BB %B (전체 결합)"""
     c=[d['close'] for d in ohlcv]; n=len(c)
@@ -338,14 +372,12 @@ def backtest(ohlcv, signals, threshold):
     return total,buy,buy_ok,sell,sell_ok
 
 STRATEGIES = [
-    ('[현재] DIV+BB',           strategy_rsi_div_bb),
-    ('[신규] MTF+DIV+BB',       strategy_mtf_div_bb),
-    ('--- 비교군 ---',           None),
-    ('BB만 (Phase 1)',           strategy_bb),
-    ('기준선 (score>=2)',        strategy_baseline),
-    ('1. score=3만',             strategy_strict),
-    ('3. 거래량 필터',           strategy_volume),
-    ('4. BB+거래량',             strategy_bb_volume),
+    ('[현재] MTF+DIV+BB (기준)',          strategy_mtf_div_bb),
+    ('[전략A]  매도 %B>0.75',             strategy_mtf_div_bb_sellA),
+    ('[전략A2] 매도 %B>0.85',             strategy_mtf_div_bb_sellA2),
+    ('--- 이전 단계 ---',                  None),
+    ('DIV+BB (MTF 없음)',                  strategy_rsi_div_bb),
+    ('BB만 (Phase 1)',                     strategy_bb),
 ]
 
 def load_kr_top50():

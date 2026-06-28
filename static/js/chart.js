@@ -748,8 +748,9 @@ function _calcSignals() {
     const bw = _bbU[i] != null ? _bbU[i] - _bbL[i] : null;
     if (bw == null || bw === 0) continue;
     const pb = (closes[i] - _bbL[i]) / bw;
-    if (sig[i] >= 2  && pb >= 0.35) sig[i] = 0;  // 매수인데 하단 근처 아님 → 차단
-    if (sig[i] <= -2 && pb <= 0.65) sig[i] = 0;  // 매도인데 상단 근처 아님 → 차단
+    const sellPbThr = _isKrStock(_currentTicker) ? 0.65 : 0.75;  // US: 0.75 (백테스트 매도 +5.6%), KR: 0.65 유지
+    if (sig[i] >= 2  && pb >= 0.35)        sig[i] = 0;  // 매수인데 하단 근처 아님 → 차단
+    if (sig[i] <= -2 && pb <= sellPbThr)   sig[i] = 0;  // 매도인데 상단 근처 아님 → 차단
   }
 
   const activeCount = (_activeInds.has('macd') ? 1 : 0) +
@@ -907,9 +908,10 @@ function _renderSignalCard() {
   const lastBbU = _bbU2[n - 1]; const lastBbL = _bbL2[n - 1];
   const lastBw  = (lastBbU != null) ? lastBbU - lastBbL : null;
   const lastPb  = (lastBw != null && lastBw > 0) ? (lastClose - lastBbL) / lastBw : null;
+  const _sellThr = _isKrStock(_currentTicker) ? 0.65 : 0.75;
   const filteredTotal = (lastPb == null) ? filteredByMA50
-    : (filteredByMA50 >= 2  && lastPb >= 0.35) ? 0
-    : (filteredByMA50 <= -2 && lastPb <= 0.65) ? 0
+    : (filteredByMA50 >= 2  && lastPb >= 0.35)      ? 0
+    : (filteredByMA50 <= -2 && lastPb <= _sellThr)  ? 0
     : filteredByMA50;
 
   const scoreColor = filteredTotal > 0 ? '#3fb950' : filteredTotal < 0 ? '#f85149' : '#8b949e';
@@ -941,7 +943,7 @@ function _renderSignalCard() {
   const pbPct = lastPb != null ? `${(lastPb * 100).toFixed(0)}%` : '—';
   const bbBlocked = lastPb != null && (
     (filteredByMA50 >= 2  && lastPb >= 0.35) ||
-    (filteredByMA50 <= -2 && lastPb <= 0.65)
+    (filteredByMA50 <= -2 && lastPb <= _sellThr)
   );
   const pbColor = bbBlocked ? '#ffa64d'
     : lastPb == null   ? '#8b949e'
