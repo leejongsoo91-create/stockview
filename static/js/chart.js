@@ -381,6 +381,48 @@ function _calcRSIDivergence(closes, order = 5) {
   return divSig;
 }
 
+// ── 멀티 타임프레임: 일봉 → 주봉 집계 ────────────────────────────────────────
+function _resampleWeekly(ohlcv) {
+  const byWeek = new Map();
+  for (const bar of ohlcv) {
+    const d   = new Date(bar.time * 1000);
+    const dow = d.getUTCDay();                            // 0=일, 1=월...
+    const mon = new Date(d);
+    mon.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+    mon.setUTCHours(0, 0, 0, 0);
+    const key = mon.getTime();
+    if (!byWeek.has(key)) {
+      byWeek.set(key, { time: Math.floor(mon.getTime() / 1000),
+                        open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+    } else {
+      const w = byWeek.get(key);
+      w.high  = Math.max(w.high, bar.high);
+      w.low   = Math.min(w.low,  bar.low);
+      w.close = bar.close;
+    }
+  }
+  return [...byWeek.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+}
+
+// 주봉 MA13(3개월) 기반 추세를 일봉 배열로 반환 (1=상승, -1=하락, 0=중립)
+function _getWeeklyTrendArray(ohlcv, maPeriod = 13) {
+  const weekly = _resampleWeekly(ohlcv);
+  const wc     = weekly.map(w => w.close);
+  const wma    = _calcMA(wc, maPeriod);
+  const wtList = weekly.map((w, i) => ({
+    time:  w.time,
+    trend: wma[i] == null ? 0 : wc[i] > wma[i] ? 1 : -1,
+  }));
+  const n      = ohlcv.length;
+  const result = new Array(n).fill(0);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    while (j < wtList.length - 1 && wtList[j + 1].time <= ohlcv[i].time) j++;
+    if (j < wtList.length && wtList[j].time <= ohlcv[i].time) result[i] = wtList[j].trend;
+  }
+  return result;
+}
+
 // ── 캔들 패턴 탐지 ────────────────────────────────────────────────────────────
 // Hammer(+1), Shooting Star(-1), Bullish/Bearish Engulfing(±1)
 function _calcCandlePatterns(ohlcv) {
@@ -690,6 +732,14 @@ function _calcSignals() {
     if (closes[i] < ma50[i] && sig[i] > 0) sig[i] = 0;
   }
 
+  // ── 주봉 추세 필터 ──────────────────────────────────────────────────────────
+  // 주봉 MA13(3개월): 주봉 상승 시 매도 억제, 주봉 하락 시 매수 억제
+  const wTrend = _getWeeklyTrendArray(_lastOhlcv, 13);
+  for (let i = 0; i < n; i++) {
+    if (wTrend[i] ===  1 && sig[i] < 0) sig[i] = 0;
+    if (wTrend[i] === -1 && sig[i] > 0) sig[i] = 0;
+  }
+
   // ── BB %B 필터 ──────────────────────────────────────────────────────────────
   // 매수(sig≥2): 가격이 BB 하단 35% 이하일 때만 유효 (과매도 구간 확인)
   // 매도(sig≤-2): 가격이 BB 상단 65% 이상일 때만 유효 (과매수 구간 확인)
@@ -876,6 +926,17 @@ function _renderSignalCard() {
     <span class="sc-sig" style="color:${trendColor}">${trendLabel}</span>
   </div>`;
 
+  // 주봉 MA13 추세 행
+  const wTrendArr  = _getWeeklyTrendArray(_lastOhlcv, 13);
+  const wTrendNow  = wTrendArr[n - 1];
+  const wTrendColor = wTrendNow ===  1 ? '#3fb950' : wTrendNow === -1 ? '#f85149' : '#8b949e';
+  const wTrendLabel = wTrendNow ===  1 ? '▲ 주봉 상승' : wTrendNow === -1 ? '▼ 주봉 하락' : '— 중립';
+  const weeklyRow  = `<div class="sc-row sc-trend-row">
+    <span class="sc-label">W.MA13</span>
+    <span class="sc-val">주봉</span>
+    <span class="sc-sig" style="color:${wTrendColor}">${wTrendLabel}</span>
+  </div>`;
+
   // BB %B 행
   const pbPct = lastPb != null ? `${(lastPb * 100).toFixed(0)}%` : '—';
   const bbBlocked = lastPb != null && (
@@ -932,6 +993,7 @@ function _renderSignalCard() {
     <div class="sc-score-num" style="color:${scoreColor}">${filteredTotal > 0 ? '+' : ''}${filteredTotal} / ${totalSlots}</div>
     <div class="sc-divider"></div>
     ${trendRow}
+    ${weeklyRow}
     ${bbRow}
     <div class="sc-divider"></div>
     ${rowsHtml}`;

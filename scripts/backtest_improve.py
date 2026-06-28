@@ -4,6 +4,7 @@ backtest_improve.py -- 신호 적중률 개선 전략 비교 백테스트
 실행: python scripts/backtest_improve.py
 """
 import json, time, sys, os
+from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 
@@ -119,6 +120,38 @@ def calc_rsi_divergence(ohlcv, order=5, min_gap=5, max_gap=60):
         if rsi[i1] is None or rsi[i2] is None: continue
         if c[i2]>c[i1] and rsi[i2]<rsi[i1]: div[i2]=-1
     return div
+
+def resample_weekly(ohlcv):
+    """일봉 -> 주봉 집계 (월요일 기준)"""
+    by_week = {}
+    for bar in ohlcv:
+        d   = datetime.utcfromtimestamp(bar['time'])
+        mon = d - timedelta(days=d.weekday())  # weekday(): 0=월
+        key = mon.strftime('%Y%m%d')
+        if key not in by_week:
+            by_week[key] = {'time': bar['time'], 'open': bar['open'],
+                           'high': bar['high'], 'low': bar['low'], 'close': bar['close']}
+        else:
+            by_week[key]['high']  = max(by_week[key]['high'], bar['high'])
+            by_week[key]['low']   = min(by_week[key]['low'],  bar['low'])
+            by_week[key]['close'] = bar['close']
+    return sorted(by_week.values(), key=lambda x: x['time'])
+
+def get_weekly_trend_array(ohlcv, ma_period=13):
+    """주봉 MA13 기반 추세를 일봉 배열로 반환 (1=상승, -1=하락, 0=중립)"""
+    weekly = resample_weekly(ohlcv)
+    wc     = [w['close'] for w in weekly]
+    wma    = _sma(wc, ma_period)
+    wt_list= [(w['time'], 0 if wma[i] is None else (1 if wc[i]>wma[i] else -1))
+              for i,w in enumerate(weekly)]
+    result = [0]*len(ohlcv)
+    j = 0
+    for i, bar in enumerate(ohlcv):
+        while j < len(wt_list)-1 and wt_list[j+1][0] <= bar['time']:
+            j += 1
+        if j < len(wt_list) and wt_list[j][0] <= bar['time']:
+            result[i] = wt_list[j][1]
+    return result
 
 def calc_candle_patterns(ohlcv):
     """캔들 패턴 탐지: Hammer(+1), Shooting Star(-1), Engulfing(±1)"""
@@ -257,6 +290,24 @@ def strategy_rsi_div_bb(ohlcv):
             filtered[i]=combined[i]
     return filtered, 2
 
+def strategy_mtf_div_bb(ohlcv):
+    """[신규] 주봉 MA13 추세 + RSI 다이버전스 + BB %B"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv)
+    wtrend=get_weekly_trend_array(ohlcv); pb=calc_bb(c)
+    combined=[sig[i]+div[i] for i in range(n)]
+    # 주봉 추세 필터
+    for i in range(n):
+        if wtrend[i]== 1 and combined[i]<0: combined[i]=0
+        if wtrend[i]==-1 and combined[i]>0: combined[i]=0
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.65:
+            filtered[i]=combined[i]
+    return filtered, 2
+
 def strategy_full_bb(ohlcv):
     """[신규] RSI 다이버전스 + 캔들 패턴 + BB %B (전체 결합)"""
     c=[d['close'] for d in ohlcv]; n=len(c)
@@ -288,7 +339,7 @@ def backtest(ohlcv, signals, threshold):
 
 STRATEGIES = [
     ('[현재] DIV+BB',           strategy_rsi_div_bb),
-    ('[신규] DIV+캔들+BB',      strategy_full_bb),
+    ('[신규] MTF+DIV+BB',       strategy_mtf_div_bb),
     ('--- 비교군 ---',           None),
     ('BB만 (Phase 1)',           strategy_bb),
     ('기준선 (score>=2)',        strategy_baseline),
