@@ -748,7 +748,7 @@ function _calcSignals() {
     const bw = _bbU[i] != null ? _bbU[i] - _bbL[i] : null;
     if (bw == null || bw === 0) continue;
     const pb = (closes[i] - _bbL[i]) / bw;
-    const sellPbThr = _isKrStock(_currentTicker) ? 0.65 : 0.75;  // US: 0.75 (백테스트 매도 +5.6%), KR: 0.65 유지
+    const sellPbThr = _isKrStock(_currentTicker) ? 0.85 : 0.65;  // KR: 0.85 (백테스트 매도 +4%p), US: 0.65
     if (sig[i] >= 2  && pb >= 0.35)        sig[i] = 0;  // 매수인데 하단 근처 아님 → 차단
     if (sig[i] <= -2 && pb <= sellPbThr)   sig[i] = 0;  // 매도인데 상단 근처 아님 → 차단
   }
@@ -908,7 +908,7 @@ function _renderSignalCard() {
   const lastBbU = _bbU2[n - 1]; const lastBbL = _bbL2[n - 1];
   const lastBw  = (lastBbU != null) ? lastBbU - lastBbL : null;
   const lastPb  = (lastBw != null && lastBw > 0) ? (lastClose - lastBbL) / lastBw : null;
-  const _sellThr = _isKrStock(_currentTicker) ? 0.65 : 0.75;
+  const _sellThr = _isKrStock(_currentTicker) ? 0.85 : 0.65;
   const filteredTotal = (lastPb == null) ? filteredByMA50
     : (filteredByMA50 >= 2  && lastPb >= 0.35)      ? 0
     : (filteredByMA50 <= -2 && lastPb <= _sellThr)  ? 0

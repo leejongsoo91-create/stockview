@@ -342,6 +342,47 @@ def strategy_mtf_div_bb_sellA2(ohlcv):
             filtered[i]=combined[i]
     return filtered, 2
 
+def strategy_mtf_div_bb_sellB(ohlcv):
+    """[전략B] MTF+DIV+BB + 매도 시 약세 캔들 확인 (Shooting Star / Bearish Engulfing)"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv)
+    wtrend=get_weekly_trend_array(ohlcv); pb=calc_bb(c)
+    pat=calc_candle_patterns(ohlcv)
+    combined=[sig[i]+div[i] for i in range(n)]
+    for i in range(n):
+        if wtrend[i]== 1 and combined[i]<0: combined[i]=0
+        if wtrend[i]==-1 and combined[i]>0: combined[i]=0
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.65:
+            # 최근 3봉 내 약세 캔들 패턴 있을 때만 매도 통과
+            has_bearish = any(pat[j]<0 for j in range(max(0,i-2), i+1))
+            if has_bearish:
+                filtered[i]=combined[i]
+    return filtered, 2
+
+def strategy_mtf_div_bb_sellAB(ohlcv):
+    """[전략A+B] MTF+DIV+BB + 매도 %B>0.75 + 약세 캔들 확인"""
+    c=[d['close'] for d in ohlcv]; n=len(c)
+    sig=base_sig(ohlcv); div=calc_rsi_divergence(ohlcv)
+    wtrend=get_weekly_trend_array(ohlcv); pb=calc_bb(c)
+    pat=calc_candle_patterns(ohlcv)
+    combined=[sig[i]+div[i] for i in range(n)]
+    for i in range(n):
+        if wtrend[i]== 1 and combined[i]<0: combined[i]=0
+        if wtrend[i]==-1 and combined[i]>0: combined[i]=0
+    filtered=[0]*n
+    for i in range(n):
+        if combined[i]>=2 and pb[i] is not None and pb[i]<0.35:
+            filtered[i]=combined[i]
+        elif combined[i]<=-2 and pb[i] is not None and pb[i]>0.75:  # A: 0.75
+            has_bearish = any(pat[j]<0 for j in range(max(0,i-2), i+1))
+            if has_bearish:  # B: 약세 캔들 확인
+                filtered[i]=combined[i]
+    return filtered, 2
+
 def strategy_full_bb(ohlcv):
     """[신규] RSI 다이버전스 + 캔들 패턴 + BB %B (전체 결합)"""
     c=[d['close'] for d in ohlcv]; n=len(c)
@@ -372,12 +413,13 @@ def backtest(ohlcv, signals, threshold):
     return total,buy,buy_ok,sell,sell_ok
 
 STRATEGIES = [
-    ('[현재] MTF+DIV+BB (기준)',          strategy_mtf_div_bb),
-    ('[전략A]  매도 %B>0.75',             strategy_mtf_div_bb_sellA),
-    ('[전략A2] 매도 %B>0.85',             strategy_mtf_div_bb_sellA2),
-    ('--- 이전 단계 ---',                  None),
-    ('DIV+BB (MTF 없음)',                  strategy_rsi_div_bb),
-    ('BB만 (Phase 1)',                     strategy_bb),
+    ('[현재] MTF+DIV+BB (기준)',           strategy_mtf_div_bb),
+    ('[전략A]  매도 %B>0.75',              strategy_mtf_div_bb_sellA),
+    ('[전략B]  매도+캔들확인',             strategy_mtf_div_bb_sellB),
+    ('[전략A+B] %B>0.75+캔들확인',        strategy_mtf_div_bb_sellAB),
+    ('--- 이전 단계 ---',                   None),
+    ('DIV+BB (MTF 없음)',                   strategy_rsi_div_bb),
+    ('BB만 (Phase 1)',                      strategy_bb),
 ]
 
 def load_kr_top50():
