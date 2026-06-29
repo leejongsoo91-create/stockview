@@ -870,8 +870,12 @@ function _getKrFiltered() {
   const q = (document.getElementById('filter-search')?.value || '').trim().toLowerCase();
   if (q) list = list.filter(s =>
     s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
-  // 정렬
+  // 정렬 — 가격 없는 종목은 항상 맨 뒤
   list.sort((a, b) => {
+    const aNoPx = !a.price, bNoPx = !b.price;
+    if (aNoPx && bNoPx) return 0;
+    if (aNoPx) return 1;
+    if (bNoPx) return -1;
     let av = a[_sortCol] ?? 0, bv = b[_sortCol] ?? 0;
     if (typeof av === 'string') av = av.toLowerCase();
     if (typeof bv === 'string') bv = bv.toLowerCase();
@@ -998,7 +1002,7 @@ function renderKrScreener() {
         case 'market':     return `<td>${_mktBadge(s.market)}</td>`;
         case 'sector':     return `<td class="td-name" style="font-size:11px;color:var(--muted)">${s.sector || '—'}</td>`;
         case 'price':      return `<td class="num">${_fmtKrw(s.price)}</td>`;
-        case 'change_pct': return `<td class="num ${cls}">${s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>`;
+        case 'change_pct': return `<td class="num ${cls}">${s.price && s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>`;
         case 'volume':     return `<td class="num">${_fmtKrVol(s.volume)}</td>`;
         case 'market_cap': return `<td class="num">${_fmtKrCap(s.market_cap)}</td>`;
         case 'pe':         return `<td class="num">${s.pe ? s.pe.toFixed(1) : '—'}</td>`;

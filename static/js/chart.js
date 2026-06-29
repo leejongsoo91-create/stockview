@@ -753,6 +753,20 @@ function _calcSignals() {
     if (sig[i] <= -2 && pb <= sellPbThr)   sig[i] = 0;  // 매도인데 상단 근처 아님 → 차단
   }
 
+  // ── [전략B] KR 전용: 매도 신호 약세 캔들 확인 ────────────────────────────────
+  // 백테스트 KR 매도 60.6% → 68.0% (+7.4%p) — 슈팅스타/베어리시 인걸핑 없으면 차단
+  if (_isKrStock(_currentTicker)) {
+    const krPat = _calcCandlePatterns(_lastOhlcv);
+    for (let i = 0; i < n; i++) {
+      if (sig[i] <= -2) {
+        const hasBearish = krPat[i] < 0
+          || (i >= 1 && krPat[i-1] < 0)
+          || (i >= 2 && krPat[i-2] < 0);
+        if (!hasBearish) sig[i] = 0;
+      }
+    }
+  }
+
   const activeCount = (_activeInds.has('macd') ? 1 : 0) +
                       (_activeInds.has('rsi')  ? 1 : 0) +
                       (_activeInds.has('sto')  ? 1 : 0);
@@ -914,10 +928,27 @@ function _renderSignalCard() {
     : (filteredByMA50 <= -2 && lastPb <= _sellThr)  ? 0
     : filteredByMA50;
 
-  const scoreColor = filteredTotal > 0 ? '#3fb950' : filteredTotal < 0 ? '#f85149' : '#8b949e';
-  const scoreLabel = filteredTotal >= 3 ? 'STRONG BUY'  : filteredTotal === 2  ? 'BUY'
-                   : filteredTotal <= -3 ? 'STRONG SELL' : filteredTotal === -2 ? 'SELL'
-                   : filteredTotal === 1 ? 'Weak Buy'    : filteredTotal === -1 ? 'Weak Sell' : 'Neutral';
+  // [전략B] KR 전용: 매도 신호 약세 캔들 확인 (슈팅스타/베어리시 인걸핑 없으면 차단)
+  const isKrMode = _isKrStock(_currentTicker);
+  let candleBlocked = false;
+  if (isKrMode && filteredTotal <= -2) {
+    const hasBearish = patArr[n-1] < 0
+      || (n >= 2 && patArr[n-2] < 0)
+      || (n >= 3 && patArr[n-3] < 0);
+    if (!hasBearish) candleBlocked = true;
+  }
+  const finalTotal = candleBlocked ? 0 : filteredTotal;
+  if (isKrMode) {
+    const cr = rows.find(r => r.label === 'CANDLE');
+    if (cr) cr.detail = candleBlocked          ? '⚡ 매도 차단'
+                      : (filteredTotal <= -2 && patScore < 0) ? patName + ' ✓'
+                      : patName;
+  }
+
+  const scoreColor = finalTotal > 0 ? '#3fb950' : finalTotal < 0 ? '#f85149' : '#8b949e';
+  const scoreLabel = finalTotal >= 3 ? 'STRONG BUY'  : finalTotal === 2  ? 'BUY'
+                   : finalTotal <= -3 ? 'STRONG SELL' : finalTotal === -2 ? 'SELL'
+                   : finalTotal === 1 ? 'Weak Buy'    : finalTotal === -1 ? 'Weak Sell' : 'Neutral';
 
   const trendColor = trendUp ? '#3fb950' : trendDown ? '#f85149' : '#8b949e';
   const trendLabel = trendUp ? '▲ 상승 추세' : trendDown ? '▼ 하락 추세' : '— 중립';
@@ -992,7 +1023,7 @@ function _renderSignalCard() {
   card.innerHTML = `
     <div class="sc-title">SIGNAL</div>
     <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
-    <div class="sc-score-num" style="color:${scoreColor}">${filteredTotal > 0 ? '+' : ''}${filteredTotal} / ${totalSlots}</div>
+    <div class="sc-score-num" style="color:${scoreColor}">${finalTotal > 0 ? '+' : ''}${finalTotal} / ${totalSlots}</div>
     <div class="sc-divider"></div>
     ${trendRow}
     ${weeklyRow}
