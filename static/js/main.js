@@ -766,6 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 글로벌 검색 초기화
   initGlobalSearch();
+  _preloadGlobalSearchData();
 
   // 테마 초기화
   initTheme();
@@ -817,6 +818,20 @@ function initGlobalSearch() {
     if (!document.getElementById('global-search-wrap').contains(e.target))
       drop.style.display = 'none';
   });
+}
+
+// 스크리너 탭을 열지 않은 상태에서도 검색이 되도록 US/KR 종목 목록을 백그라운드로 미리 로드
+async function _preloadGlobalSearchData() {
+  try {
+    if (!window._scStocks || window._scStocks.length === 0) {
+      window._scStocks = await api('/api/stocks');
+    }
+  } catch (e) { console.warn('global search US preload failed', e); }
+  try {
+    if (!window._krStocks || window._krStocks.length === 0) {
+      window._krStocks = await api('/api/kr-stocks');
+    }
+  } catch (e) { console.warn('global search KR preload failed', e); }
 }
 
 function _gsSearch(q) {
