@@ -862,6 +862,9 @@ def _fetch_kr_price_one(stock: dict) -> dict:
         prev  = meta.get("chartPreviousClose") or meta.get("previousClose", price) or price
         chg   = (price - prev) if price else 0
         chg_pct = round((chg / prev * 100), 2) if (prev and price) else 0.0
+        # KRX 상하한가 ±30% 초과는 stale chartPreviousClose(거래정지 종목 등) 오류로 판단해 무시
+        if abs(chg_pct) > 30:
+            chg, chg_pct = 0, 0.0
         vol   = meta.get("regularMarketVolume", 0) or 0
         # v8 chart API는 KR 종목의 marketCap을 반환하지 않으므로 base 값 유지
         cap   = meta.get("marketCap", 0) or stock.get("market_cap", 0) or 0

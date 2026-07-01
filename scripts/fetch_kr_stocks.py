@@ -160,6 +160,9 @@ def _fetch_price(stock: dict) -> dict:
         prev  = meta.get("chartPreviousClose") or meta.get("previousClose", price)
         chg   = price - prev
         chg_pct = round((chg / prev * 100), 2) if prev else 0
+        # KRX 상하한가 ±30% 초과는 stale chartPreviousClose(거래정지 종목 등) 오류로 판단해 무시
+        if abs(chg_pct) > 30:
+            chg, chg_pct = 0, 0
         vol   = meta.get("regularMarketVolume", 0)
         cap   = meta.get("marketCap", 0) or stock.get("market_cap", 0) or 0
         w52h  = meta.get("fiftyTwoWeekHigh", 0) or 0
