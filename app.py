@@ -188,7 +188,7 @@ def refresh_stocks():
     """
     base = cache.get("stocks_base") or STOCKS
     if len(base) >= 1000:
-        nasdaq = df.fetch_nasdaq_stocks(min_market_cap_b=0.3)
+        nasdaq = df.fetch_nasdaq_stocks(min_market_cap_b=0.0)
         if nasdaq:
             cache.set("stocks_base", nasdaq, ttl=3600)
             cache.set("stocks",      nasdaq, ttl=300)
@@ -408,7 +408,7 @@ def _load_sp500_background():
     Wikipedia S&P500 티커는 Nasdaq 성공 여부와 무관하게 별도 캐시에 저장.
     """
     # 1) Nasdaq API 시도
-    nasdaq = df.fetch_nasdaq_stocks(min_market_cap_b=0.3)
+    nasdaq = df.fetch_nasdaq_stocks(min_market_cap_b=0.0)
     if nasdaq:
         cache.set("stocks_base", nasdaq, ttl=3600)
         cache.set("stocks",      nasdaq, ttl=300)

@@ -28,7 +28,7 @@ YF_HEADERS = {
 
 FMP_KEY      = "uF46pP4IocE5ToPciq8lniQ3gpREJEpo"
 AV_KEY       = "BHLMLWDEUN9B98HW"
-FINNHUB_KEY  = "d8n669hr01qp7ubr04s0d8n669hr01qp7ubr04sg"
+FINNHUB_KEY  = "d93qog9r01qj2ci8oaf0d93qog9r01qj2ci8oafg"
 
 RSS_FEEDS = [
     # 기존 7개
@@ -624,7 +624,8 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
         })
 
     result.sort(key=lambda x: x["market_cap"] or 0, reverse=True)
-    log.info(f"Nasdaq stocks 로드 완료: {len(result)}개 (시총 ${min_market_cap_b}B 이상)")
+    result = result[:5000]
+    log.info(f"Nasdaq stocks 로드 완료: {len(result)}개 (시총 상위 5000개, ${min_market_cap_b}B 이상 필터)")
     return result
 
 
