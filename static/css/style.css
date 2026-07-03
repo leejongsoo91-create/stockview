@@ -1571,6 +1571,12 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
 }
+.sc-banner {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border-left: 4px solid;
+  margin-bottom: 8px;
+}
 .sc-title {
   font-size: 10px;
   font-weight: 700;
@@ -1579,13 +1585,13 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   margin-bottom: 4px;
 }
 .sc-score {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 800;
   line-height: 1.2;
 }
 .sc-score-num {
-  font-size: 11px;
-  margin-bottom: 8px;
+  font-size: 12px;
+  margin-top: 2px;
 }
 .sc-divider {
   border-top: 1px solid #1e2530;

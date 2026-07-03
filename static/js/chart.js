@@ -784,6 +784,8 @@ function _applySignalMarkers() {
   if (!result || result.activeCount === 0) { _candleSeries.setMarkers([]); return; }
 
   const { sig, times, activeCount } = result;
+  const isKr = _isKrStock(_currentTicker);
+  const fmtPrice = v => isKr ? _fmtKrPrice(v) : fmt$(v);
   // score>=2 + BB%B 통과 시 마커 표시 (score=3 시도 후 되돌림: 매도 신호 소멸 문제)
   const threshold = activeCount >= 3 ? 2 : 1;
   const markers   = [];
@@ -793,19 +795,20 @@ function _applySignalMarkers() {
     const s = sig[i];
     if (s === prevScore) continue;
     prevScore = s;
+    const price = fmtPrice(_lastOhlcv[i].close);
     if (s >= threshold) {
       markers.push({
         time: times[i], position: 'belowBar',
         color: s >= 3 ? '#3fb950' : '#58a6ff',
-        shape: 'arrowUp', size: s >= 3 ? 2 : 1,
-        text: s >= 3 ? 'BUY' : 'buy',
+        shape: 'arrowUp', size: s >= 3 ? 3 : 1.5,
+        text: (s >= 3 ? 'BUY ' : 'buy ') + price,
       });
     } else if (s <= -threshold) {
       markers.push({
         time: times[i], position: 'aboveBar',
         color: s <= -3 ? '#f85149' : '#ffa64d',
-        shape: 'arrowDown', size: s <= -3 ? 2 : 1,
-        text: s <= -3 ? 'SELL' : 'sell',
+        shape: 'arrowDown', size: s <= -3 ? 3 : 1.5,
+        text: (s <= -3 ? 'SELL ' : 'sell ') + price,
       });
     }
   }
@@ -1020,10 +1023,15 @@ function _renderSignalCard() {
   }).join('');
 
   const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0); // DIV는 RSI 활성 시 포함
+  const scoreBg = finalTotal > 0 ? 'rgba(63,185,80,0.14)'
+                : finalTotal < 0 ? 'rgba(248,81,73,0.14)'
+                : 'rgba(139,148,158,0.08)';
   card.innerHTML = `
-    <div class="sc-title">SIGNAL</div>
-    <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
-    <div class="sc-score-num" style="color:${scoreColor}">${finalTotal > 0 ? '+' : ''}${finalTotal} / ${totalSlots}</div>
+    <div class="sc-banner" style="background:${scoreBg};border-left-color:${scoreColor}">
+      <div class="sc-title">SIGNAL</div>
+      <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
+      <div class="sc-score-num" style="color:${scoreColor}">${finalTotal > 0 ? '+' : ''}${finalTotal} / ${totalSlots}</div>
+    </div>
     <div class="sc-divider"></div>
     ${trendRow}
     ${weeklyRow}
