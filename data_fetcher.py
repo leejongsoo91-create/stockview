@@ -40,7 +40,6 @@ RSS_FEEDS = [
     {"url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",          "source": "NYT Business"},
     {"url": "https://www.ft.com/rss/home",                                        "source": "Financial Times"},
     # 추가 5개
-    {"url": "https://www.businesswire.com/rss/home/?rss=G7",                      "source": "Business Wire"},
     {"url": "https://www.thestreet.com/.rss/full",                                "source": "TheStreet"},
     {"url": "https://www.benzinga.com/feed",                                      "source": "Benzinga"},
     {"url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",                      "source": "WSJ Markets"},
