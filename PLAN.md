@@ -719,9 +719,49 @@ APScheduler>=3.10.4
 - [x] `static/js/main.js` — `loadDisclosures()` / `renderDisclosures()` 렌더링 로직 추가
 - [x] `static/css/style.css` — `.disclosure-card` 그리드 스타일 추가
 
+### Phase 4-76 — KR 전종목 검색 확장 ✅ 완료 (2026-06-30)
+- [x] `scripts/fetch_kr_stocks.py` — 전페이지 자동 순회 수집 (488개 → 3,945개, KOSPI 2,171 + KOSDAQ 1,774)
+- [x] `data/kr_stocks.json` 재생성, `data/kr_stocks_backup.json` 이전 488종목 백업
+
+### Phase 4-77 — KR 전략B (신호 정확도 개선) ✅ 완료 (2026-06-30)
+- [x] `static/js/chart.js` `_calcSignals()` — KR 전용 매도 신호 약세 캔들(슈팅스타/베어리시 인걸핑) 확인 필터, 300종목 백테스트로 KR 매도 60.6%→68.0% 개선
+- [x] US 매수 75.4%, KR 매수 70.0%, KR 매도(전략B) 68.0% — 65% 목표 달성. US 매도는 구조적 한계로 개선 포기
+
+### Phase 4-78 — KR 등락률 버그 수정 ✅ 완료 (2026-06-30 ~ 07-03)
+- [x] KR 스크리너 -100%/±30% 초과 등락률 이상값 버그 수정 (`screener.js`, `data_fetcher.py`), 전종목 재수집
+- [x] 스크리너 미방문 상태에서 글로벌 검색 결과 없음 버그 수정
+
+### Phase 4-79 — 차트 매수/매도 신호 시각적 강조 ✅ 완료 (2026-07-03)
+- [x] `static/js/chart.js` `_applySignalMarkers()` — 마커 크기 확대(1/2→1.5/3), 텍스트에 신호 시점 가격 추가
+- [x] `static/js/chart.js` `_renderSignalCard()` — 사이드바 SIGNAL 카드에 `.sc-banner` 색상 배경 배너 적용, 점수 폰트 확대(15px→20px)
+- [x] `static/css/style.css` — `.sc-banner` 스타일 신규 추가
+
+### Phase 4-80 — 미국주식 5,000개 확장 + Finnhub 키 교체 ✅ 완료 (2026-07-03)
+- [x] `data_fetcher.py` `fetch_nasdaq_stocks()` — 시총 하한 필터 해제(0.3B→0.0), 시총 내림차순 상위 5,000개로 고정 (기존 2,960개)
+- [x] `app.py` 2곳(`refresh_stocks()`, `_load_sp500_background()`) 호출부 `min_market_cap_b=0.0`으로 변경
+- [x] 만료된 `FINNHUB_KEY` 신규 키로 교체, 종목별 뉴스 401 에러 해결
+- 주의: 5,000개 중 약 900개는 시총 데이터 없는 SPAC 워런트/유닛/우선주(`AACIW`, `ABR^D` 등) — 사용자 확인 후 포함 결정
+
+### Phase 4-81 — RSS 죽은 피드 5종 정리 ✅ 완료 (2026-07-06 ~ 07-07)
+- [x] Benzinga URL 교체 (`/feeds/news` 404 → `/feed` 정상)
+- [x] Investopedia 소스 제거 (공개 RSS 서비스 종료, 대체 URL 없음)
+- [x] Barron's → WSJ Markets(Dow Jones `feeds.a.dj.com`)로 교체 (기존 URL 403 Cloudflare 차단)
+- [x] Business Wire 소스 제거 (커스텀 UA 요청 시 무응답 타임아웃, 대체 서브도메인은 채널 코드 전부 무효)
+- [x] Reddit r/stocks·r/investing·r/wsb 요청 사이 5초 지연 추가 (429 완화 시도, 완전 해결은 아님 — 아래 참고)
+
 ### Phase 4-76 이후 — 예정 항목
-| FinBERT 감성 분석 | — | VADER → 금융 특화 BERT 모델 | 낮음 |
-| 재무제표 페이지 | — | financials 데이터 표시 | 낮음 |
+| 항목 | 우선순위 | 설명 |
+|------|---------|------|
+| 차트 더미(가짜) OHLCV 데이터 표시 개선 | 중간 | `app.py:843,913` `_generate_ohlcv_dummy()` — 실제 차트 조회 실패 시 랜덤 생성 데이터를 표시 여부 구분 없이 반환. "데이터 없음" 배너 등 구분 필요 |
+| 히트맵 1주/1개월 성과 데이터 커버리지 확대 | 중간 | `app.py:888-890` `/api/heatmap-perf`가 시총 상위 500개로 고정 — Top 1000/전체 선택 시 501위 밖 종목은 1일 등락률이 조용히 대체 표시됨(`heatmap.js:159`) |
+| PE/EPS 데이터 수집 확대 | 중간 | `data/pe_eps_cache.json` 1,272개 vs 종목 5,000개 (커버리지 25%) — `scripts/collect_pe_eps.py` 반복 실행 또는 스케줄러 등록 필요 |
+| 스크리너 "정상 종목만 보기" 필터 | 낮음 | 5,000개 확장으로 섞인 SPAC 워런트/유닛(~900개) 제외 옵션 |
+| Reddit RSS 429 근본 해결 | 낮음 | 5초 지연으로도 r/investing·r/wsb 지속 실패 — 사용자 확인 후 보류 중 |
+| console.log 디버그 잔재 정리 | 낮음 | `static/js/main.js:675,680,685,710,723` WebSocket 이벤트 로그 5곳, 조건 없이 항상 출력 |
+| 예외 처리 로깅 보강 | 낮음 | `app.py`의 `_load_kr_base()`/`_load_pe_eps()`, `data_fetcher.py` 52주 고저 수집 워커 등에서 예외를 로그 없이 삼킴 |
+| Russell 2000 정확한 구성종목 | 낮음 (보류) | iShares 사이트가 JS SPA로 개편되어 스크래핑 불가 확인, 대체 무료 소스 못 찾음 — 현재 시총 근사 폴백 유지하기로 결정 |
+| FinBERT 감성 분석 | 낮음 | VADER → 금융 특화 BERT 모델 |
+| 재무제표 페이지 | 낮음 | financials 데이터 표시 |
 
 ---
 
@@ -741,18 +781,18 @@ python app.py
 
 ---
 
-## K. 현재 구현 상태 요약 (2026-06-13 기준)
+## K. 현재 구현 상태 요약 (2026-07-07 기준)
 
 | 탭 | 상태 | 주요 기능 |
 |----|------|-----------|
 | Home | ✅ | 지수 7개, Top Gainers/Losers, Latest News, 티커 테이프 |
-| Screener | ✅ | 2,949개 종목, 2행 8개 필터 (Sector/Industry/Country/Market Cap/P/E/Change%/52W/Search), Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 |
-| Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁, 중복 클래스 주식 제거 |
-| Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바 |
-| News | ✅ | 뉴스/리포트 서브탭, VADER 감성 배지 |
+| Screener | ✅ | US 5,000개 + KR 3,945개, 2행 8개 필터 (Sector/Industry/Country/Market Cap/P/E/Change%/52W/Search), Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 |
+| Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁 (단, 1주/1개월 성과는 시총 상위 500개까지만 실데이터, 그 밖은 1일 등락률로 대체 표시 — 개선 예정) |
+| Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드로 강조 표시) |
+| News | ✅ | 뉴스/리포트/공시 서브탭, VADER 감성 배지, RSS 15개 소스 (죽은 피드 5종 정리 완료) |
 | Brief | ✅ | Daily/Weekly/Monthly, Market Mood 바, 중복 제거 Top Stories |
 | Watchlist | ✅ | localStorage 기반 ★ 저장, 실시간 가격 반영 |
 | Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신 |
 | Earnings | ✅ | Nasdaq API, This Week/Next Week/Today, EPS 예상치·전년 비교 |
 
-*최종 수정: 2026-06-22*
+*최종 수정: 2026-07-07*
