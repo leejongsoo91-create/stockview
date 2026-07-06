@@ -42,9 +42,8 @@ RSS_FEEDS = [
     # 추가 5개
     {"url": "https://www.businesswire.com/rss/home/?rss=G7",                      "source": "Business Wire"},
     {"url": "https://www.thestreet.com/.rss/full",                                "source": "TheStreet"},
-    {"url": "https://www.benzinga.com/feeds/news",                                "source": "Benzinga"},
-    {"url": "https://www.investopedia.com/feedbuilder/feed/getfeed/?feedName=rss_headline", "source": "Investopedia"},
-    {"url": "https://www.barrons.com/xml/rss/3_7551.xml",                         "source": "Barron's"},
+    {"url": "https://www.benzinga.com/feed",                                      "source": "Benzinga"},
+    {"url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",                      "source": "WSJ Markets"},
     # Reddit 커뮤니티 3개 (User-Agent 필요)
     {"url": "https://www.reddit.com/r/stocks/top/.rss?t=day",                    "source": "Reddit r/stocks",   "reddit": True},
     {"url": "https://www.reddit.com/r/investing/top/.rss?t=day",                 "source": "Reddit r/investing","reddit": True},
@@ -1469,6 +1468,8 @@ def fetch_news() -> list[dict]:
 
     for feed_info in RSS_FEEDS:
         try:
+            if feed_info.get("reddit"):
+                time.sleep(5)  # Reddit IP 단위 연속 요청 429 방지
             feed = _fetch_feed(feed_info["url"])
 
             for entry in feed.entries[:6]:
