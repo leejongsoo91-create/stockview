@@ -11,6 +11,8 @@ let _hmMembers  = {};
 let _hmMarket   = 'us';  // 'us' | 'kr'
 let _krHmStocks = [];
 let _krHmFilter = 'all'; // 'all' | 'kospi200' | 'kosdaq150'
+let _krHmPeriod   = '1d';
+let _krHmPerfData = {};  // { '1w': {ticker: perf_pct}, '1m': {ticker: perf_pct} }
 
 const _colorScale = d3.scaleLinear()
   .domain([-5, -2, -0.5, 0, 0.5, 2, 5])
@@ -64,6 +66,29 @@ async function initHeatmap() {
       document.querySelectorAll('.hm-kr-idx-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _krHmFilter = btn.dataset.krindex;
+      renderKrHeatmap();
+    });
+  });
+
+  // KR 기간 버튼 (1D / 1W / 1M)
+  document.querySelectorAll('.hm-kr-period-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.period;
+      if (p === _krHmPeriod) return;
+      document.querySelectorAll('.hm-kr-period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _krHmPeriod = p;
+      if (p !== '1d' && !_krHmPerfData[p]) {
+        const countEl = document.getElementById('hm-kr-count-label');
+        const prevText = countEl ? countEl.textContent : '';
+        if (countEl) countEl.textContent = '수익률 로딩 중…';
+        try {
+          _krHmPerfData[p] = await api(`/api/heatmap-perf?period=${p}&market=kr`);
+        } catch (e) {
+          _krHmPerfData[p] = {};
+        }
+        if (countEl) countEl.textContent = prevText;
+      }
       renderKrHeatmap();
     });
   });
@@ -526,6 +551,15 @@ function renderKrHeatmap() {
       .slice(0, 150);
   } else {
     stocks = allStocks;
+  }
+
+  // 기간별 등락률 오버레이 (1W/1M 선택 시 perf_pct로 교체)
+  if (_krHmPeriod !== '1d') {
+    const krPerfMap = _krHmPerfData[_krHmPeriod] || {};
+    stocks = stocks.map(s => ({
+      ...s,
+      change_pct: krPerfMap[s.ticker] !== undefined ? krPerfMap[s.ticker] : s.change_pct,
+    }));
   }
 
   const countEl = document.getElementById('hm-kr-count-label');

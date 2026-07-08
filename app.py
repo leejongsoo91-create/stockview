@@ -881,14 +881,17 @@ def heatmap_perf():
     period = request.args.get("period", "1w")
     if period not in ("1w", "1m"):
         period = "1w"
-    key = f"heatmap_perf_{period}"
+    market = request.args.get("market", "us")
+    is_kr  = market == "kr"
+    key = f"heatmap_perf_{'kr_' if is_kr else ''}{period}"
     cached = cache.get_fresh(key)
     if cached is not None:
         return jsonify(cached)
-    stocks = cache.get("stocks") or STOCKS
+    stocks = (cache.get("kr_stocks") or []) if is_kr else (cache.get("stocks") or STOCKS)
     tickers = [s["ticker"] for s in stocks]
     perf = df.fetch_heatmap_perf(tickers, period=period, max_workers=80)
-    ttl = 3600 if period == "1w" else 7200
+    # 거의 전량 실패(Yahoo 레이트리밋 등 일시적 오류)면 짧게만 캐시해 곧 재시도되게 함
+    ttl = (3600 if period == "1w" else 7200) if len(perf) >= len(tickers) * 0.5 else 60
     cache.set(key, perf or {}, ttl=ttl)
     return jsonify(perf or {})
 

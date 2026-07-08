@@ -1191,6 +1191,19 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   color: var(--muted);
   margin-left: 8px;
 }
+.hm-kr-period-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.hm-kr-period-btn:hover  { border-color: #1a6fc4; color: #1a6fc4; }
+.hm-kr-period-btn.active { background: #1a6fc4; border-color: #1a6fc4; color: #fff; }
 
 /* ── Heatmap 섹터·업종 호버 ────────────────────────────────────────────────── */
 .sector-group rect,
