@@ -886,9 +886,8 @@ def heatmap_perf():
     if cached is not None:
         return jsonify(cached)
     stocks = cache.get("stocks") or STOCKS
-    sorted_stocks = sorted(stocks, key=lambda x: x.get("market_cap") or 0, reverse=True)
-    tickers = [s["ticker"] for s in sorted_stocks[:500]]
-    perf = df.fetch_heatmap_perf(tickers, period=period)
+    tickers = [s["ticker"] for s in stocks]
+    perf = df.fetch_heatmap_perf(tickers, period=period, max_workers=80)
     ttl = 3600 if period == "1w" else 7200
     cache.set(key, perf or {}, ttl=ttl)
     return jsonify(perf or {})
