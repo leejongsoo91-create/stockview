@@ -171,18 +171,54 @@ function _createLWChart() {
   });
 }
 
+// 티커/코드 직접 일치가 없으면 한글·영문 종목명으로 검색해 티커를 찾는다
+// (헤더의 전역 검색과 동일한 window._scStocks/_krStocks 데이터를 재사용)
+function _resolveChartTicker(raw) {
+  const q = (raw || '').trim();
+  if (!q) return null;
+  const qUpper = q.toUpperCase();
+  const qLower = q.toLowerCase();
+
+  const usStocks = window._scStocks || [];
+  const krStocks = window._krStocks || [];
+
+  // 1) 정확한 티커/코드 일치 우선
+  const usExact = usStocks.find(s => s.ticker.toUpperCase() === qUpper);
+  if (usExact) return usExact.ticker;
+
+  const krExact = krStocks.find(s => s.code === q || (s.ticker || '').toUpperCase() === qUpper);
+  if (krExact) return krExact.ticker;
+
+  // 2) 종목명 검색 (한글명은 KR 종목 name, US 종목은 name_ko/name)
+  const krByName = krStocks.filter(s => (s.name || '').includes(q));
+  if (krByName.length) {
+    krByName.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+    return krByName[0].ticker;
+  }
+
+  const usByName = usStocks.filter(s =>
+    (s.name_ko && s.name_ko.includes(q)) ||
+    (s.name || '').toLowerCase().includes(qLower)
+  );
+  if (usByName.length) {
+    usByName.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+    return usByName[0].ticker;
+  }
+
+  // 3) 매칭 실패 시 입력값을 그대로 티커로 간주 (추적 목록 밖 종목 지원)
+  return qUpper;
+}
+
 // ── 이벤트 바인딩 ─────────────────────────────────────────────────────────────
 function _bindSearchEvents() {
   const input = document.getElementById('chart-input');
-  document.getElementById('chart-go-btn').addEventListener('click', () => {
-    const t = input.value.trim().toUpperCase();
+  const go = () => {
+    const t = _resolveChartTicker(input.value);
     if (t) loadChart(t);
-  });
+  };
+  document.getElementById('chart-go-btn').addEventListener('click', go);
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      const t = input.value.trim().toUpperCase();
-      if (t) loadChart(t);
-    }
+    if (e.key === 'Enter') go();
   });
   document.querySelectorAll('.quick-btn').forEach(btn => {
     btn.addEventListener('click', () => loadChart(btn.dataset.ticker));
