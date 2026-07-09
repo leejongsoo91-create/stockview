@@ -749,12 +749,22 @@ APScheduler>=3.10.4
 - [x] Business Wire 소스 제거 (커스텀 UA 요청 시 무응답 타임아웃, 대체 서브도메인은 채널 코드 전부 무효)
 - [x] Reddit r/stocks·r/investing·r/wsb 요청 사이 5초 지연 추가 (429 완화 시도, 완전 해결은 아님 — 아래 참고)
 
+### Phase 4-82 — Chart 탭 검색창 한글/영문 종목명 검색 ✅ 완료 (2026-07-07)
+- [x] `static/js/chart.js` `_resolveChartTicker()` 추가 — 정확한 티커/코드 일치 → 한글(`name`)/영문(`name_ko`) 종목명 검색 → 실패 시 원문 티커 취급 순으로 매칭
+- [x] `templates/index.html` — `#chart-input` placeholder에 "삼성전자" 등 이름 검색 힌트 추가
+- 헤더 전역 검색(`main.js` `_gsSearch`)과 동일한 `window._scStocks`/`_krStocks` 데이터 재사용
+
+### Phase 4-83 — 히트맵 성과 데이터 커버리지 확대 + KR 기간 필터 추가 ✅ 완료 (2026-07-09)
+- [x] `app.py` `/api/heatmap-perf` — 시총 상위 500개 하드코딩 제거, 전체 종목 대상 + `max_workers=80`으로 상향 (5,000개도 약 20초에 수집)
+- [x] `app.py` — `market` 파라미터 추가로 KR 종목(3,936개)도 1주/1개월 성과 조회 가능
+- [x] `app.py` — 성공률 50% 미만(Yahoo 레이트리밋 등 일시 실패)이면 60초만 캐시해 자동 재시도되도록 수정 (기존엔 빈 결과가 1시간 캐시되는 버그였음)
+- [x] `templates/index.html`, `static/js/heatmap.js`, `static/css/style.css` — KR 인덱스 바에 1D/1W/1M 버튼 및 `_krHmPeriod`/`_krHmPerfData` 로직 추가 (US와 동일 패턴)
+
 ### Phase 4-76 이후 — 예정 항목
 | 항목 | 우선순위 | 설명 |
 |------|---------|------|
 | 차트 더미(가짜) OHLCV 데이터 표시 개선 | 중간 | `app.py:843,913` `_generate_ohlcv_dummy()` — 실제 차트 조회 실패 시 랜덤 생성 데이터를 표시 여부 구분 없이 반환. "데이터 없음" 배너 등 구분 필요 |
-| 히트맵 1주/1개월 성과 데이터 커버리지 확대 | 중간 | `app.py:888-890` `/api/heatmap-perf`가 시총 상위 500개로 고정 — Top 1000/전체 선택 시 501위 밖 종목은 1일 등락률이 조용히 대체 표시됨(`heatmap.js:159`) |
-| PE/EPS 데이터 수집 확대 | 중간 | `data/pe_eps_cache.json` 1,272개 vs 종목 5,000개 (커버리지 25%) — `scripts/collect_pe_eps.py` 반복 실행 또는 스케줄러 등록 필요 |
+| PE/EPS 데이터 수집 확대 | 중간 | `data/pe_eps_cache.json` 1,275개 vs 종목 5,000개 (커버리지 25%) — `scripts/collect_pe_eps.py` 반복 실행 또는 스케줄러 등록 필요 |
 | 스크리너 "정상 종목만 보기" 필터 | 낮음 | 5,000개 확장으로 섞인 SPAC 워런트/유닛(~900개) 제외 옵션 |
 | Reddit RSS 429 근본 해결 | 낮음 | 5초 지연으로도 r/investing·r/wsb 지속 실패 — 사용자 확인 후 보류 중 |
 | console.log 디버그 잔재 정리 | 낮음 | `static/js/main.js:675,680,685,710,723` WebSocket 이벤트 로그 5곳, 조건 없이 항상 출력 |
@@ -781,18 +791,18 @@ python app.py
 
 ---
 
-## K. 현재 구현 상태 요약 (2026-07-07 기준)
+## K. 현재 구현 상태 요약 (2026-07-09 기준)
 
 | 탭 | 상태 | 주요 기능 |
 |----|------|-----------|
 | Home | ✅ | 지수 7개, Top Gainers/Losers, Latest News, 티커 테이프 |
 | Screener | ✅ | US 5,000개 + KR 3,945개, 2행 8개 필터 (Sector/Industry/Country/Market Cap/P/E/Change%/52W/Search), Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 |
-| Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁 (단, 1주/1개월 성과는 시총 상위 500개까지만 실데이터, 그 밖은 1일 등락률로 대체 표시 — 개선 예정) |
-| Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드로 강조 표시) |
-| News | ✅ | 뉴스/리포트/공시 서브탭, VADER 감성 배지, RSS 15개 소스 (죽은 피드 5종 정리 완료) |
+| Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁, 1주/1개월 성과 US·KR 전체 종목 커버 |
+| Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드로 강조 표시), 검색창 한글/영문 종목명 지원 |
+| News | ✅ | 뉴스/리포트/공시 서브탭, VADER 감성 배지, RSS 14개 소스 (죽은 피드 5종 정리 완료) |
 | Brief | ✅ | Daily/Weekly/Monthly, Market Mood 바, 중복 제거 Top Stories |
 | Watchlist | ✅ | localStorage 기반 ★ 저장, 실시간 가격 반영 |
 | Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신 |
 | Earnings | ✅ | Nasdaq API, This Week/Next Week/Today, EPS 예상치·전년 비교 |
 
-*최종 수정: 2026-07-07*
+*최종 수정: 2026-07-09*
