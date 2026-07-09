@@ -760,18 +760,36 @@ APScheduler>=3.10.4
 - [x] `app.py` — 성공률 50% 미만(Yahoo 레이트리밋 등 일시 실패)이면 60초만 캐시해 자동 재시도되도록 수정 (기존엔 빈 결과가 1시간 캐시되는 버그였음)
 - [x] `templates/index.html`, `static/js/heatmap.js`, `static/css/style.css` — KR 인덱스 바에 1D/1W/1M 버튼 및 `_krHmPeriod`/`_krHmPerfData` 로직 추가 (US와 동일 패턴)
 
+### Phase 4-84 — PE/EPS 수집 스크립트 커버리지 확대 ✅ 완료 (2026-07-10)
+- [x] `scripts/collect_pe_eps.py` — 후보 티커 600→5,000개 확대 (진짜 원인은 600개 상한이었음), 순차 처리→병렬(5 workers+0.3초 지연), 429 연속 감지 시 조기 중단하는 서킷브레이커, cp949 콘솔 인코딩 오류 수정
+- [x] 1차 시도(20 workers, 무지연)는 Yahoo 429 차단 유발 → 설정 조정 후 2차 시도 정상 완료
+- [x] 데이터: PE/EPS 캐시 1,277개 → **3,255개** (커버리지 25% → 65%)
+
+### Phase 4-85 — console.log 디버그 잔재 정리 ✅ 완료 (2026-07-10)
+- [x] `static/js/main.js` — WebSocket 이벤트(connect/disconnect/stocks_update/indices_update/news_update) 핸들러 5곳의 조건 없는 `console.log` 제거
+
+### Phase 4-86 — 예외 처리 로깅 보강 ✅ 완료 (2026-07-10)
+- [x] `app.py` `_load_kr_base()`/`_load_pe_eps()` — 파일 로드 실패 시 `log.warning` 추가
+- [x] `data_fetcher.py` `fetch_extra_fields()`(52W)/`fetch_heatmap_perf()` — 예외·429 차단 건수를 배치 완료 로그에 집계 포함
+- [x] `data_fetcher.py` `fetch_kr_prices()` — 완료 로그 자체가 없었음, 실패 건수 경고 로그 신규 추가
+- [x] `data_fetcher.py` AlphaVantage 뉴스 타임스탬프 파싱 실패 시 1970년(epoch 0) 대신 현재 시각 폴백 (정렬 왜곡 버그 수정)
+- 기사/가격 단위로 매우 자주 호출되는 정상적 폴백(`_to_timestamp`, `_time_ago`, `_parse_usd`, iShares 쿠키 프라이밍)은 로그 추가 시 노이즈만 커져서 의도적으로 그대로 둠
+
+### Phase 4-87 — 스크리너 "정상 종목만 보기" 필터 추가 ✅ 완료 (2026-07-10)
+- [x] `templates/index.html`/`static/js/screener.js`/`static/css/style.css` — 체크박스 필터(US 전용, 옵트인) 추가, 필터 프리셋에도 반영
+- [x] `_isAbnormalListing()`: `market_cap` 없음 또는 종목명에 Warrant/Rights/Preferred 포함 시 제외
+- [x] 검증 중 발견: "Units" 키워드 포함 시 Energy Transfer($68B)/MPLX($58B) 같은 실제 대형 MLP가 "Common Units"라는 정상 표현 때문에 오탐 → 키워드에서 제외하여 수정
+- 결과: 5,000개 중 1,070개 제외(대부분 SPAC 워런트/유닛/우선주/예탁증권), 정상 대형주는 유지 확인
+
 ### Phase 4-76 이후 — 예정 항목
 | 항목 | 우선순위 | 설명 |
 |------|---------|------|
-| 차트 더미(가짜) OHLCV 데이터 표시 개선 | 중간 | `app.py:843,913` `_generate_ohlcv_dummy()` — 실제 차트 조회 실패 시 랜덤 생성 데이터를 표시 여부 구분 없이 반환. "데이터 없음" 배너 등 구분 필요 |
-| PE/EPS 데이터 수집 확대 | 중간 | `data/pe_eps_cache.json` 1,275개 vs 종목 5,000개 (커버리지 25%) — `scripts/collect_pe_eps.py` 반복 실행 또는 스케줄러 등록 필요 |
-| 스크리너 "정상 종목만 보기" 필터 | 낮음 | 5,000개 확장으로 섞인 SPAC 워런트/유닛(~900개) 제외 옵션 |
-| Reddit RSS 429 근본 해결 | 낮음 | 5초 지연으로도 r/investing·r/wsb 지속 실패 — 사용자 확인 후 보류 중 |
-| console.log 디버그 잔재 정리 | 낮음 | `static/js/main.js:675,680,685,710,723` WebSocket 이벤트 로그 5곳, 조건 없이 항상 출력 |
-| 예외 처리 로깅 보강 | 낮음 | `app.py`의 `_load_kr_base()`/`_load_pe_eps()`, `data_fetcher.py` 52주 고저 수집 워커 등에서 예외를 로그 없이 삼킴 |
-| Russell 2000 정확한 구성종목 | 낮음 (보류) | iShares 사이트가 JS SPA로 개편되어 스크래핑 불가 확인, 대체 무료 소스 못 찾음 — 현재 시총 근사 폴백 유지하기로 결정 |
-| FinBERT 감성 분석 | 낮음 | VADER → 금융 특화 BERT 모델 |
-| 재무제표 페이지 | 낮음 | financials 데이터 표시 |
+| 차트 더미(가짜) OHLCV 데이터 표시 개선 | 중간 | `app.py:843,915` `_generate_ohlcv_dummy()` — 실제 차트 조회 실패 시 랜덤 생성 데이터를 표시 여부 구분 없이 반환. "데이터 없음" 배너 등 필요하나, `chart.js`의 MA/RSI/MACD/신호 계산 다수가 빈 데이터를 가정 안 해서 방어 코드 추가 범위가 커 보류 중 |
+| Reddit RSS 429 근본 해결 | 보류 | 5초 지연으로도 r/investing·r/wsb 지속 실패 — 사용자 확인 후 현행 유지 결정, 재작업 불필요 |
+| Russell 2000 정확한 구성종목 | 보류 | iShares 사이트가 JS SPA로 개편되어 스크래핑 불가 확인, 대체 무료 소스 못 찾음 — 현재 시총 근사 폴백 유지하기로 결정 |
+| US 매도 신호 개선 | 보류 | 구조적 한계로 개선 포기 처리됨 |
+| FinBERT 감성 분석 | 막힘 | 이 환경(Python 3.15 알파)엔 torch/transformers 설치 불가 확인 — 로컬 구동 불가능, 하려면 외부 호스팅 API 연동으로 설계 전환 필요 |
+| 재무제표 페이지 | 막힘 | Yahoo financials 페이지(404)·quoteSummary API(401 Invalid Crumb) 둘 다 차단 확인 — 대체 무료 데이터 소스 조사 선행 필요 |
 
 ---
 
@@ -791,12 +809,12 @@ python app.py
 
 ---
 
-## K. 현재 구현 상태 요약 (2026-07-09 기준)
+## K. 현재 구현 상태 요약 (2026-07-10 기준)
 
 | 탭 | 상태 | 주요 기능 |
 |----|------|-----------|
 | Home | ✅ | 지수 7개, Top Gainers/Losers, Latest News, 티커 테이프 |
-| Screener | ✅ | US 5,000개 + KR 3,945개, 2행 8개 필터 (Sector/Industry/Country/Market Cap/P/E/Change%/52W/Search), Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 |
+| Screener | ✅ | US 5,000개 + KR 3,945개, 2행 8개 필터 + "정상 종목만 보기" 옵트인 체크박스, Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 (PE/EPS 커버리지 65%) |
 | Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁, 1주/1개월 성과 US·KR 전체 종목 커버 |
 | Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드로 강조 표시), 검색창 한글/영문 종목명 지원 |
 | News | ✅ | 뉴스/리포트/공시 서브탭, VADER 감성 배지, RSS 14개 소스 (죽은 피드 5종 정리 완료) |
@@ -805,4 +823,4 @@ python app.py
 | Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신 |
 | Earnings | ✅ | Nasdaq API, This Week/Next Week/Today, EPS 예상치·전년 비교 |
 
-*최종 수정: 2026-07-09*
+*최종 수정: 2026-07-10*
