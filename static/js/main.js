@@ -672,17 +672,13 @@ function initSocketIO() {
   const socket = io({ transports: ['websocket', 'polling'] });
 
   socket.on('connect', () => {
-    console.log('[WS] connected:', socket.id);
     updateTimestamp();
   });
 
-  socket.on('disconnect', () => {
-    console.log('[WS] disconnected');
-  });
+  socket.on('disconnect', () => {});
 
   // 종목 가격 갱신 Push
-  socket.on('stocks_update', async (data) => {
-    console.log('[WS] stocks_update:', data.count, '개');
+  socket.on('stocks_update', async () => {
     try {
       const stocks = await api('/api/stocks');
       if (_currentView === 'home') {
@@ -707,7 +703,6 @@ function initSocketIO() {
 
   // 지수 갱신 Push
   socket.on('indices_update', async () => {
-    console.log('[WS] indices_update');
     try {
       const [indices, stocks] = await Promise.all([api('/api/indices'), api('/api/stocks')]);
       renderIndices(indices);
@@ -720,7 +715,6 @@ function initSocketIO() {
 
   // 뉴스 갱신 Push
   socket.on('news_update', async () => {
-    console.log('[WS] news_update');
     try {
       const news = await api('/api/news');
       if (_currentView === 'home')  renderHomeNews(news);
