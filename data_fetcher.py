@@ -2046,6 +2046,38 @@ def get_52w_movers(stocks: list[dict], near_pct: float = 10, limit: int = 15) ->
     }
 
 
+# ── 실적 발표 임박 + 매수/매도 신호 결합 (US 전용, Nasdaq 어닝스 캘린더 소스) ──────
+
+def get_earnings_signal_combo(earnings_items: list[dict], us_signals: dict, limit: int = 20) -> list[dict]:
+    """이번 주·다음 주 실적 발표 예정 종목 중 오늘의 매수/매도 신호가 있는 것만 결합.
+    날짜가 가까운 순 → 같은 날짜면 신호 강도(|score|) 큰 순으로 정렬."""
+    sig_map: dict[str, dict] = {}
+    for s in (us_signals or {}).get("buy", []):
+        sig_map[s["ticker"]] = {**s, "direction": "buy"}
+    for s in (us_signals or {}).get("sell", []):
+        sig_map[s["ticker"]] = {**s, "direction": "sell"}
+
+    combo = []
+    for item in earnings_items:
+        sig = sig_map.get(item.get("symbol"))
+        if not sig:
+            continue
+        combo.append({
+            "ticker":     item["symbol"],
+            "name":       sig.get("name") or item.get("name") or item["symbol"],
+            "date":       item["date"],
+            "time":       item.get("time", "—"),
+            "sector":     sig.get("sector"),
+            "price":      sig.get("price"),
+            "change_pct": sig.get("change_pct"),
+            "score":      sig["score"],
+            "term":       sig["term"],
+            "direction":  sig["direction"],
+        })
+    combo.sort(key=lambda x: (x["date"], -abs(x["score"])))
+    return combo[:limit]
+
+
 # ── 어닝스 캘린더 ──────────────────────────────────────────────────────────────
 _NASDAQ_HDR = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

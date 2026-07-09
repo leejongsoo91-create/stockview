@@ -776,6 +776,14 @@ def week52_movers():
     })
 
 
+@app.route("/api/earnings-signals")
+def earnings_signals():
+    """실적 발표 임박 + 매수/매도 신호 결합 종목 (US 전용, Nasdaq 어닝스 캘린더 소스)."""
+    earnings_items = cache.get("earnings") or []
+    signals = cache.get("daily_signals") or {}
+    return jsonify(df.get_earnings_signal_combo(earnings_items, signals.get("us") or {}))
+
+
 @app.route("/api/brief")
 def brief():
     import time as _time

@@ -17,7 +17,37 @@ function initBrief() {
   loadBriefFearGreed();
   loadDailySignals();
   load52wMovers();
+  loadEarningsSignals();
   _briefInited = true;
+}
+
+async function loadEarningsSignals() {
+  try {
+    const data = await api('/api/earnings-signals');
+    renderEarningsSignals(data);
+  } catch {}
+}
+
+function renderEarningsSignals(items) {
+  const el = document.getElementById('brief-earnings-signals');
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="brief-empty">해당하는 종목이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.map(s => {
+    const dirCls   = s.direction === 'buy' ? 'buy' : 'sell';
+    const dirLabel = s.direction === 'buy' ? '▲매수' : '▼매도';
+    return `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-date">${s.date} ${s.time}</span>
+      <span class="brief-signal-term term-${s.term}">${s.term}</span>
+      <span class="brief-signal-ticker">${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-dir ${dirCls}">${dirLabel}</span>
+      ${_fmtSignalPct(s.change_pct)}
+    </div>`;
+  }).join('');
 }
 
 async function load52wMovers() {
