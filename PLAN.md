@@ -781,9 +781,26 @@ APScheduler>=3.10.4
 - [x] 검증 중 발견: "Units" 키워드 포함 시 Energy Transfer($68B)/MPLX($58B) 같은 실제 대형 MLP가 "Common Units"라는 정상 표현 때문에 오탐 → 키워드에서 제외하여 수정
 - 결과: 5,000개 중 1,070개 제외(대부분 SPAC 워런트/유닛/우선주/예탁증권), 정상 대형주는 유지 확인
 
+### Phase 4-88 — Brief 탭 "오늘의 매수/매도 추천" (US/KR, 단기·중기·장기) ✅ 완료 (2026-07-10)
+- [x] `data_fetcher.py` — `chart.js` `_calcSignals()`와 동일 로직(MACD+RSI+STO+MA50+주봉추세+BB%B+RSI다이버전스+KR전략B)을 서버 배치용으로 포팅 (`compute_today_signal`, `compute_daily_signals`, `build_daily_recommendations`)
+- [x] `app.py` — `refresh_daily_signals()` 스케줄러(24시간 주기, 시작 240초 지연), `/api/daily-signals` 엔드포인트
+- [x] `brief.js`/`index.html`/`style.css` — US/KR 각각 매수·매도 리스트, 신호강도(±1/2/3)로 단기/중기/장기 라벨링, 점수 내림차순(동점시 시총 내림차순) 정렬
+- 검증: US 시총 상위 500개 중 91~96개, KR 500개 중 110개 신호 발생, 전체 배치 약 20초 (Yahoo 차단 없음, 100개당 ~2초)
+
+### Phase 4-89 — Brief 탭 "52주 신고가/신저가 근접 종목" (US/KR) ✅ 완료 (2026-07-10)
+- [x] `data_fetcher.py` — `get_52w_movers()`: 이미 캐시된 price/week52_high/low로 네트워크 요청 없이 즉시 계산
+- [x] `app.py` — `_get_merged_us_stocks()` 헬퍼 추출(기존 `/api/stocks`와 로직 공유), `/api/52w-movers` 엔드포인트
+- [x] 검증 중 발견·수정: 필터 없이는 SPAC 워런트/우선주 등 비정상 종목의 부실 52주 데이터로 `pos`가 25,988%까지 튀는 버그 → 스크리너 "정상 종목만 보기"와 동일한 필터 재사용 + 0~100% 범위 검증 추가
+
+### Phase 4-90 — Brief 탭 "실적 발표 임박 + 신호 결합" (US 전용) ✅ 완료 (2026-07-10)
+- [x] `data_fetcher.py` — `get_earnings_signal_combo()`: 기존 어닝스 캘린더 캐시 + daily_signals 캐시를 교차 매칭, 날짜순→신호강도순 정렬
+- [x] `app.py` — `/api/earnings-signals` 엔드포인트
+- 검증: 6건 매칭(PEP 매도, WFC/CTAS/ABT/STT/TFC 매수) 날짜 오름차순 정렬 확인. KR은 자체 실적 캘린더 데이터 소스 없어 US 전용
+
 ### Phase 4-76 이후 — 예정 항목
 | 항목 | 우선순위 | 설명 |
 |------|---------|------|
+| Brief 추천 — 거래량 급증 종목 | 낮음 | 사용자가 제안했던 3가지 추천 유형(52주 근접·실적+신호·거래량 급증) 중 마지막 하나, 미착수 |
 | 차트 더미(가짜) OHLCV 데이터 표시 개선 | 중간 | `app.py:843,915` `_generate_ohlcv_dummy()` — 실제 차트 조회 실패 시 랜덤 생성 데이터를 표시 여부 구분 없이 반환. "데이터 없음" 배너 등 필요하나, `chart.js`의 MA/RSI/MACD/신호 계산 다수가 빈 데이터를 가정 안 해서 방어 코드 추가 범위가 커 보류 중 |
 | Reddit RSS 429 근본 해결 | 보류 | 5초 지연으로도 r/investing·r/wsb 지속 실패 — 사용자 확인 후 현행 유지 결정, 재작업 불필요 |
 | Russell 2000 정확한 구성종목 | 보류 | iShares 사이트가 JS SPA로 개편되어 스크래핑 불가 확인, 대체 무료 소스 못 찾음 — 현재 시총 근사 폴백 유지하기로 결정 |
@@ -818,7 +835,7 @@ python app.py
 | Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁, 1주/1개월 성과 US·KR 전체 종목 커버 |
 | Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드로 강조 표시), 검색창 한글/영문 종목명 지원 |
 | News | ✅ | 뉴스/리포트/공시 서브탭, VADER 감성 배지, RSS 14개 소스 (죽은 피드 5종 정리 완료) |
-| Brief | ✅ | Daily/Weekly/Monthly, Market Mood 바, 중복 제거 Top Stories |
+| Brief | ✅ | Daily/Weekly/Monthly, Market Mood 바, 중복 제거 Top Stories, **오늘의 매수/매도 추천(US·KR, 단/중/장기)**, **52주 신고가/신저가 근접(US·KR)**, **실적 발표 임박+신호 결합(US)** |
 | Watchlist | ✅ | localStorage 기반 ★ 저장, 실시간 가격 반영 |
 | Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신 |
 | Earnings | ✅ | Nasdaq API, This Week/Next Week/Today, EPS 예상치·전년 비교 |
