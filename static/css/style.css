@@ -2472,6 +2472,7 @@ mark.kw-hl {
 .brief-signal-term.term-단기 { background: rgba(139,148,158,.15); color: #8b949e; }
 .brief-signal-term.term-중기 { background: rgba(88,166,255,.15);  color: #58a6ff; }
 .brief-signal-term.term-장기 { background: rgba(227,179,65,.18);  color: #e3b341; }
+.brief-signal-term.term-52w  { background: rgba(139,148,158,.15); color: var(--text); width: 40px; }
 .brief-signal-ticker { font-size: 12.5px; font-weight: 700; width: 56px; flex-shrink: 0; }
 .brief-signal-name {
   font-size: 12px;

@@ -16,7 +16,38 @@ function initBrief() {
   loadBrief();
   loadBriefFearGreed();
   loadDailySignals();
+  load52wMovers();
   _briefInited = true;
+}
+
+async function load52wMovers() {
+  try {
+    const data = await api('/api/52w-movers');
+    render52wMovers('us', data.us);
+    render52wMovers('kr', data.kr);
+  } catch {}
+}
+
+function _render52wList(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="brief-empty">해당 종목이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.map(s => `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-term term-52w">${s.pos}%</span>
+      <span class="brief-signal-ticker">${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      ${_fmtSignalPct(s.change_pct)}
+    </div>`).join('');
+}
+
+function render52wMovers(market, data) {
+  data = data || { near_high: [], near_low: [] };
+  _render52wList(`brief-52w-${market}-high`, data.near_high);
+  _render52wList(`brief-52w-${market}-low`,  data.near_low);
 }
 
 async function loadDailySignals() {

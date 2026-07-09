@@ -538,25 +538,29 @@ def index():
     return render_template("index.html")
 
 
+def _get_merged_us_stocks() -> list:
+    """cache의 stocks에 extra_fields(52W)·pe_eps를 병합한 목록 (여러 엔드포인트에서 공용)."""
+    data   = cache.get("stocks") or STOCKS
+    extras = cache.get("extra_fields") or {}   # 52W
+    pe_eps = cache.get("pe_eps") or {}          # PE/EPS
+    if not extras and not pe_eps:
+        return data
+    merged = []
+    for s in data:
+        tick = s["ticker"]
+        row  = dict(s)
+        if extras.get(tick):
+            row.update(extras[tick])
+        if pe_eps.get(tick):
+            row.update(pe_eps[tick])
+        merged.append(row)
+    return merged
+
+
 @app.route("/api/stocks")
 def stocks():
-    sector  = request.args.get("sector", "all")
-    data    = cache.get("stocks") or STOCKS
-    extras  = cache.get("extra_fields") or {}   # 52W
-    pe_eps  = cache.get("pe_eps") or {}          # PE/EPS
-
-    if extras or pe_eps:
-        merged = []
-        for s in data:
-            tick = s["ticker"]
-            row  = dict(s)
-            if extras.get(tick):
-                row.update(extras[tick])
-            if pe_eps.get(tick):
-                row.update(pe_eps[tick])
-            merged.append(row)
-        data = merged
-
+    sector = request.args.get("sector", "all")
+    data   = _get_merged_us_stocks()
     result = data if sector == "all" else [s for s in data if s["sector"] == sector]
     return jsonify(result)
 
@@ -760,6 +764,16 @@ def daily_signals():
     """오늘의 매수/매도 추천 (US/KR 각각, 신호 강도 기준 단기/중기/장기)."""
     data = cache.get("daily_signals")
     return jsonify(data or {"us": {"buy": [], "sell": []}, "kr": {"buy": [], "sell": []}, "generated_at": 0})
+
+
+@app.route("/api/52w-movers")
+def week52_movers():
+    """52주 신고가/신저가 근접 종목 (US/KR 각각) — 캐시된 데이터로 즉시 계산."""
+    kr = cache.get("kr_stocks") or []
+    return jsonify({
+        "us": df.get_52w_movers(_get_merged_us_stocks()),
+        "kr": df.get_52w_movers(kr),
+    })
 
 
 @app.route("/api/brief")

@@ -1990,6 +1990,62 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
     }
 
 
+# ── 52주 신고가/신저가 근접 종목 ────────────────────────────────────────────────
+# 이미 캐시된 price/week52_high/week52_low만 사용 — 네트워크 요청 없이 즉시 계산 가능
+
+_ABNORMAL_NAME_RE = re.compile(r"\b(Warrants?|Rights?|Preferred)\b", re.I)
+
+
+def _is_abnormal_listing(stock: dict) -> bool:
+    """SPAC 워런트/우선주/예탁증권 등 — market_cap이 없거나 52W 데이터가 부실해 pos% 계산이 깨지는 경우가 많음."""
+    if not stock.get("market_cap"):
+        return True
+    return bool(_ABNORMAL_NAME_RE.search(stock.get("name") or ""))
+
+
+def _calc_52w_pos(stock: dict) -> float | None:
+    price, hi, lo = stock.get("price"), stock.get("week52_high"), stock.get("week52_low")
+    if not price or not hi or not lo or hi <= lo:
+        return None
+    pos = (price - lo) / (hi - lo) * 100
+    if pos < 0 or pos > 100:  # 데이터 이상치(가격이 기록된 52주 범위를 벗어남) 방어
+        return None
+    return pos
+
+
+def get_52w_movers(stocks: list[dict], near_pct: float = 10, limit: int = 15) -> dict:
+    """52주 범위 상단/하단 near_pct% 이내 종목을 근접도순으로 반환."""
+    near_high, near_low = [], []
+    for s in stocks:
+        if _is_abnormal_listing(s):
+            continue
+        pos = _calc_52w_pos(s)
+        if pos is None:
+            continue
+        if pos >= 100 - near_pct:
+            near_high.append((pos, s))
+        elif pos <= near_pct:
+            near_low.append((pos, s))
+    near_high.sort(key=lambda x: -x[0])
+    near_low.sort(key=lambda x: x[0])
+
+    def _fmt(pos: float, s: dict) -> dict:
+        return {
+            "ticker":     s["ticker"],
+            "name":       s.get("name_ko") or s.get("name") or s["ticker"],
+            "sector":     s.get("sector"),
+            "price":      s.get("price"),
+            "change_pct": s.get("change_pct"),
+            "market_cap": s.get("market_cap") or 0,
+            "pos":        round(pos, 1),
+        }
+
+    return {
+        "near_high": [_fmt(p, s) for p, s in near_high[:limit]],
+        "near_low":  [_fmt(p, s) for p, s in near_low[:limit]],
+    }
+
+
 # ── 어닝스 캘린더 ──────────────────────────────────────────────────────────────
 _NASDAQ_HDR = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
