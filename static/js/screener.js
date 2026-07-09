@@ -99,6 +99,7 @@ function _currentFilterValues() {
     chg:      document.getElementById('filter-change')?.value    || 'all',
     w52:      document.getElementById('filter-52w')?.value      || 'all',
     search:   document.getElementById('filter-search')?.value   || '',
+    normalOnly: document.getElementById('filter-normal-only')?.checked || false,
   };
 }
 
@@ -112,6 +113,8 @@ function _applyFilterValues(vals) {
   set('filter-change',   vals.chg);
   set('filter-52w',      vals.w52);
   set('filter-search',   vals.search);
+  const normalOnlyEl = document.getElementById('filter-normal-only');
+  if (normalOnlyEl) normalOnlyEl.checked = !!vals.normalOnly;
   // industry: 섹터 변경 후 동적 목록이 채워진 뒤 적용
   const secEl = document.getElementById('filter-sector');
   if (secEl && vals.sector !== 'all') {
@@ -280,6 +283,16 @@ function _populateCountryFilter() {
     countries.map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
+// ── SPAC 워런트/유닛/우선주 등 비정상 종목 판별 ──────────────────────────────
+// 시총 데이터가 없는 종목(대부분 SPAC 워런트·유닛·권리락) + 종목명에 명시된 우선주/워런트
+// "Units"는 제외 목록에서 뺌 — Energy Transfer(ET), MPLX 같은 MLP 대형주가
+// "Common Units"라는 정상 표현을 쓰기 때문에 오탐 발생 (실제로 확인됨)
+const _ABNORMAL_NAME_RE = /\b(Warrants?|Rights?|Preferred)\b/i;
+function _isAbnormalListing(s) {
+  if (!s.market_cap) return true;
+  return _ABNORMAL_NAME_RE.test(s.name || '');
+}
+
 // ── 52W 위치 % 계산 ──────────────────────────────────────────────────────────
 function _calc52wPos(s) {
   if (!s.price || !s.week52_high || !s.week52_low) return null;
@@ -298,12 +311,14 @@ function getFilteredStocks() {
   const pe       = document.getElementById('filter-pe')?.value || 'all';
   const w52      = document.getElementById('filter-52w')?.value || 'all';
   const search   = document.getElementById('filter-search').value.trim().toLowerCase();
+  const normalOnly = document.getElementById('filter-normal-only')?.checked || false;
 
   let list = _scStocks.filter(s => {
     if (sector   !== 'all' && s.sector   !== sector)   return false;
     if (industry !== 'all' && s.industry !== industry) return false;
     if (country  !== 'all' && s.country  !== country)  return false;
     if (search && !s.ticker.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
+    if (normalOnly && _isAbnormalListing(s)) return false;
 
     // Change %
     switch (change) {
@@ -582,7 +597,7 @@ function bindScreenerEvents() {
 
   // 필터 변경 (US/KR 모드에 따라 분기)
   ['filter-sector','filter-industry','filter-country','filter-change',
-   'filter-cap','filter-pe','filter-52w'].forEach(id => {
+   'filter-cap','filter-pe','filter-52w','filter-normal-only'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
       if (_scMarket === 'kr') renderKrScreener();
