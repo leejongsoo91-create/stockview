@@ -633,7 +633,10 @@ def fetch_extra_fields(tickers: list[str], max_workers: int = 40) -> dict[str, d
     PE/EPS는 Yahoo Finance 인증 정책 변경으로 현재 수집 불가.
     반환: {ticker: {"week52_high", "week52_low"}}
     """
+    exc_count = 0
+
     def _fetch_one(ticker: str) -> tuple[str, dict] | None:
+        nonlocal exc_count
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
             "?interval=1d&range=1d"
@@ -656,7 +659,7 @@ def fetch_extra_fields(tickers: list[str], max_workers: int = 40) -> dict[str, d
                     "week52_low":  round(lo, 2) if lo else None,
                 }
         except Exception:
-            pass
+            exc_count += 1
         return None
 
     result: dict[str, dict] = {}
@@ -667,7 +670,8 @@ def fetch_extra_fields(tickers: list[str], max_workers: int = 40) -> dict[str, d
             if res:
                 result[res[0]] = res[1]
 
-    log.info(f"fetch_extra_fields 완료: {len(result)}/{len(tickers)}개 (52W 데이터)")
+    exc_note = f", 예외 {exc_count}건" if exc_count else ""
+    log.info(f"fetch_extra_fields 완료: {len(result)}/{len(tickers)}개 (52W 데이터{exc_note})")
     return result
 
 
@@ -845,7 +849,7 @@ def fetch_russell2000_iwm() -> set[str]:
 
 
 # ── 국내주식 가격 배치 수집 ────────────────────────────────────────────────────
-def _fetch_kr_price_one(stock: dict) -> dict:
+def _fetch_kr_price_one(stock: dict) -> tuple[dict, bool]:
     ticker = stock["ticker"]
     try:
         url = (
@@ -877,18 +881,25 @@ def _fetch_kr_price_one(stock: dict) -> dict:
         row.update(price=price, change=round(chg, 0),
                    change_pct=chg_pct, volume=vol, market_cap=cap,
                    week52_high=w52h, week52_low=w52l, pe=per, eps=eps)
-        return row
+        return row, True
     except Exception:
-        return dict(stock)
+        return dict(stock), False
 
 
 def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25) -> list[dict]:
     """kr_stocks.json 기반 종목 목록에 Yahoo Finance 가격을 채워 반환."""
     result = []
+    failed  = 0
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futs = {ex.submit(_fetch_kr_price_one, s): s for s in base_stocks}
         for fut in as_completed(futs):
-            result.append(fut.result())
+            row, ok = fut.result()
+            result.append(row)
+            if not ok:
+                failed += 1
+
+    if failed:
+        log.warning(f"fetch_kr_prices: {failed}/{len(base_stocks)}개 실패 (기존 base 값 유지)")
     return result
 
 
@@ -1055,13 +1066,19 @@ def fetch_heatmap_perf(tickers: list[str], period: str = "1w", max_workers: int 
     range_map = {"1w": "5d", "1m": "1mo"}
     yf_range = range_map.get(period, "5d")
 
+    rate_limited = 0
+
     def _fetch_one(ticker: str):
+        nonlocal rate_limited
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
             f"?interval=1d&range={yf_range}"
         )
         try:
             r = requests.get(url, headers=YF_HEADERS, timeout=8)
+            if r.status_code == 429:
+                rate_limited += 1
+                return None
             r.raise_for_status()
             res = r.json()["chart"]["result"][0]
             closes = res["indicators"]["quote"][0].get("close", [])
@@ -1081,7 +1098,8 @@ def fetch_heatmap_perf(tickers: list[str], period: str = "1w", max_workers: int 
             if res:
                 result[res[0]] = res[1]
 
-    log.info(f"fetch_heatmap_perf({period}): {len(result)}/{len(tickers)}개 성공")
+    rl_note = f", 429 차단 {rate_limited}건" if rate_limited else ""
+    log.info(f"fetch_heatmap_perf({period}): {len(result)}/{len(tickers)}개 성공{rl_note}")
     return result
 
 
@@ -1548,22 +1566,21 @@ def fetch_alphavantage_news() -> list[dict]:
         av_score   = float(item.get("overall_sentiment_score", 0))
 
         # 시간 파싱 ("20240101T120000" → Unix timestamp)
-        ts = 0
         time_str = item.get("time_published", "")
         try:
             from datetime import datetime, timezone
             dt = datetime.strptime(time_str, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
             ts = int(dt.timestamp())
         except Exception:
-            pass
+            # 파싱 실패 시 1970년(epoch 0) 대신 현재 시각으로 폴백 — 정렬 순서 왜곡 방지
+            log.warning(f"AlphaVantage 시간 파싱 실패 (time_published={time_str!r}), 현재 시각으로 대체")
+            ts = int(time.time())
 
         results.append({
             "id":        0,
             "title":     title,
             "source":    "Alpha Vantage",
-            "time":      _time_ago(None) if not ts else _time_ago(
-                __import__("time").gmtime(ts)
-            ),
+            "time":      _time_ago(time.gmtime(ts)),
             "timestamp": ts,
             "ticker":    ticker,
             "sentiment": sentiment,

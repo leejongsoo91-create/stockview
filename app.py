@@ -18,8 +18,8 @@ def _load_kr_base() -> list:
         if os.path.exists(KR_STOCKS_FILE):
             with open(KR_STOCKS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"kr_stocks.json 로드 실패: {e}")
     return []
 
 def _load_pe_eps() -> dict:
@@ -27,8 +27,8 @@ def _load_pe_eps() -> dict:
         if os.path.exists(PE_EPS_FILE):
             with open(PE_EPS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"pe_eps_cache.json 로드 실패: {e}")
     return {}
 
 def _save_pe_eps(data: dict):
