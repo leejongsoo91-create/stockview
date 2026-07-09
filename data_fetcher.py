@@ -12,7 +12,7 @@ import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
 import feedparser
@@ -1693,6 +1693,301 @@ def fetch_reports() -> list[dict]:
             log.warning(f"REPORT RSS({feed_info['source']}): {e}")
 
     return results[:50]
+
+
+# ── 매일 매수/매도 신호 추천 (Brief) ───────────────────────────────────────────
+# static/js/chart.js의 _calcSignals()와 동일한 로직(MACD+RSI+STO+MA50+주봉추세+
+# BB%B+RSI다이버전스+KR전략B)을 서버에서 종목 일괄 계산용으로 포팅.
+# 단일 파일 유지 원칙(CLAUDE.md)에 따라 별도 모듈로 분리하지 않음.
+
+def _sig_ema(arr: list, period: int) -> list:
+    k = 2 / (period + 1)
+    r: list = [None] * len(arr)
+    start = next((i for i, v in enumerate(arr) if v is not None), None)
+    if start is None or start + period - 1 >= len(arr):
+        return r
+    r[start + period - 1] = sum(v for v in arr[start:start + period] if v is not None) / period
+    for i in range(start + period, len(arr)):
+        if arr[i] is None or r[i - 1] is None:
+            continue
+        r[i] = arr[i] * k + r[i - 1] * (1 - k)
+    return r
+
+
+def _sig_sma(arr: list, period: int) -> list:
+    r: list = [None] * len(arr)
+    for i in range(period - 1, len(arr)):
+        sl = arr[i - period + 1:i + 1]
+        if None not in sl:
+            r[i] = sum(sl) / period
+    return r
+
+
+def _sig_macd(closes: list[float]):
+    e12 = _sig_ema(closes, 12)
+    e26 = _sig_ema(closes, 26)
+    macd = [a - b if a is not None and b is not None else None for a, b in zip(e12, e26)]
+    return macd, _sig_ema(macd, 9)
+
+
+def _sig_rsi(closes: list[float], period: int = 14) -> list:
+    n = len(closes)
+    r: list = [None] * n
+    if n < period + 1:
+        return r
+    avg_gain = avg_loss = 0.0
+    for i in range(1, period + 1):
+        d = closes[i] - closes[i - 1]
+        if d > 0: avg_gain += d
+        else: avg_loss += abs(d)
+    avg_gain /= period
+    avg_loss /= period
+    r[period] = 100 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+    for i in range(period + 1, n):
+        d = closes[i] - closes[i - 1]
+        gain = d if d > 0 else 0
+        loss = abs(d) if d < 0 else 0
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+        r[i] = 100 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+    return r
+
+
+def _sig_sto(ohlcv: list[dict], period: int = 14, smooth_d: int = 3):
+    n = len(ohlcv)
+    raw_k: list = [None] * n
+    for i in range(period - 1, n):
+        sl = ohlcv[i - period + 1:i + 1]
+        hi = max(d["high"] for d in sl)
+        lo = min(d["low"] for d in sl)
+        raw_k[i] = 50 if hi == lo else (ohlcv[i]["close"] - lo) / (hi - lo) * 100
+    return raw_k, _sig_sma(raw_k, smooth_d)
+
+
+def _sig_bb(closes: list[float], period: int = 20, mult: float = 2.0) -> list:
+    mid = _sig_sma(closes, period)
+    pb: list = [None] * len(closes)
+    for i in range(period - 1, len(closes)):
+        sl = closes[i - period + 1:i + 1]
+        if mid[i] is None:
+            continue
+        std = (sum((x - mid[i]) ** 2 for x in sl) / period) ** 0.5
+        upper, lower = mid[i] + mult * std, mid[i] - mult * std
+        bw = upper - lower
+        pb[i] = (closes[i] - lower) / bw if bw > 0 else 0.5
+    return pb
+
+
+def _sig_rsi_divergence(closes: list[float], order: int = 5, min_gap: int = 5, max_gap: int = 60) -> list:
+    n = len(closes)
+    rsi = _sig_rsi(closes)
+    div = [0] * n
+    lows, highs = [], []
+    for i in range(order, n - order):
+        if rsi[i] is None:
+            continue
+        window = range(i - order, i + order + 1)
+        if all(closes[j] >= closes[i] for j in window if j != i): lows.append(i)
+        if all(closes[j] <= closes[i] for j in window if j != i): highs.append(i)
+    for k in range(1, len(lows)):
+        i1, i2 = lows[k - 1], lows[k]
+        if not (min_gap <= i2 - i1 <= max_gap): continue
+        if rsi[i1] is not None and rsi[i2] is not None and closes[i2] < closes[i1] and rsi[i2] > rsi[i1]:
+            div[i2] = 1
+    for k in range(1, len(highs)):
+        i1, i2 = highs[k - 1], highs[k]
+        if not (min_gap <= i2 - i1 <= max_gap): continue
+        if rsi[i1] is not None and rsi[i2] is not None and closes[i2] > closes[i1] and rsi[i2] < rsi[i1]:
+            div[i2] = -1
+    return div
+
+
+def _sig_resample_weekly(ohlcv: list[dict]) -> list[dict]:
+    """일봉(time='YYYY-MM-DD') → 주봉(월요일 기준) 집계. ISO 날짜 문자열은 사전식 정렬이 시간 순서와 같음."""
+    by_week: dict[str, dict] = {}
+    for bar in ohlcv:
+        d = datetime.strptime(bar["time"], "%Y-%m-%d")
+        mon_key = (d - timedelta(days=d.weekday())).strftime("%Y-%m-%d")
+        if mon_key not in by_week:
+            by_week[mon_key] = {"time": mon_key, "high": bar["high"], "low": bar["low"], "close": bar["close"]}
+        else:
+            w = by_week[mon_key]
+            w["high"]  = max(w["high"], bar["high"])
+            w["low"]   = min(w["low"],  bar["low"])
+            w["close"] = bar["close"]
+    return [by_week[k] for k in sorted(by_week.keys())]
+
+
+def _sig_weekly_trend(ohlcv: list[dict], ma_period: int = 13) -> list:
+    weekly = _sig_resample_weekly(ohlcv)
+    wc  = [w["close"] for w in weekly]
+    wma = _sig_sma(wc, ma_period)
+    wt_list = [(w["time"], 0 if wma[i] is None else (1 if wc[i] > wma[i] else -1))
+               for i, w in enumerate(weekly)]
+    result = [0] * len(ohlcv)
+    j = 0
+    for i, bar in enumerate(ohlcv):
+        while j < len(wt_list) - 1 and wt_list[j + 1][0] <= bar["time"]:
+            j += 1
+        if j < len(wt_list) and wt_list[j][0] <= bar["time"]:
+            result[i] = wt_list[j][1]
+    return result
+
+
+def _sig_candle_patterns(ohlcv: list[dict]) -> list:
+    n = len(ohlcv)
+    pat = [0] * n
+    for i in range(1, n):
+        o, h, l, c = ohlcv[i]["open"], ohlcv[i]["high"], ohlcv[i]["low"], ohlcv[i]["close"]
+        po, pc = ohlcv[i - 1]["open"], ohlcv[i - 1]["close"]
+        body, rng = abs(c - o), h - l
+        if rng == 0 or body == 0:
+            continue
+        upper, lower = h - max(o, c), min(o, c) - l
+        if   lower >= 2 * body and upper <= body * 0.3: pat[i] =  1  # Hammer
+        elif upper >= 2 * body and lower <= body * 0.3: pat[i] = -1  # Shooting Star
+        elif pc < po and c > o and o <= pc and c >= po: pat[i] =  1  # Bullish Engulfing
+        elif pc > po and c < o and o >= pc and c <= po: pat[i] = -1  # Bearish Engulfing
+    return pat
+
+
+def _sig_base(ohlcv: list[dict]) -> list:
+    """MACD 골든/데드크로스 + RSI 과매수·과매도 + STO 크로스 상태머신 합산 점수."""
+    closes = [d["close"] for d in ohlcv]
+    n = len(closes)
+    sig = [0] * n
+
+    macd, msig = _sig_macd(closes)
+    state = 0
+    for i in range(1, n):
+        if macd[i] is None or msig[i] is None or macd[i-1] is None or msig[i-1] is None:
+            pass
+        elif macd[i-1] <= msig[i-1] and macd[i] > msig[i]:
+            state = 1
+        elif macd[i-1] >= msig[i-1] and macd[i] < msig[i]:
+            state = -1 if macd[i] < 0 else 0
+        sig[i] += state
+
+    rsi = _sig_rsi(closes)
+    state = 0
+    for i in range(1, n):
+        if rsi[i] is None or rsi[i-1] is None:
+            pass
+        elif rsi[i-1] < 30 and rsi[i] >= 30: state = 1
+        elif rsi[i-1] >= 30 and rsi[i] < 30: state = -1
+        elif rsi[i-1] > 70 and rsi[i] <= 70: state = -1
+        elif rsi[i-1] <= 70 and rsi[i] > 70: state = 1
+        sig[i] += state
+
+    k, d = _sig_sto(ohlcv)
+    state = 0
+    for i in range(1, n):
+        if k[i] is None or d[i] is None or k[i-1] is None or d[i-1] is None:
+            pass
+        else:
+            cross_up   = k[i-1] <= d[i-1] and k[i] > d[i]
+            cross_down = k[i-1] >= d[i-1] and k[i] < d[i]
+            if cross_up and k[i-1] <= 30: state = 1
+            if cross_down and k[i-1] >= 70: state = -1
+        sig[i] += state
+
+    return sig
+
+
+def compute_today_signal(ohlcv: list[dict], is_kr: bool) -> int:
+    """chart.js _calcSignals()와 동일 로직으로 최신 봉의 최종 신호 점수(-3~+3) 계산.
+    데이터 부족(60봉 미만) 시 0 반환."""
+    n = len(ohlcv)
+    if n < 60:
+        return 0
+    closes = [d["close"] for d in ohlcv]
+
+    sig = _sig_base(ohlcv)
+    div = _sig_rsi_divergence(closes)
+    combined = [sig[i] + div[i] for i in range(n)]
+
+    ma50 = _sig_sma(closes, 50)
+    for i in range(n):
+        if ma50[i] is None: continue
+        if closes[i] > ma50[i] and combined[i] < 0: combined[i] = 0
+        if closes[i] < ma50[i] and combined[i] > 0: combined[i] = 0
+
+    wtrend = _sig_weekly_trend(ohlcv)
+    for i in range(n):
+        if wtrend[i] == 1 and combined[i] < 0: combined[i] = 0
+        if wtrend[i] == -1 and combined[i] > 0: combined[i] = 0
+
+    pb = _sig_bb(closes)
+    sell_thr = 0.85 if is_kr else 0.65
+    final = list(combined)
+    for i in range(n):
+        if pb[i] is None: continue
+        if final[i] >= 2 and pb[i] >= 0.35: final[i] = 0
+        if final[i] <= -2 and pb[i] <= sell_thr: final[i] = 0
+
+    if is_kr:
+        pat = _sig_candle_patterns(ohlcv)
+        for i in range(n):
+            if final[i] <= -2:
+                has_bearish = any(pat[j] < 0 for j in range(max(0, i - 2), i + 1))
+                if not has_bearish: final[i] = 0
+
+    return final[-1]
+
+
+_SIG_TERM = {1: "단기", 2: "중기", 3: "장기"}
+
+
+def compute_daily_signals(stocks: list[dict], is_kr: bool, max_workers: int = 20) -> list[dict]:
+    """종목 리스트 각각 1년치 일봉을 받아 오늘자 신호를 계산, 0이 아닌 것만 반환."""
+    def _one(stock: dict) -> dict | None:
+        ticker = stock["ticker"]
+        try:
+            ohlcv = fetch_ohlcv(ticker, period="1y", interval="1d")
+            score = compute_today_signal(ohlcv, is_kr)
+            if not score:
+                return None
+            return {
+                "ticker":     ticker,
+                "name":       stock.get("name_ko") or stock.get("name") or ticker,
+                "sector":     stock.get("sector"),
+                "price":      stock.get("price"),
+                "change_pct": stock.get("change_pct"),
+                "market_cap": stock.get("market_cap") or 0,
+                "score":      score,
+                "term":       _SIG_TERM.get(abs(score), "단기"),
+            }
+        except Exception:
+            return None
+
+    result: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_one, s) for s in stocks]
+        for fut in as_completed(futures):
+            r = fut.result()
+            if r:
+                result.append(r)
+
+    log.info(f"compute_daily_signals({'KR' if is_kr else 'US'}): {len(result)}/{len(stocks)}개 신호 발생")
+    return result
+
+
+def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], top_n: int = 500) -> dict:
+    """US/KR 각각 시총 상위 top_n 종목 대상 신호 계산 후 점수 내림차순 정렬(매도는 낮은 점수 우선)."""
+    def _rank(stocks: list[dict], is_kr: bool) -> dict:
+        pool = sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)[:top_n]
+        signals = compute_daily_signals(pool, is_kr)
+        buy  = sorted((s for s in signals if s["score"] > 0),
+                      key=lambda s: (-s["score"], -(s.get("market_cap") or 0)))
+        sell = sorted((s for s in signals if s["score"] < 0),
+                      key=lambda s: (s["score"], -(s.get("market_cap") or 0)))
+        return {"buy": buy, "sell": sell}
+
+    return {
+        "us": _rank(us_stocks, False),
+        "kr": _rank(kr_stocks, True),
+        "generated_at": int(time.time()),
+    }
 
 
 # ── 어닝스 캘린더 ──────────────────────────────────────────────────────────────

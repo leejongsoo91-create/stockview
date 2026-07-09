@@ -387,6 +387,25 @@ def refresh_dynamic_indices():
         log.warning("Russell2000 IWM 실패 — 시총 근사값 폴백 유지")
 
 
+def refresh_daily_signals():
+    """매수/매도 신호 추천 갱신 — 1일 1회. US/KR 각 시총 상위 500개 대상 (chart.js와 동일 신호 로직)."""
+    us_stocks = cache.get("stocks") or []
+    kr_stocks = cache.get("kr_stocks") or []
+    if len(us_stocks) < 100 or len(kr_stocks) < 100:
+        log.warning("refresh_daily_signals 스킵: 종목 데이터 아직 로드 중")
+        return
+    try:
+        result = df.build_daily_recommendations(us_stocks, kr_stocks, top_n=500)
+        cache.set("daily_signals", result, ttl=90000)
+        log.info(
+            f"일일 신호 추천 갱신 완료: "
+            f"US 매수 {len(result['us']['buy'])}/매도 {len(result['us']['sell'])}, "
+            f"KR 매수 {len(result['kr']['buy'])}/매도 {len(result['kr']['sell'])}"
+        )
+    except Exception as e:
+        log.error(f"refresh_daily_signals 실패: {e}")
+
+
 def _load_sp500_tickers_background():
     """Wikipedia에서 실제 S&P 500 구성 종목 티커 Set을 캐시에 저장 (24시간)."""
     sp500 = df.fetch_sp500_list()
@@ -479,6 +498,12 @@ def initial_load():
         refresh_pe_eps()
     threading.Thread(target=_delayed_pe_eps, daemon=True).start()
 
+    # 일일 신호 추천: US·KR 종목 로드 후 240초 지연해서 시작 (PE/EPS 등과 겹치지 않게)
+    def _delayed_daily_signals():
+        import time as _t; _t.sleep(240)
+        refresh_daily_signals()
+    threading.Thread(target=_delayed_daily_signals, daemon=True).start()
+
     # 국내주식: 파일 기반 베이스 로드 후 백그라운드 가격 갱신
     kr_base = _load_kr_base()
     if kr_base:
@@ -504,6 +529,7 @@ _scheduler.add_job(refresh_av_news,         "interval", hours=12,   id="av_news"
 _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_news")
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")
 _scheduler.add_job(refresh_fear_greed,      "interval", minutes=30, id="fear_greed")
+_scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
 
 
 # ── Flask 라우트 ─────────────────────────────────────────────────────────────
@@ -727,6 +753,13 @@ def index_members():
         "sp500":       sorted(sp500_set),
         "russell2000": sorted(russell2000_set),
     })
+
+
+@app.route("/api/daily-signals")
+def daily_signals():
+    """오늘의 매수/매도 추천 (US/KR 각각, 신호 강도 기준 단기/중기/장기)."""
+    data = cache.get("daily_signals")
+    return jsonify(data or {"us": {"buy": [], "sell": []}, "kr": {"buy": [], "sell": []}, "generated_at": 0})
 
 
 @app.route("/api/brief")

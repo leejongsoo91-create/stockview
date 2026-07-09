@@ -15,7 +15,44 @@ function initBrief() {
   });
   loadBrief();
   loadBriefFearGreed();
+  loadDailySignals();
   _briefInited = true;
+}
+
+async function loadDailySignals() {
+  try {
+    const data = await api('/api/daily-signals');
+    renderDailySignals('us', data.us);
+    renderDailySignals('kr', data.kr);
+  } catch {}
+}
+
+function _fmtSignalPct(pct, isKr) {
+  const v = pct || 0;
+  const cls = v >= 0 ? 'up' : 'down';
+  return `<span class="brief-signal-pct ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+}
+
+function _renderSignalList(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="brief-empty">오늘은 신호가 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.slice(0, 10).map(s => `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-term term-${s.term}">${s.term}</span>
+      <span class="brief-signal-ticker">${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      ${_fmtSignalPct(s.change_pct)}
+    </div>`).join('');
+}
+
+function renderDailySignals(market, data) {
+  data = data || { buy: [], sell: [] };
+  _renderSignalList(`brief-signals-${market}-buy`,  data.buy);
+  _renderSignalList(`brief-signals-${market}-sell`, data.sell);
 }
 
 async function loadBriefFearGreed() {

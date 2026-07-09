@@ -2337,6 +2337,7 @@ mark.kw-hl {
 /* Row 3: Report Highlights (전체 폭) */
 .brief-stories-card { grid-column: 1 / -1; }
 .brief-reports-card { grid-column: 1 / -1; }
+.brief-signals-card { grid-column: 1 / -1; }
 
 .brief-card {
   background: var(--bg-card);
@@ -2435,6 +2436,55 @@ mark.kw-hl {
 .brief-ticker-inline:hover { background: rgba(88,166,255,.18); }
 .brief-empty  { font-size: 13px; color: var(--muted); padding: 8px 0; }
 .brief-loading { font-size: 13px; color: var(--muted); padding: 20px 0; }
+
+/* ── 오늘의 매수/매도 추천 ────────────────────────────────────────────────── */
+.brief-signals-note { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+.brief-signals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.brief-signals-col-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.brief-signals-col-title.buy  { color: #3fb950; }
+.brief-signals-col-title.sell { color: #f85149; }
+.brief-signals-list { display: flex; flex-direction: column; gap: 2px; }
+.brief-signal-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.brief-signal-item:hover { background: var(--bg-input); }
+.brief-signal-term {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  width: 32px;
+  text-align: center;
+}
+.brief-signal-term.term-단기 { background: rgba(139,148,158,.15); color: #8b949e; }
+.brief-signal-term.term-중기 { background: rgba(88,166,255,.15);  color: #58a6ff; }
+.brief-signal-term.term-장기 { background: rgba(227,179,65,.18);  color: #e3b341; }
+.brief-signal-ticker { font-size: 12.5px; font-weight: 700; width: 56px; flex-shrink: 0; }
+.brief-signal-name {
+  font-size: 12px;
+  color: var(--muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brief-signal-pct { font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.brief-signal-pct.up   { color: #3fb950; }
+.brief-signal-pct.down { color: #f85149; }
 
 @media (max-width: 900px) {
   .brief-grid { grid-template-columns: 1fr; }
