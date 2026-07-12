@@ -1936,26 +1936,47 @@ def compute_today_signal(ohlcv: list[dict], is_kr: bool) -> int:
 
 
 _SIG_TERM = {1: "단기", 2: "중기", 3: "장기"}
+_VOLUME_SURGE_RATIO = 2.0    # 급증 판정 배율 (20일 평균 대비)
+_VOLUME_POOL_RATIO  = 1.5    # 배치 계산 단계에서 후보로 남겨둘 최소 배율
 
 
-def compute_daily_signals(stocks: list[dict], is_kr: bool, max_workers: int = 20) -> list[dict]:
-    """종목 리스트 각각 1년치 일봉을 받아 오늘자 신호를 계산, 0이 아닌 것만 반환."""
+def _calc_volume_ratio(ohlcv: list[dict], lookback: int = 20) -> float | None:
+    """오늘 거래량 ÷ 최근 lookback거래일(오늘 제외) 평균 거래량."""
+    if len(ohlcv) < lookback + 1:
+        return None
+    vols = [d["volume"] for d in ohlcv[-(lookback + 1):-1] if d.get("volume")]
+    if not vols:
+        return None
+    avg = sum(vols) / len(vols)
+    today_vol = ohlcv[-1].get("volume")
+    if not avg or not today_vol:
+        return None
+    return round(today_vol / avg, 2)
+
+
+def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20) -> list[dict]:
+    """종목별로 1년치 일봉을 한 번만 조회해 신호 점수 + 거래량 급증 비율을 함께 계산.
+    신호도 없고 거래량도 평범하면 제외."""
     def _one(stock: dict) -> dict | None:
         ticker = stock["ticker"]
         try:
             ohlcv = fetch_ohlcv(ticker, period="1y", interval="1d")
-            score = compute_today_signal(ohlcv, is_kr)
-            if not score:
+            if len(ohlcv) < 60:
+                return None
+            score     = compute_today_signal(ohlcv, is_kr)
+            vol_ratio = _calc_volume_ratio(ohlcv)
+            if not score and (vol_ratio is None or vol_ratio < _VOLUME_POOL_RATIO):
                 return None
             return {
-                "ticker":     ticker,
-                "name":       stock.get("name_ko") or stock.get("name") or ticker,
-                "sector":     stock.get("sector"),
-                "price":      stock.get("price"),
-                "change_pct": stock.get("change_pct"),
-                "market_cap": stock.get("market_cap") or 0,
-                "score":      score,
-                "term":       _SIG_TERM.get(abs(score), "단기"),
+                "ticker":       ticker,
+                "name":         stock.get("name_ko") or stock.get("name") or ticker,
+                "sector":       stock.get("sector"),
+                "price":        stock.get("price"),
+                "change_pct":   stock.get("change_pct"),
+                "market_cap":   stock.get("market_cap") or 0,
+                "score":        score,
+                "term":         _SIG_TERM.get(abs(score), "단기") if score else None,
+                "volume_ratio": vol_ratio,
             }
         except Exception:
             return None
@@ -1968,24 +1989,32 @@ def compute_daily_signals(stocks: list[dict], is_kr: bool, max_workers: int = 20
             if r:
                 result.append(r)
 
-    log.info(f"compute_daily_signals({'KR' if is_kr else 'US'}): {len(result)}/{len(stocks)}개 신호 발생")
+    log.info(f"compute_daily_metrics({'KR' if is_kr else 'US'}): {len(result)}/{len(stocks)}개 (신호 또는 거래량 급증)")
     return result
 
 
 def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], top_n: int = 500) -> dict:
-    """US/KR 각각 시총 상위 top_n 종목 대상 신호 계산 후 점수 내림차순 정렬(매도는 낮은 점수 우선)."""
-    def _rank(stocks: list[dict], is_kr: bool) -> dict:
+    """US/KR 각각 시총 상위 top_n 종목 대상 신호+거래량 급증을 한 번의 일봉 조회로 함께 계산."""
+    def _process(stocks: list[dict], is_kr: bool):
         pool = sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)[:top_n]
-        signals = compute_daily_signals(pool, is_kr)
-        buy  = sorted((s for s in signals if s["score"] > 0),
+        metrics = compute_daily_metrics(pool, is_kr)
+        buy  = sorted((s for s in metrics if s["score"] and s["score"] > 0),
                       key=lambda s: (-s["score"], -(s.get("market_cap") or 0)))
-        sell = sorted((s for s in signals if s["score"] < 0),
+        sell = sorted((s for s in metrics if s["score"] and s["score"] < 0),
                       key=lambda s: (s["score"], -(s.get("market_cap") or 0)))
-        return {"buy": buy, "sell": sell}
+        surges = sorted(
+            (s for s in metrics if s["volume_ratio"] and s["volume_ratio"] >= _VOLUME_SURGE_RATIO),
+            key=lambda s: -s["volume_ratio"],
+        )[:15]
+        return {"buy": buy, "sell": sell}, surges
+
+    us_sig, us_surges = _process(us_stocks, False)
+    kr_sig, kr_surges = _process(kr_stocks, True)
 
     return {
-        "us": _rank(us_stocks, False),
-        "kr": _rank(kr_stocks, True),
+        "us": us_sig,
+        "kr": kr_sig,
+        "volume_surges": {"us": us_surges, "kr": kr_surges},
         "generated_at": int(time.time()),
     }
 

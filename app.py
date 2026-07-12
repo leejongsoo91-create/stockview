@@ -397,10 +397,12 @@ def refresh_daily_signals():
     try:
         result = df.build_daily_recommendations(us_stocks, kr_stocks, top_n=500)
         cache.set("daily_signals", result, ttl=90000)
+        vs = result["volume_surges"]
         log.info(
             f"일일 신호 추천 갱신 완료: "
             f"US 매수 {len(result['us']['buy'])}/매도 {len(result['us']['sell'])}, "
-            f"KR 매수 {len(result['kr']['buy'])}/매도 {len(result['kr']['sell'])}"
+            f"KR 매수 {len(result['kr']['buy'])}/매도 {len(result['kr']['sell'])}, "
+            f"거래량 급증 US {len(vs['us'])}/KR {len(vs['kr'])}"
         )
     except Exception as e:
         log.error(f"refresh_daily_signals 실패: {e}")
@@ -759,11 +761,24 @@ def index_members():
     })
 
 
+_EMPTY_DAILY_SIGNALS = {
+    "us": {"buy": [], "sell": []}, "kr": {"buy": [], "sell": []},
+    "volume_surges": {"us": [], "kr": []}, "generated_at": 0,
+}
+
+
 @app.route("/api/daily-signals")
 def daily_signals():
     """오늘의 매수/매도 추천 (US/KR 각각, 신호 강도 기준 단기/중기/장기)."""
     data = cache.get("daily_signals")
-    return jsonify(data or {"us": {"buy": [], "sell": []}, "kr": {"buy": [], "sell": []}, "generated_at": 0})
+    return jsonify(data or _EMPTY_DAILY_SIGNALS)
+
+
+@app.route("/api/volume-surges")
+def volume_surges():
+    """거래량 급증 종목 (US/KR 각각, 20일 평균 대비 2배 이상) — 일일 신호 배치와 함께 계산됨."""
+    data = cache.get("daily_signals") or _EMPTY_DAILY_SIGNALS
+    return jsonify(data.get("volume_surges") or {"us": [], "kr": []})
 
 
 @app.route("/api/52w-movers")

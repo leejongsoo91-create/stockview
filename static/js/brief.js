@@ -18,7 +18,32 @@ function initBrief() {
   loadDailySignals();
   load52wMovers();
   loadEarningsSignals();
+  loadVolumeSurges();
   _briefInited = true;
+}
+
+async function loadVolumeSurges() {
+  try {
+    const data = await api('/api/volume-surges');
+    _renderVolumeList('brief-volume-us', data.us);
+    _renderVolumeList('brief-volume-kr', data.kr);
+  } catch {}
+}
+
+function _renderVolumeList(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="brief-empty">해당 종목이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.map(s => `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-term term-vol">×${s.volume_ratio}</span>
+      <span class="brief-signal-ticker">${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      ${_fmtSignalPct(s.change_pct)}
+    </div>`).join('');
 }
 
 async function loadEarningsSignals() {
