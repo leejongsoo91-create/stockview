@@ -990,17 +990,33 @@ def fetch_kr_disclosures(page_size: int = 20) -> list[dict]:
                 f"https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptNo={artcl_id}"
                 if artcl_id else "https://kind.krx.co.kr/"
             )
+            title = texts[2] if len(texts) > 2 else ""
+            dtype = texts[3] if len(texts) > 3 else ""
             results.append({
-                "time":    texts[0] if len(texts) > 0 else "",
-                "company": texts[1] if len(texts) > 1 else "",
-                "title":   texts[2] if len(texts) > 2 else "",
-                "type":    texts[3] if len(texts) > 3 else "",
-                "link":    link,
+                "time":     texts[0] if len(texts) > 0 else "",
+                "company":  texts[1] if len(texts) > 1 else "",
+                "title":    title,
+                "type":     dtype,
+                "link":     link,
+                "category": _classify_disclosure(title, dtype),
             })
         return results
     except Exception as e:
         log.warning(f"KR disclosures fetch failed: {e}")
         return []
+
+
+_DISCLOSURE_SURVEILLANCE_TYPES = {"시장감시위원회", "유가증권시장본부", "코스닥시장본부"}
+_EARNINGS_TITLE_RE = re.compile(r"(사업보고서|분기보고서|반기보고서|잠정실적|실적발표|결산)")
+
+
+def _classify_disclosure(title: str, dtype: str) -> str:
+    """공시를 실적발표/시장감시/기업공시 3종으로 분류."""
+    if _EARNINGS_TITLE_RE.search(title or ""):
+        return "earnings"
+    if dtype in _DISCLOSURE_SURVEILLANCE_TYPES:
+        return "market"
+    return "company"
 
 
 def fetch_fear_greed() -> dict | None:

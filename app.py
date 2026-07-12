@@ -629,7 +629,7 @@ def kr_disclosures():
     cached = cache.get(key)
     if cached is not None:
         return jsonify(cached)
-    data = df.fetch_kr_disclosures(page_size=20)
+    data = df.fetch_kr_disclosures(page_size=100)
     cache.set(key, data, ttl=1800)
     return jsonify(data)
 

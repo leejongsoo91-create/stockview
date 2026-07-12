@@ -579,9 +579,19 @@ function initNews() {
   document.getElementById('disclosures-refresh-btn')?.addEventListener('click', () => {
     loadDisclosures(true);
   });
+
+  // 공시 카테고리 필터
+  document.querySelectorAll('#disclosures-panel .report-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#disclosures-panel .report-tag').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderDisclosures(_allDisclosures, btn.dataset.dcat);
+    });
+  });
 }
 
 let _disclosuresLoaded = false;
+let _allDisclosures = [];
 
 function loadDisclosures(force = false) {
   if (_disclosuresLoaded && !force) return;
@@ -589,19 +599,22 @@ function loadDisclosures(force = false) {
   el.innerHTML = '<div style="color:var(--muted);padding:20px 0">Loading...</div>';
   api('/api/kr-disclosures').then(data => {
     _disclosuresLoaded = true;
-    renderDisclosures(data);
+    _allDisclosures = data;
+    const active = document.querySelector('#disclosures-panel .report-tag.active');
+    renderDisclosures(data, active ? active.dataset.dcat : 'all');
   }).catch(() => {
     el.innerHTML = '<div style="color:var(--muted);padding:20px 0">데이터를 불러올 수 없습니다.</div>';
   });
 }
 
-function renderDisclosures(items) {
+function renderDisclosures(items, dcat = 'all') {
   const el = document.getElementById('disclosures-list');
-  if (!items || !items.length) {
-    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">오늘 공시가 없습니다.</div>';
+  const list = dcat === 'all' ? items : (items || []).filter(d => d.category === dcat);
+  if (!list || !list.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">해당하는 공시가 없습니다.</div>';
     return;
   }
-  el.innerHTML = items.map(d => `
+  el.innerHTML = list.map(d => `
     <div class="disclosure-card" onclick="window.open('${d.link}','_blank')">
       <span class="disclosure-time">${d.time}</span>
       <span class="disclosure-company">${d.company}</span>
