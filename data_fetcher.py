@@ -1996,6 +1996,8 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
 def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], top_n: int = 500) -> dict:
     """US/KR 각각 시총 상위 top_n 종목 대상 신호+거래량 급증을 한 번의 일봉 조회로 함께 계산."""
     def _process(stocks: list[dict], is_kr: bool):
+        if is_kr:
+            stocks = [s for s in stocks if not _is_kr_etf(s)]
         pool = sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)[:top_n]
         metrics = compute_daily_metrics(pool, is_kr)
         buy  = sorted((s for s in metrics if s["score"] and s["score"] > 0),
@@ -2032,6 +2034,12 @@ def _is_abnormal_listing(stock: dict) -> bool:
     return bool(_ABNORMAL_NAME_RE.search(stock.get("name") or ""))
 
 
+def _is_kr_etf(stock: dict) -> bool:
+    """KR ETF/ETN 판별. Naver 업종 분류상 ETF·ETN은 전부 sector='기타'로 들어옴
+    (개별 종목은 '기타'로 분류되는 경우가 없음 — 실데이터로 확인됨)."""
+    return stock.get("sector") == "기타"
+
+
 def _calc_52w_pos(stock: dict) -> float | None:
     price, hi, lo = stock.get("price"), stock.get("week52_high"), stock.get("week52_low")
     if not price or not hi or not lo or hi <= lo:
@@ -2042,11 +2050,13 @@ def _calc_52w_pos(stock: dict) -> float | None:
     return pos
 
 
-def get_52w_movers(stocks: list[dict], near_pct: float = 10, limit: int = 15) -> dict:
+def get_52w_movers(stocks: list[dict], near_pct: float = 10, limit: int = 15, is_kr: bool = False) -> dict:
     """52주 범위 상단/하단 near_pct% 이내 종목을 근접도순으로 반환."""
     near_high, near_low = [], []
     for s in stocks:
         if _is_abnormal_listing(s):
+            continue
+        if is_kr and _is_kr_etf(s):
             continue
         pos = _calc_52w_pos(s)
         if pos is None:

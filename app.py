@@ -787,7 +787,7 @@ def week52_movers():
     kr = cache.get("kr_stocks") or []
     return jsonify({
         "us": df.get_52w_movers(_get_merged_us_stocks()),
-        "kr": df.get_52w_movers(kr),
+        "kr": df.get_52w_movers(kr, is_kr=True),
     })
 
 
