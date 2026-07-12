@@ -13,6 +13,14 @@ let _krHmStocks = [];
 let _krHmFilter = 'all'; // 'all' | 'kospi200' | 'kosdaq150'
 let _krHmPeriod   = '1d';
 let _krHmPerfData = {};  // { '1w': {ticker: perf_pct}, '1m': {ticker: perf_pct} }
+let _hmSignalMap  = {};  // 오늘의 신호 맵 (main.js loadDailySignalMap 재사용, US+KR 공용)
+
+// 신호 있는 종목 타일 테두리 색 (매수=초록/매도=빨강), 없으면 null
+function _hmSigBorder(ticker) {
+  const s = _hmSignalMap[ticker];
+  if (!s) return null;
+  return s.direction === 'buy' ? '#3fb950' : '#f85149';
+}
 
 const _colorScale = d3.scaleLinear()
   .domain([-5, -2, -0.5, 0, 0.5, 2, 5])
@@ -20,11 +28,13 @@ const _colorScale = d3.scaleLinear()
   .clamp(true);
 
 async function initHeatmap() {
-  const [stocks, members] = await Promise.all([
+  const [stocks, members, sigMap] = await Promise.all([
     api('/api/stocks'),
     api('/api/index-members'),
+    loadDailySignalMap(),
   ]);
-  _hmStocks  = stocks;
+  _hmStocks    = stocks;
+  _hmSignalMap = sigMap;
   _hmMembers = {
     sp500:       new Set(members.sp500),
     nasdaq100:   new Set(members.nasdaq100),
@@ -437,13 +447,18 @@ function renderHeatmap() {
     .attr('height', d => Math.max(0, d.y1 - d.y0))
     .attr('fill',   d => _colorScale(d.data.change_pct))
     .attr('rx', 2)
-    .attr('stroke', '#0d1117')
-    .attr('stroke-width', 1)
+    .attr('stroke', d => _hmSigBorder(d.data.ticker) || '#0d1117')
+    .attr('stroke-width', d => _hmSigBorder(d.data.ticker) ? 2.5 : 1)
     .style('cursor', 'pointer')
     .on('mouseover', (event, d) => {
       event.stopPropagation();
       const pct = d.data.change_pct;
       const periodLabel = _hmPeriod === '1w' ? '1W' : _hmPeriod === '1m' ? '1M' : '1D';
+      const sig = _hmSignalMap[d.data.ticker];
+      const sigHtml = sig
+        ? `<br><span style="color:${sig.direction === 'buy' ? '#3fb950' : '#f85149'};font-size:11px;font-weight:700">
+             ${sig.direction === 'buy' ? '▲매수' : '▼매도'} ${sig.term}
+           </span>` : '';
       tooltip.style.display = 'block';
       tooltip.innerHTML = `
         <strong style="font-size:14px">${d.data.ticker}</strong>
@@ -453,6 +468,7 @@ function renderHeatmap() {
         <strong class="${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</strong>
         <span style="color:#6e7681;font-size:10px;margin-left:4px">(${periodLabel})</span><br>
         <span style="color:#8b949e;font-size:11px">${d.data.industry || d.data.sector} · ${fmtCap(d.data.market_cap)}</span>
+        ${sigHtml}
       `;
     })
     .on('mousemove', (event, d) => {
@@ -708,6 +724,11 @@ function renderKrHeatmap() {
         e.stopPropagation();
         tooltip.style.display = 'block';
         const pct = d.data.change_pct || 0;
+        const sig = _hmSignalMap[d.data.ticker];
+        const sigHtml = sig
+          ? `<br><span style="color:${sig.direction === 'buy' ? '#3fb950' : '#f85149'};font-size:11px;font-weight:700">
+               ${sig.direction === 'buy' ? '▲매수' : '▼매도'} ${sig.term}
+             </span>` : '';
         tooltip.innerHTML =
           `<strong style="font-size:14px">${d.data.label}</strong>
            <span style="color:#8b949e;font-size:12px;margin-left:5px">${d.data.code}</span><br>
@@ -715,7 +736,7 @@ function renderKrHeatmap() {
            현재가: <strong>₩${Math.round(d.data.price).toLocaleString('ko-KR')}</strong>
            <strong style="margin-left:6px;color:${pct >= 0 ? '#4ade80' : '#f87171'}">
              ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%
-           </strong>`;
+           </strong>${sigHtml}`;
       })
       .on('mousemove', (e) => {
         e.stopPropagation();
@@ -727,10 +748,11 @@ function renderKrHeatmap() {
       })
       .on('mouseout', (e) => { e.stopPropagation(); tooltip.style.display = 'none'; });
 
+    const sigBorder = _hmSigBorder(d.data.ticker);
     g.append('rect')
       .attr('width', cw).attr('height', ch)
       .attr('fill', _colorScale(d.data.change_pct || 0))
-      .attr('stroke', '#0d1117').attr('stroke-width', 0.8);
+      .attr('stroke', sigBorder || '#0d1117').attr('stroke-width', sigBorder ? 2.5 : 0.8);
 
     if (cw > 20 && ch > 12) {
       const fs = Math.max(7, Math.min(12, cw / 5));
