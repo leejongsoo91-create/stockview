@@ -104,6 +104,7 @@ function _currentFilterValues() {
     w52:      document.getElementById('filter-52w')?.value      || 'all',
     search:   document.getElementById('filter-search')?.value   || '',
     normalOnly: document.getElementById('filter-normal-only')?.checked || false,
+    signalOnly: document.getElementById('filter-signal-only')?.checked || false,
   };
 }
 
@@ -119,6 +120,8 @@ function _applyFilterValues(vals) {
   set('filter-search',   vals.search);
   const normalOnlyEl = document.getElementById('filter-normal-only');
   if (normalOnlyEl) normalOnlyEl.checked = !!vals.normalOnly;
+  const signalOnlyEl = document.getElementById('filter-signal-only');
+  if (signalOnlyEl) signalOnlyEl.checked = !!vals.signalOnly;
   // industry: 섹터 변경 후 동적 목록이 채워진 뒤 적용
   const secEl = document.getElementById('filter-sector');
   if (secEl && vals.sector !== 'all') {
@@ -318,6 +321,7 @@ function getFilteredStocks() {
   const w52      = document.getElementById('filter-52w')?.value || 'all';
   const search   = document.getElementById('filter-search').value.trim().toLowerCase();
   const normalOnly = document.getElementById('filter-normal-only')?.checked || false;
+  const signalOnly = document.getElementById('filter-signal-only')?.checked || false;
 
   let list = _scStocks.filter(s => {
     if (sector   !== 'all' && s.sector   !== sector)   return false;
@@ -325,6 +329,7 @@ function getFilteredStocks() {
     if (country  !== 'all' && s.country  !== country)  return false;
     if (search && !s.ticker.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
     if (normalOnly && _isAbnormalListing(s)) return false;
+    if (signalOnly && !_scSignalMap[s.ticker]) return false;
 
     // Change %
     switch (change) {
@@ -606,7 +611,7 @@ function bindScreenerEvents() {
 
   // 필터 변경 (US/KR 모드에 따라 분기)
   ['filter-sector','filter-industry','filter-country','filter-change',
-   'filter-cap','filter-pe','filter-52w','filter-normal-only'].forEach(id => {
+   'filter-cap','filter-pe','filter-52w','filter-normal-only','filter-signal-only'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
       if (_scMarket === 'kr') renderKrScreener();
@@ -896,6 +901,10 @@ function _getKrFiltered() {
   const q = (document.getElementById('filter-search')?.value || '').trim().toLowerCase();
   if (q) list = list.filter(s =>
     s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
+  // 신호 있는 종목만
+  if (document.getElementById('filter-signal-only')?.checked) {
+    list = list.filter(s => _scSignalMap[s.ticker]);
+  }
   // 정렬 — 가격 없는 종목은 항상 맨 뒤
   list.sort((a, b) => {
     const aNoPx = !a.price, bNoPx = !b.price;
