@@ -15,6 +15,7 @@ let _scPage         = 1;
 const _SC_PAGE_SIZE = 100;
 let _scMarket       = 'us';        // 'us' | 'kr'
 let _krMarket       = 'all';       // 'all' | 'KOSPI' | 'KOSDAQ'
+let _scSignalMap    = {};          // 오늘의 신호 맵 (main.js loadDailySignalMap 재사용)
 
 // ── 뷰별 컬럼 정의 (fixed: true = 항상 표시, 숨김 불가) ─────────────────────
 const _VIEWS = {
@@ -23,6 +24,7 @@ const _VIEWS = {
     { key: '_no',         label: 'No',       cls: 'sc-no',     fixed: true },
     { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker', fixed: true },
     { key: 'name',        label: 'Name',     cls: 'td-name',   fixed: true },
+    { key: 'signal',      label: 'Signal',   cls: '' },
     { key: 'sector',      label: 'Sector',   cls: 'td-sector' },
     { key: 'price',       label: 'Price',    cls: 'num' },
     { key: 'change',      label: 'Change',   cls: 'num' },
@@ -35,6 +37,7 @@ const _VIEWS = {
     { key: '_no',         label: 'No',        cls: 'sc-no',       fixed: true },
     { key: 'ticker',      label: 'Ticker',    cls: 'td-ticker',   fixed: true },
     { key: 'name',        label: 'Name',      cls: 'td-name',     fixed: true },
+    { key: 'signal',      label: 'Signal',    cls: '' },
     { key: 'sector',      label: 'Sector',    cls: 'td-sector' },
     { key: 'industry',    label: 'Industry',  cls: 'td-industry' },
     { key: 'country',     label: 'Country',   cls: 'td-country' },
@@ -49,6 +52,7 @@ const _VIEWS = {
     { key: '_no',         label: 'No',       cls: 'sc-no',     fixed: true },
     { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker', fixed: true },
     { key: 'name',        label: 'Name',     cls: 'td-name',   fixed: true },
+    { key: 'signal',      label: 'Signal',   cls: '' },
     { key: 'price',       label: 'Price',    cls: 'num' },
     { key: 'change_pct',  label: 'Chg %',    cls: 'num' },
     { key: 'volume',      label: 'Volume',   cls: 'num' },
@@ -172,13 +176,15 @@ async function loadScreenerData(showSpinner = false) {
 
   if (showSpinner && _scStocks.length === 0) {
     document.getElementById('screener-body').innerHTML =
-      `<tr><td colspan="11" class="sc-loading-row">
+      `<tr><td colspan="12" class="sc-loading-row">
         <span class="sc-spinner"></span> 데이터 불러오는 중...
       </td></tr>`;
   }
 
   try {
-    _scStocks = await api('/api/stocks');
+    const [stocks, sigMap] = await Promise.all([api('/api/stocks'), loadDailySignalMap()]);
+    _scStocks = stocks;
+    _scSignalMap = sigMap;
     window._scStocks = _scStocks;
     _populateIndustryFilter();
     _populateCountryFilter();
@@ -477,6 +483,7 @@ function _rowOverview(s, no) {
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
+    ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
     ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>`)}
     ${_hd('price',      `<td class="num">${priceCell}</td>`)}
     ${_hd('change',     `<td class="num">${chgCell}</td>`)}
@@ -501,6 +508,7 @@ function _rowFundamental(s, no) {
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
+    ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
     ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>`)}
     ${_hd('industry',   `<td class="td-industry">${s.industry || '—'}</td>`)}
     ${_hd('country',    `<td class="td-country"><span class="sc-country">${s.country || '—'}</span></td>`)}
@@ -527,6 +535,7 @@ function _rowPerformance(s, no) {
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
+    ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
     ${_hd('price',      `<td class="num">${s.price ? fmt$(s.price) : '—'}</td>`)}
     ${_hd('change_pct', `<td class="num">${s.price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>`)}
     ${_hd('volume',     `<td class="num">${s.volume ? fmtVol(s.volume) : '—'}</td>`)}
@@ -792,11 +801,13 @@ async function loadKrScreener(showSpinner = false) {
   _scLoading = true;
   _showKrMktBar();
   const body = document.getElementById('screener-body');
-  if (showSpinner && body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">🇰🇷 국내주식 로딩 중…</td></tr>';
+  if (showSpinner && body) body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">🇰🇷 국내주식 로딩 중…</td></tr>';
   try {
     const q = (document.getElementById('filter-search')?.value || '').trim();
     const url = '/api/kr-stocks' + (q ? `?q=${encodeURIComponent(q)}` : '');
-    _krStocks = await api(url);
+    const [krStocks, sigMap] = await Promise.all([api(url), loadDailySignalMap()]);
+    _krStocks = krStocks;
+    _scSignalMap = sigMap;
     window._krStocks = _krStocks;
     _populateKrSectorFilter();
     // KR 모드에서 CSV 버튼 연결
@@ -808,7 +819,7 @@ async function loadKrScreener(showSpinner = false) {
     if (exportBtn) exportBtn.onclick = exportKrCSV;
     renderKrScreener();
   } catch (e) {
-    if (body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--red)">데이터 로드 실패</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--red)">데이터 로드 실패</td></tr>';
   } finally {
     _scLoading = false;
   }
@@ -954,6 +965,7 @@ function renderKrScreener() {
       { key: '_no',        label: 'No',       cls: 'sc-no' },
       { key: 'code',       label: '종목코드', cls: 'td-ticker' },
       { key: 'name',       label: '종목명',   cls: 'td-name' },
+      { key: 'signal',     label: '신호',     cls: '' },
       { key: 'market',     label: '시장',     cls: '' },
       { key: 'sector',     label: '업종',     cls: 'td-name' },
       { key: 'price',      label: '현재가',   cls: 'num' },
@@ -966,6 +978,7 @@ function renderKrScreener() {
       { key: '_no',        label: 'No',       cls: 'sc-no' },
       { key: 'code',       label: '종목코드', cls: 'td-ticker' },
       { key: 'name',       label: '종목명',   cls: 'td-name' },
+      { key: 'signal',     label: '신호',     cls: '' },
       { key: 'market',     label: '시장',     cls: '' },
       { key: 'price',      label: '현재가',   cls: 'num' },
       { key: 'pe',         label: 'P/E',      cls: 'num' },
@@ -979,6 +992,7 @@ function renderKrScreener() {
       { key: '_no',        label: 'No',       cls: 'sc-no' },
       { key: 'code',       label: '종목코드', cls: 'td-ticker' },
       { key: 'name',       label: '종목명',   cls: 'td-name' },
+      { key: 'signal',     label: '신호',     cls: '' },
       { key: 'market',     label: '시장',     cls: '' },
       { key: 'price',      label: '현재가',   cls: 'num' },
       { key: 'change_pct', label: '등락률',   cls: 'num' },
@@ -1014,6 +1028,7 @@ function renderKrScreener() {
         case '_no':        return `<td class="sc-no">${no}</td>`;
         case 'code':       return `<td class="td-ticker">${s.code}</td>`;
         case 'name':       return `<td class="td-name">${s.name}</td>`;
+        case 'signal':     return `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`;
         case 'market':     return `<td>${_mktBadge(s.market)}</td>`;
         case 'sector':     return `<td class="td-name" style="font-size:11px;color:var(--muted)">${s.sector || '—'}</td>`;
         case 'price':      return `<td class="num">${_fmtKrw(s.price)}</td>`;
