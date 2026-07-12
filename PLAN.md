@@ -797,10 +797,43 @@ APScheduler>=3.10.4
 - [x] `app.py` — `/api/earnings-signals` 엔드포인트
 - 검증: 6건 매칭(PEP 매도, WFC/CTAS/ABT/STT/TFC 매수) 날짜 오름차순 정렬 확인. KR은 자체 실적 캘린더 데이터 소스 없어 US 전용
 
+### Phase 4-91 — Watchlist·Portfolio 오늘의 신호 배지 연동 ✅ 완료 (2026-07-12)
+- [x] `main.js` — `loadDailySignalMap()`/`signalBadgeHtml()` 공용 헬퍼(세션당 1회만 `/api/daily-signals` 조회)
+- [x] `watchlist.js`/`portfolio.js` — 테이블에 Signal 컬럼 추가, 새 API 없이 기존 데이터 재사용
+
+### Phase 4-92 — Chart 탭 검색을 US/KR 시장 선택 후 검색하도록 개선 ✅ 완료 (2026-07-12)
+- [x] `chart.js` `_resolveChartTicker()` — 기존 US→KR 자동 교차 검색에서, 선택한 시장 안에서만 검색하도록 분리(이름 겹침 오매칭 방지)
+- [x] `templates/index.html`/`style.css` — 검색창 옆 🇺🇸US/🇰🇷KR 토글 버튼(스크리너 시장탭과 동일 스타일)
+
+### Phase 4-93 — 공시 텍스트 깨짐 수정 (KRX KIND 인코딩) ✅ 완료 (2026-07-12)
+- [x] `data_fetcher.py` `fetch_kr_disclosures()` — KRX KIND가 EUC-KR→UTF-8로 응답 인코딩을 바꿨는데 코드가 여전히 EUC-KR로 디코딩하던 버그 수정
+
+### Phase 4-94 — 공시 패널 100건 확대 + 카테고리 서브탭 ✅ 완료 (2026-07-13)
+- [x] `data_fetcher.py` `_classify_disclosure()` — 실적발표(제목 키워드)/시장감시(제출 주체)/기업공시 3종 분류
+- [x] `app.py` — 조회 건수 20→100, `templates/index.html`/`main.js` — All/실적발표/기업공시/시장감시 탭(Reports 탭과 동일 패턴)
+
+### Phase 4-95 — Brief 탭 "거래량 급증 종목" 추천 (US/KR) ✅ 완료 (2026-07-12)
+- [x] `data_fetcher.py` `compute_daily_metrics()` 확장 — 기존 신호 배치와 같은 일봉 조회에서 `volume_ratio`(오늘/20일평균)도 함께 계산(중복 fetch 없음)
+- [x] `app.py` `/api/volume-surges`, KR은 ETF/ETN(`sector=='기타'`) 제외 필터 적용 — 이걸로 Brief 추천 4유형(신호·52주근접·실적결합·거래량급증) 완성
+
+### Phase 4-96 — 스크리너에 Signal 컬럼 + "신호 있는 종목만" 필터 ✅ 완료 (2026-07-13)
+- [x] `screener.js` — US 3뷰·KR 3뷰 전부에 Signal 컬럼, `getFilteredStocks()`/`_getKrFiltered()`에 신호 유무 필터 추가(필터 프리셋에도 반영)
+
+### Phase 4-97 — 히트맵(US/KR)에 오늘의 신호 오버레이 ✅ 완료 (2026-07-13)
+- [x] `heatmap.js` `_hmSigBorder()` — 매수 신호 종목 초록/매도 빨강 테두리(2.5px)로 강조, 툴팁에도 신호 정보 표시
+
+### Phase 4-98 — 캔들 패턴 스캐너 (US/KR, 상승/하락) ✅ 완료 (2026-07-13)
+- [x] `data_fetcher.py` `_candle_pattern_today()` — 기존 배치 일봉의 마지막 봉만으로 Hammer/Shooting Star/Bullish·Bearish Engulfing 판별(추가 요청 없음), `compute_daily_metrics()`에 통합
+- [x] `app.py` `/api/candle-patterns`, `brief.js`/`index.html` — US/KR 각 상승·하락 리스트 카드
+
+### Phase 4-99 — 관심종목(Watchlist) 그룹/태그 기능 ✅ 완료 (2026-07-13)
+- [x] `watchlist.js` — `WLG` 그룹 저장소(localStorage, 티커→그룹명), 그룹 필터 탭 + 행별 그룹 지정 드롭다운, 순수 프론트엔드(백엔드 변경 없음)
+- 이걸로 Brief 추천 스위트(4종) + 신호 데이터 앱 전반 연동(Watchlist/Portfolio 배지, Screener 컬럼+필터, Heatmap 오버레이, 캔들 패턴 스캐너) + Watchlist 그룹 기능까지 이번 세션의 브레인스토밍 아이디어 전부 완료
+
 ### Phase 4-76 이후 — 예정 항목
 | 항목 | 우선순위 | 설명 |
 |------|---------|------|
-| Brief 추천 — 거래량 급증 종목 | 낮음 | 사용자가 제안했던 3가지 추천 유형(52주 근접·실적+신호·거래량 급증) 중 마지막 하나, 미착수 |
+| 국내주식 이전 분기 실적 조회 (공시 탭) | 보류 | DART Open API 키 발급 대기 중 — KRX KIND 상세검색은 세션 붙여도 계속 에러 반환해 스크립트 재현 실패 확인. 사용자가 키 발급받으면 연동 착수 |
 | 차트 더미(가짜) OHLCV 데이터 표시 개선 | 중간 | `app.py:843,915` `_generate_ohlcv_dummy()` — 실제 차트 조회 실패 시 랜덤 생성 데이터를 표시 여부 구분 없이 반환. "데이터 없음" 배너 등 필요하나, `chart.js`의 MA/RSI/MACD/신호 계산 다수가 빈 데이터를 가정 안 해서 방어 코드 추가 범위가 커 보류 중 |
 | Reddit RSS 429 근본 해결 | 보류 | 5초 지연으로도 r/investing·r/wsb 지속 실패 — 사용자 확인 후 현행 유지 결정, 재작업 불필요 |
 | Russell 2000 정확한 구성종목 | 보류 | iShares 사이트가 JS SPA로 개편되어 스크래핑 불가 확인, 대체 무료 소스 못 찾음 — 현재 시총 근사 폴백 유지하기로 결정 |
@@ -826,18 +859,18 @@ python app.py
 
 ---
 
-## K. 현재 구현 상태 요약 (2026-07-10 기준)
+## K. 현재 구현 상태 요약 (2026-07-13 기준)
 
 | 탭 | 상태 | 주요 기능 |
 |----|------|-----------|
 | Home | ✅ | 지수 7개, Top Gainers/Losers, Latest News, 티커 테이프 |
-| Screener | ✅ | US 5,000개 + KR 3,945개, 2행 8개 필터 + "정상 종목만 보기" 옵트인 체크박스, Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 (PE/EPS 커버리지 65%) |
-| Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 섹터·업종 평균등락률 배경색 오버레이, hover 시 상위 상승/하락 종목 툴팁, 1주/1개월 성과 US·KR 전체 종목 커버 |
-| Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드로 강조 표시), 검색창 한글/영문 종목명 지원 |
-| News | ✅ | 뉴스/리포트/공시 서브탭, VADER 감성 배지, RSS 14개 소스 (죽은 피드 5종 정리 완료) |
-| Brief | ✅ | Daily/Weekly/Monthly, Market Mood 바, 중복 제거 Top Stories, **오늘의 매수/매도 추천(US·KR, 단/중/장기)**, **52주 신고가/신저가 근접(US·KR)**, **실적 발표 임박+신호 결합(US)** |
-| Watchlist | ✅ | localStorage 기반 ★ 저장, 실시간 가격 반영 |
-| Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신 |
+| Screener | ✅ | US 5,000개 + KR 3,945개, 2행 8개 필터 + "정상 종목만"·"신호 있는 종목만" 옵트인 체크박스, **Signal 컬럼**, Overview·Fundamental·Performance 3뷰 탭, 섹터 배지, P/E 색상, 52W 바 (PE/EPS 커버리지 65%) |
+| Heatmap | ✅ | 인덱스 탭 5개, 섹터→업종→종목 3단계, 배경색 오버레이, **오늘의 매수/매도 신호 테두리 강조**, 1주/1개월 성과 US·KR 전체 종목 커버 |
+| Chart | ✅ | 분봉~연봉, 지수 지원, Key Statistics 사이드바, RSI/MACD/STO 복합 신호(마커+SIGNAL 배너 카드), **검색창 US/KR 시장 선택 후 검색**(한글/영문 종목명 지원) |
+| News | ✅ | 뉴스/리포트/공시(All·실적발표·기업공시·시장감시, 100건) 서브탭, VADER 감성 배지, RSS 14개 소스 |
+| Brief | ✅ | Daily/Weekly/Monthly, Market Mood 바, Top Stories, **추천 4종(오늘의 매수/매도, 52주 근접, 실적+신호 결합, 거래량 급증)**, **캔들 패턴 스캐너(상승/하락)** — 전부 US·KR 대응(실적결합은 US 전용) |
+| Watchlist | ✅ | localStorage 기반 ★ 저장, 실시간 가격 반영, **Signal 컬럼**, **그룹/태그 기능**(반도체·배당주 등 커스텀 분류) |
+| Portfolio | ✅ | 매수가·수량 입력, 평가손익 계산, 30초 갱신, **Signal 컬럼** |
 | Earnings | ✅ | Nasdaq API, This Week/Next Week/Today, EPS 예상치·전년 비교 |
 
-*최종 수정: 2026-07-10*
+*최종 수정: 2026-07-13*
