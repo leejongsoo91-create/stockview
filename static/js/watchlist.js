@@ -3,6 +3,40 @@
    ═══════════════════════════════════════════════════════════════ */
 
 const LS_KEY = 'stockview_watchlist'; // localStorage 저장 키
+const WLG_KEY = 'stockview_watchlist_groups'; // 종목별 그룹 저장 키
+let _wlGroupFilter = '전체'; // '전체' | '미분류' | 그룹명
+
+// ── 관심종목 그룹 저장소 (티커 -> 그룹명, 없으면 미분류) ───────────────────────
+const WLG = {
+  _map: null,
+
+  load() {
+    if (this._map) return this._map;
+    try { this._map = JSON.parse(localStorage.getItem(WLG_KEY) || '{}'); }
+    catch { this._map = {}; }
+    return this._map;
+  },
+
+  save() { localStorage.setItem(WLG_KEY, JSON.stringify(this._map)); },
+
+  get(ticker) { return this.load()[ticker] || ''; },
+
+  set(ticker, group) {
+    const m = this.load();
+    if (group) m[ticker] = group; else delete m[ticker];
+    this.save();
+  },
+
+  remove(ticker) { this.set(ticker, ''); },
+
+  // 현재 워치리스트에 있는 종목들 기준으로 사용 중인 그룹명 목록
+  allGroups(tickers) {
+    const m = this.load();
+    const set = new Set();
+    tickers.forEach(t => { if (m[t]) set.add(m[t]); });
+    return [...set].sort();
+  },
+};
 
 // ── 워치리스트 저장소 ─────────────────────────────────────────────────────────
 const WL = {
@@ -36,6 +70,7 @@ const WL = {
   remove(ticker) {
     this._tickers = this.load().filter(t => t !== ticker);
     this.save();
+    WLG.remove(ticker);
   },
 
   toggle(ticker) {
@@ -148,11 +183,33 @@ async function renderWatchlist() {
     return;
   }
 
+  // 그룹 필터 탭 구성
+  const groups = WLG.allGroups(tickers);
+  if (!groups.includes(_wlGroupFilter) && _wlGroupFilter !== '전체' && _wlGroupFilter !== '미분류') {
+    _wlGroupFilter = '전체'; // 필터로 선택된 그룹이 더 이상 존재하지 않으면 초기화
+  }
+  const tabsHtml = ['전체', ...groups, '미분류'].map(g => {
+    const cnt = g === '전체' ? stocks.length
+      : g === '미분류' ? stocks.filter(s => !WLG.get(s.ticker)).length
+      : stocks.filter(s => WLG.get(s.ticker) === g).length;
+    return `<button class="report-tag${g === _wlGroupFilter ? ' active' : ''}" onclick="_wlSelectGroupFilter('${g}')">${g} <span class="wl-group-count">${cnt}</span></button>`;
+  }).join('') + `<button class="wl-group-add-btn" onclick="_wlAddGroupPrompt()" title="새 그룹 추가">+ 그룹</button>`;
+
+  // 그룹 필터 적용
+  const filtered = _wlGroupFilter === '전체' ? stocks
+    : _wlGroupFilter === '미분류' ? stocks.filter(s => !WLG.get(s.ticker))
+    : stocks.filter(s => WLG.get(s.ticker) === _wlGroupFilter);
+
+  const groupOptionsHtml = (current) => ['', ...groups].map(g =>
+    `<option value="${g}" ${g === current ? 'selected' : ''}>${g || '(없음)'}</option>`
+  ).join('') + `<option value="__new__">+ 새 그룹...</option>`;
+
   container.innerHTML = `
     <div class="wl-header-row">
-      <span class="wl-total">${stocks.length}개 종목</span>
+      <span class="wl-total">${filtered.length}개 종목</span>
       <button class="wl-clear-btn" onclick="clearWatchlist()">전체 삭제</button>
     </div>
+    <div class="news-filter-bar wl-group-tabs">${tabsHtml}</div>
     <div class="table-wrap">
       <table class="wl-table">
         <thead>
@@ -160,6 +217,7 @@ async function renderWatchlist() {
             <th></th>
             <th>Ticker</th>
             <th>Name</th>
+            <th>Group</th>
             <th>Sector</th>
             <th>Signal</th>
             <th class="num">Price</th>
@@ -171,7 +229,7 @@ async function renderWatchlist() {
           </tr>
         </thead>
         <tbody>
-          ${stocks.map(s => {
+          ${filtered.map(s => {
             const pct   = s.change_pct || 0;
             const cls   = pct >= 0 ? 'up' : 'down';
             const bgCls = pct >= 0 ? 'up-bg' : 'down-bg';
@@ -190,6 +248,11 @@ async function renderWatchlist() {
                   ${s.name}
                   ${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}
                 </td>
+                <td onclick="event.stopPropagation()">
+                  <select class="wl-group-select" onchange="_wlOnGroupChange('${s.ticker}', this)">
+                    ${groupOptionsHtml(WLG.get(s.ticker))}
+                  </select>
+                </td>
                 <td class="td-sector">${s.sector || '—'}</td>
                 <td>${signalBadgeHtml(s.ticker, sigMap)}</td>
                 <td class="num">${price}</td>
@@ -207,10 +270,36 @@ async function renderWatchlist() {
     </div>`;
 }
 
+function _wlSelectGroupFilter(group) {
+  _wlGroupFilter = group;
+  renderWatchlist();
+}
+
+function _wlAddGroupPrompt() {
+  const name = prompt('새 그룹 이름을 입력하세요 (예: 반도체, 배당주)');
+  if (!name || !name.trim()) return;
+  _wlGroupFilter = name.trim();
+  renderWatchlist();
+}
+
+function _wlOnGroupChange(ticker, sel) {
+  let value = sel.value;
+  if (value === '__new__') {
+    const name = prompt('새 그룹 이름을 입력하세요');
+    if (!name || !name.trim()) { renderWatchlist(); return; }
+    value = name.trim();
+  }
+  WLG.set(ticker, value);
+  renderWatchlist();
+}
+
 function clearWatchlist() {
   if (!confirm(`관심종목 ${WL.count()}개를 모두 삭제하시겠습니까?`)) return;
   WL._tickers = [];
   WL.save();
+  WLG._map = {};
+  WLG.save();
+  _wlGroupFilter = '전체';
   // 모든 ★ 버튼 초기화
   document.querySelectorAll('.star-btn.active').forEach(b => {
     b.textContent = '☆';
