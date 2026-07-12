@@ -16,6 +16,33 @@ async function api(path) {
   return r.json();
 }
 
+// ── 오늘의 신호 맵 (Watchlist/Portfolio 공용) ──────────────────────────────────
+// { ticker: {direction:'buy'|'sell', score, term} } — 세션 중 1회만 조회
+let _dailySignalMap = null;
+
+async function loadDailySignalMap() {
+  if (_dailySignalMap) return _dailySignalMap;
+  const map = {};
+  try {
+    const data = await api('/api/daily-signals');
+    ['us', 'kr'].forEach(mkt => {
+      const d = data[mkt] || {};
+      (d.buy  || []).forEach(s => { map[s.ticker] = { ...s, direction: 'buy'  }; });
+      (d.sell || []).forEach(s => { map[s.ticker] = { ...s, direction: 'sell' }; });
+    });
+  } catch {}
+  _dailySignalMap = map;
+  return map;
+}
+
+function signalBadgeHtml(ticker, map) {
+  const s = map[ticker];
+  if (!s) return '<span class="sig-badge-none">—</span>';
+  const cls   = s.direction === 'buy' ? 'buy' : 'sell';
+  const label = s.direction === 'buy' ? '▲매수' : '▼매도';
+  return `<span class="sig-badge ${cls}" title="${s.term} 신호 · 점수 ${s.score}">${label} <span class="sig-badge-term">${s.term}</span></span>`;
+}
+
 // ── 뷰 전환 ─────────────────────────────────────────────────────────────────
 let _heatmapInited   = false;
 let _screenerInited  = false;

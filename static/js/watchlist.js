@@ -124,8 +124,10 @@ async function renderWatchlist() {
 
   // 전체 종목에서 watchlist 종목 필터링
   let stocks = [];
+  let sigMap = {};
   try {
-    const all = await api('/api/stocks');
+    const [all, sm] = await Promise.all([api('/api/stocks'), loadDailySignalMap()]);
+    sigMap = sm;
     const set = new Set(tickers);
     stocks = all.filter(s => set.has(s.ticker));
 
@@ -159,6 +161,7 @@ async function renderWatchlist() {
             <th>Ticker</th>
             <th>Name</th>
             <th>Sector</th>
+            <th>Signal</th>
             <th class="num">Price</th>
             <th class="num">Change</th>
             <th class="num">Chg %</th>
@@ -188,6 +191,7 @@ async function renderWatchlist() {
                   ${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}
                 </td>
                 <td class="td-sector">${s.sector || '—'}</td>
+                <td>${signalBadgeHtml(s.ticker, sigMap)}</td>
                 <td class="num">${price}</td>
                 <td class="num ${cls}">${chg}</td>
                 <td class="num">

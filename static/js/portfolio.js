@@ -326,8 +326,10 @@ async function renderPortfolio() {
 
   // 전체 종목에서 해당 티커 가격 조회
   let priceMap = {};
+  let sigMap = {};
   try {
-    const all = await api('/api/stocks');
+    const [all, sm] = await Promise.all([api('/api/stocks'), loadDailySignalMap()]);
+    sigMap = sm;
     all.forEach(s => { priceMap[s.ticker] = s; });
     // API에 없는 종목은 개별 조회
     for (const t of tickers) {
@@ -388,6 +390,7 @@ async function renderPortfolio() {
             <th></th>
             <th>Ticker</th>
             <th>Name</th>
+            <th>Signal</th>
             <th class="num">수량</th>
             <th class="num">평균단가</th>
             <th class="num">현재가</th>
@@ -410,6 +413,7 @@ async function renderPortfolio() {
                 <td class="td-name">${name}
                   ${nameKo ? `<span class="td-name-ko">(${nameKo})</span>` : ''}
                 </td>
+                <td>${signalBadgeHtml(r.ticker, sigMap)}</td>
                 <td class="num">${r.qty.toLocaleString()}</td>
                 <td class="num">$${r.avgPrice.toFixed(2)}</td>
                 <td class="num">${r.curPrice ? fmt$(r.curPrice) : '—'}</td>
