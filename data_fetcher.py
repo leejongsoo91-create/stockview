@@ -1970,9 +1970,27 @@ def _calc_volume_ratio(ohlcv: list[dict], lookback: int = 20) -> float | None:
     return round(today_vol / avg, 2)
 
 
+def _candle_pattern_today(ohlcv: list[dict]) -> tuple[str, int] | None:
+    """오늘(최신) 봉의 캔들 패턴 이름과 방향(+1 상승성/-1 하락성)을 반환. 없으면 None.
+    _sig_candle_patterns()와 동일한 판정 기준을 마지막 봉에만 적용(패턴명까지 필요해서 별도 구현)."""
+    if len(ohlcv) < 2:
+        return None
+    o, h, l, c = ohlcv[-1]["open"], ohlcv[-1]["high"], ohlcv[-1]["low"], ohlcv[-1]["close"]
+    po, pc = ohlcv[-2]["open"], ohlcv[-2]["close"]
+    body, rng = abs(c - o), h - l
+    if rng == 0 or body == 0:
+        return None
+    upper, lower = h - max(o, c), min(o, c) - l
+    if   lower >= 2 * body and upper <= body * 0.3: return ("Hammer", 1)
+    elif upper >= 2 * body and lower <= body * 0.3: return ("Shooting Star", -1)
+    elif pc < po and c > o and o <= pc and c >= po: return ("Bullish Engulfing", 1)
+    elif pc > po and c < o and o >= pc and c <= po: return ("Bearish Engulfing", -1)
+    return None
+
+
 def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20) -> list[dict]:
-    """종목별로 1년치 일봉을 한 번만 조회해 신호 점수 + 거래량 급증 비율을 함께 계산.
-    신호도 없고 거래량도 평범하면 제외."""
+    """종목별로 1년치 일봉을 한 번만 조회해 신호 점수 + 거래량 급증 비율 + 오늘의 캔들 패턴을
+    함께 계산. 신호도 없고 거래량도 평범하고 패턴도 없으면 제외."""
     def _one(stock: dict) -> dict | None:
         ticker = stock["ticker"]
         try:
@@ -1981,7 +1999,8 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
                 return None
             score     = compute_today_signal(ohlcv, is_kr)
             vol_ratio = _calc_volume_ratio(ohlcv)
-            if not score and (vol_ratio is None or vol_ratio < _VOLUME_POOL_RATIO):
+            pattern   = _candle_pattern_today(ohlcv)
+            if not score and (vol_ratio is None or vol_ratio < _VOLUME_POOL_RATIO) and not pattern:
                 return None
             return {
                 "ticker":       ticker,
@@ -1993,6 +2012,8 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
                 "score":        score,
                 "term":         _SIG_TERM.get(abs(score), "단기") if score else None,
                 "volume_ratio": vol_ratio,
+                "pattern":      pattern[0] if pattern else None,
+                "pattern_dir":  pattern[1] if pattern else 0,
             }
         except Exception:
             return None
@@ -2024,15 +2045,20 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
             (s for s in metrics if s["volume_ratio"] and s["volume_ratio"] >= _VOLUME_SURGE_RATIO),
             key=lambda s: -s["volume_ratio"],
         )[:15]
-        return {"buy": buy, "sell": sell}, surges
+        bullish_pat = sorted((s for s in metrics if s["pattern_dir"] > 0),
+                              key=lambda s: -(s.get("market_cap") or 0))[:15]
+        bearish_pat = sorted((s for s in metrics if s["pattern_dir"] < 0),
+                              key=lambda s: -(s.get("market_cap") or 0))[:15]
+        return {"buy": buy, "sell": sell}, surges, {"bullish": bullish_pat, "bearish": bearish_pat}
 
-    us_sig, us_surges = _process(us_stocks, False)
-    kr_sig, kr_surges = _process(kr_stocks, True)
+    us_sig, us_surges, us_patterns = _process(us_stocks, False)
+    kr_sig, kr_surges, kr_patterns = _process(kr_stocks, True)
 
     return {
         "us": us_sig,
         "kr": kr_sig,
-        "volume_surges": {"us": us_surges, "kr": kr_surges},
+        "volume_surges":  {"us": us_surges,   "kr": kr_surges},
+        "candle_patterns": {"us": us_patterns, "kr": kr_patterns},
         "generated_at": int(time.time()),
     }
 

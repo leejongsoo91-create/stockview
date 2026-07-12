@@ -19,7 +19,34 @@ function initBrief() {
   load52wMovers();
   loadEarningsSignals();
   loadVolumeSurges();
+  loadCandlePatterns();
   _briefInited = true;
+}
+
+async function loadCandlePatterns() {
+  try {
+    const data = await api('/api/candle-patterns');
+    _renderPatternList('brief-pattern-us-bullish', data.us?.bullish);
+    _renderPatternList('brief-pattern-us-bearish', data.us?.bearish);
+    _renderPatternList('brief-pattern-kr-bullish', data.kr?.bullish);
+    _renderPatternList('brief-pattern-kr-bearish', data.kr?.bearish);
+  } catch {}
+}
+
+function _renderPatternList(elId, items) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="brief-empty">해당 패턴이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.map(s => `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-term term-pattern">${s.pattern}</span>
+      <span class="brief-signal-ticker">${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      ${_fmtSignalPct(s.change_pct)}
+    </div>`).join('');
 }
 
 async function loadVolumeSurges() {

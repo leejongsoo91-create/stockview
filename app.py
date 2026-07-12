@@ -398,11 +398,14 @@ def refresh_daily_signals():
         result = df.build_daily_recommendations(us_stocks, kr_stocks, top_n=500)
         cache.set("daily_signals", result, ttl=90000)
         vs = result["volume_surges"]
+        cp = result["candle_patterns"]
         log.info(
             f"일일 신호 추천 갱신 완료: "
             f"US 매수 {len(result['us']['buy'])}/매도 {len(result['us']['sell'])}, "
             f"KR 매수 {len(result['kr']['buy'])}/매도 {len(result['kr']['sell'])}, "
-            f"거래량 급증 US {len(vs['us'])}/KR {len(vs['kr'])}"
+            f"거래량 급증 US {len(vs['us'])}/KR {len(vs['kr'])}, "
+            f"캔들패턴 US {len(cp['us']['bullish'])+len(cp['us']['bearish'])}/"
+            f"KR {len(cp['kr']['bullish'])+len(cp['kr']['bearish'])}"
         )
     except Exception as e:
         log.error(f"refresh_daily_signals 실패: {e}")
@@ -763,7 +766,9 @@ def index_members():
 
 _EMPTY_DAILY_SIGNALS = {
     "us": {"buy": [], "sell": []}, "kr": {"buy": [], "sell": []},
-    "volume_surges": {"us": [], "kr": []}, "generated_at": 0,
+    "volume_surges": {"us": [], "kr": []},
+    "candle_patterns": {"us": {"bullish": [], "bearish": []}, "kr": {"bullish": [], "bearish": []}},
+    "generated_at": 0,
 }
 
 
@@ -779,6 +784,14 @@ def volume_surges():
     """거래량 급증 종목 (US/KR 각각, 20일 평균 대비 2배 이상) — 일일 신호 배치와 함께 계산됨."""
     data = cache.get("daily_signals") or _EMPTY_DAILY_SIGNALS
     return jsonify(data.get("volume_surges") or {"us": [], "kr": []})
+
+
+@app.route("/api/candle-patterns")
+def candle_patterns():
+    """오늘의 캔들 패턴 스캐너 (US/KR 각각, 상승성/하락성) — 일일 신호 배치와 함께 계산됨."""
+    data = cache.get("daily_signals") or _EMPTY_DAILY_SIGNALS
+    empty = {"bullish": [], "bearish": []}
+    return jsonify(data.get("candle_patterns") or {"us": empty, "kr": empty})
 
 
 @app.route("/api/52w-movers")
