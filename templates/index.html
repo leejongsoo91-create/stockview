@@ -329,7 +329,11 @@
     <div id="view-chart" class="view">
       <div class="chart-toolbar">
         <div class="chart-search-row">
-          <input id="chart-input" type="text" placeholder="티커 또는 종목명 (e.g. AAPL, 삼성전자)">
+          <div class="chart-mkt-toggle">
+            <button class="chart-mkt-btn active" data-mkt="us">🇺🇸 US</button>
+            <button class="chart-mkt-btn" data-mkt="kr">🇰🇷 KR</button>
+          </div>
+          <input id="chart-input" type="text" placeholder="티커 또는 종목명 (e.g. AAPL)">
           <button id="chart-go-btn">Go</button>
           <button id="chart-cmp-toggle" class="chart-cmp-toggle">⇌ 비교</button>
         </div>

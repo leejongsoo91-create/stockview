@@ -173,28 +173,32 @@ function _createLWChart() {
 
 // 티커/코드 직접 일치가 없으면 한글·영문 종목명으로 검색해 티커를 찾는다
 // (헤더의 전역 검색과 동일한 window._scStocks/_krStocks 데이터를 재사용)
-function _resolveChartTicker(raw) {
+// market: 'us' | 'kr' — 선택된 시장 안에서만 검색 (교차 매칭 안 함)
+let _chartSearchMarket = 'us';
+
+function _resolveChartTicker(raw, market = _chartSearchMarket) {
   const q = (raw || '').trim();
   if (!q) return null;
   const qUpper = q.toUpperCase();
   const qLower = q.toLowerCase();
 
-  const usStocks = window._scStocks || [];
-  const krStocks = window._krStocks || [];
+  if (market === 'kr') {
+    const krStocks = window._krStocks || [];
+    const krExact = krStocks.find(s => s.code === q || (s.ticker || '').toUpperCase() === qUpper);
+    if (krExact) return krExact.ticker;
 
-  // 1) 정확한 티커/코드 일치 우선
+    const krByName = krStocks.filter(s => (s.name || '').includes(q));
+    if (krByName.length) {
+      krByName.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+      return krByName[0].ticker;
+    }
+    // 매칭 실패 시 입력값 그대로 시도 (6자리 코드 등)
+    return q;
+  }
+
+  const usStocks = window._scStocks || [];
   const usExact = usStocks.find(s => s.ticker.toUpperCase() === qUpper);
   if (usExact) return usExact.ticker;
-
-  const krExact = krStocks.find(s => s.code === q || (s.ticker || '').toUpperCase() === qUpper);
-  if (krExact) return krExact.ticker;
-
-  // 2) 종목명 검색 (한글명은 KR 종목 name, US 종목은 name_ko/name)
-  const krByName = krStocks.filter(s => (s.name || '').includes(q));
-  if (krByName.length) {
-    krByName.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
-    return krByName[0].ticker;
-  }
 
   const usByName = usStocks.filter(s =>
     (s.name_ko && s.name_ko.includes(q)) ||
@@ -205,7 +209,7 @@ function _resolveChartTicker(raw) {
     return usByName[0].ticker;
   }
 
-  // 3) 매칭 실패 시 입력값을 그대로 티커로 간주 (추적 목록 밖 종목 지원)
+  // 매칭 실패 시 입력값을 그대로 티커로 간주 (추적 목록 밖 종목 지원)
   return qUpper;
 }
 
@@ -222,6 +226,19 @@ function _bindSearchEvents() {
   });
   document.querySelectorAll('.quick-btn').forEach(btn => {
     btn.addEventListener('click', () => loadChart(btn.dataset.ticker));
+  });
+
+  // US/KR 검색 시장 토글
+  document.querySelectorAll('.chart-mkt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.chart-mkt-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _chartSearchMarket = btn.dataset.mkt;
+      input.placeholder = _chartSearchMarket === 'kr'
+        ? '티커 또는 종목명 (e.g. 005930, 삼성전자)'
+        : '티커 또는 종목명 (e.g. AAPL)';
+      input.focus();
+    });
   });
 }
 
