@@ -972,8 +972,8 @@ def fetch_kr_disclosures(page_size: int = 20) -> list[dict]:
         "&forward=todaydisclosure_sub&chose=S&todayFlag=Y&isuCd="
     )
     try:
-        resp = requests.post(url, headers=hdrs, data=body.encode("euc-kr"), timeout=10)
-        html = resp.content.decode("euc-kr", errors="replace")
+        resp = requests.post(url, headers=hdrs, data=body.encode("utf-8"), timeout=10)
+        html = resp.content.decode("utf-8", errors="replace")
 
         results = []
         for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.DOTALL):
