@@ -1948,10 +1948,13 @@ def compute_today_signal(ohlcv: list[dict], is_kr: bool) -> int:
                 has_bearish = any(pat[j] < 0 for j in range(max(0, i - 2), i + 1))
                 if not has_bearish: final[i] = 0
 
-    return final[-1]
+    # chart.js _applySignalMarkers()의 마커 표시 기준(threshold=2)과 동일하게
+    # |score|<2인 약한 신호는 여기서 걸러낸다 — 백테스트 검증 대상도 |score|>=2뿐이었음
+    result = final[-1]
+    return result if abs(result) >= 2 else 0
 
 
-_SIG_TERM = {1: "단기", 2: "중기", 3: "장기"}
+_SIG_TERM = {2: "중기", 3: "장기"}
 _VOLUME_SURGE_RATIO = 2.0    # 급증 판정 배율 (20일 평균 대비)
 _VOLUME_POOL_RATIO  = 1.5    # 배치 계산 단계에서 후보로 남겨둘 최소 배율
 
@@ -2010,7 +2013,7 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
                 "change_pct":   stock.get("change_pct"),
                 "market_cap":   stock.get("market_cap") or 0,
                 "score":        score,
-                "term":         _SIG_TERM.get(abs(score), "단기") if score else None,
+                "term":         _SIG_TERM.get(abs(score), "장기") if score else None,
                 "volume_ratio": vol_ratio,
                 "pattern":      pattern[0] if pattern else None,
                 "pattern_dir":  pattern[1] if pattern else 0,
