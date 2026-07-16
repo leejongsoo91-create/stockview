@@ -1335,6 +1335,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .ind-ma5.active  { border-color: #f0c040; color: #f0c040; background: rgba(240,192,64,.12); }
 .ind-ma20.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,.12); }
 .ind-ma60.active { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,.12); }
+.ind-ma120.active { border-color: #3fb950; color: #3fb950; background: rgba(63,185,80,.12); }
+.ind-ma240.active { border-color: #f778ba; color: #f778ba; background: rgba(247,120,186,.12); }
 .ind-bb.active   { border-color: #bc8cff; color: #bc8cff; background: rgba(188,140,255,.12); }
 .ind-rsi.active   { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.12); }
 .ind-volma.active { border-color: #ffa64d; color: #ffa64d; background: rgba(255,166,77,.12); }

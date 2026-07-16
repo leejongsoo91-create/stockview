@@ -14,7 +14,7 @@ let _lastOhlcv      = [];
 
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
 const _activeInds = new Set(['ma5','ma20','ma60','bb','rsi','macd','sto','volma']);
-const _indSeries  = { ma5: null, ma20: null, ma60: null, bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null };
+const _indSeries  = { ma5: null, ma20: null, ma60: null, ma120: null, ma240: null, bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null };
 let   _rsiChart   = null;
 let   _rsiSeries  = null;
 let   _rsiOb      = null;   // 과매수 기준선
@@ -626,6 +626,18 @@ function _applyIndicators() {
     _setLine('ma60', '#ff7b72');
     _indSeries.ma60.setData(_toData(_calcMA(closes, 60)));
   } else { _rmLine('ma60'); }
+
+  // MA120
+  if (_activeInds.has('ma120') && closes.length >= 120) {
+    _setLine('ma120', '#3fb950');
+    _indSeries.ma120.setData(_toData(_calcMA(closes, 120)));
+  } else { _rmLine('ma120'); }
+
+  // MA240
+  if (_activeInds.has('ma240') && closes.length >= 240) {
+    _setLine('ma240', '#f778ba');
+    _indSeries.ma240.setData(_toData(_calcMA(closes, 240)));
+  } else { _rmLine('ma240'); }
 
   // Bollinger Bands
   if (_activeInds.has('bb')) {
