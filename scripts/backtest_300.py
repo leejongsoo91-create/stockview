@@ -7,9 +7,11 @@ import json, time, sys, os, bisect
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
+import data_fetcher
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 FWD = int(sys.argv[1]) if len(sys.argv) > 1 else 10  # 인자 없으면 10일 기준
+N_STOCKS = int(sys.argv[3]) if len(sys.argv) > 3 else 300  # 인자 없으면 300종목
 
 # S&P500 시총 상위 300종목 (중복 제거용 dict.fromkeys 사용)
 _US_RAW = [
@@ -52,6 +54,21 @@ _US_RAW = [
     'ROK','AME','XYL','ROP','IDEX','ITW','PNR','FAST','GWW','MSC',
 ]
 US_300 = list(dict.fromkeys(_US_RAW))[:300]
+
+
+def load_us_topN(n):
+    """data_fetcher의 실제 라이브 Nasdaq 데이터(시총 내림차순)에서 상위 n개 티커 로드.
+    n<=300이면 하드코딩 리스트(US_300) 사용, 초과분은 라이브 데이터로 보충."""
+    if n <= len(US_300):
+        return US_300[:n]
+    print(f"  (US 시총 상위 {n}종목 로드 위해 Nasdaq API 조회 중...)", flush=True)
+    stocks = data_fetcher.fetch_nasdaq_stocks(min_market_cap_b=0.0)
+    if not stocks:
+        print("  Nasdaq API 실패, 하드코딩 300종목만 사용")
+        return US_300
+    tickers = [s['ticker'] for s in stocks[:n]]
+    print(f"  (US 시총 상위 {len(tickers)}종목 로드 완료)")
+    return tickers
 
 
 def fetch_ohlcv(ticker):
@@ -525,14 +542,14 @@ def backtest(ohlcv, signals, threshold):
     return total, buy, buy_ok, sell, sell_ok
 
 
-def load_kr_top300():
+def load_kr_topN(n):
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         'data', 'kr_stocks.json')
     with open(path, encoding='utf-8') as f:
         stocks = json.load(f)
     valid = [s for s in stocks if s.get('market_cap') and s['market_cap'] > 0]
     valid.sort(key=lambda s: s['market_cap'], reverse=True)
-    tickers = [s['ticker'] for s in valid[:300]]
+    tickers = [s['ticker'] for s in valid[:n]]
     print(f"  (KR 시총 상위 {len(tickers)}종목 로드)")
     return tickers
 
@@ -581,27 +598,31 @@ def run_group(label, tickers, strategies=None, market_ticker=None):
 
 
 if __name__ == '__main__':
-    print(f"\n  신호 적중률 개선 전략 비교 -- US/KR 300종목 확대 백테스트 / {FWD}일 기준")
+    print(f"\n  신호 적중률 개선 전략 비교 -- US/KR {N_STOCKS}종목 확대 백테스트 / {FWD}일 기준")
     print("  " + "=" * 74)
-    print(f"  US 대상: {len(US_300)}종목 (S&P500 시총 상위) / FWD={FWD}일")
+
+    us_tickers = load_us_topN(N_STOCKS)
+    print(f"  US 대상: {len(us_tickers)}종목 (시총 상위) / FWD={FWD}일")
 
     mode = sys.argv[2] if len(sys.argv) > 2 else 'all'
+    us_label = f"US 미국 시총 {N_STOCKS}"
+    kr_label = f"KR 국내 시총 {N_STOCKS}"
 
     if mode == 'spy':
         # SPY/KOSPI 시장 추세 필터 테스트
-        us_results = run_group("US 미국 시총 300", US_300,
+        us_results = run_group(us_label, us_tickers,
                                strategies=SPY_STRATEGIES, market_ticker='SPY')
         try:
-            kr300 = load_kr_top300()
-            kr_results = run_group("KR 국내 시총 300", kr300,
+            kr_tickers = load_kr_topN(N_STOCKS)
+            kr_results = run_group(kr_label, kr_tickers,
                                    strategies=SPY_STRATEGIES, market_ticker='^KS11')
         except Exception as e:
             print(f"\n  KR 로드 오류: {e}")
     else:
-        us_results = run_group("US 미국 시총 300", US_300)
+        us_results = run_group(us_label, us_tickers)
         try:
-            kr300 = load_kr_top300()
-            kr_results = run_group("KR 국내 시총 300", kr300)
+            kr_tickers = load_kr_topN(N_STOCKS)
+            kr_results = run_group(kr_label, kr_tickers)
         except Exception as e:
             print(f"\n  KR 로드 오류: {e}")
 
