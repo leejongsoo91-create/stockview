@@ -542,6 +542,64 @@ def backtest(ohlcv, signals, threshold):
     return total, buy, buy_ok, sell, sell_ok
 
 
+def backtest_tiered(ohlcv, signals):
+    """[현재] 전략 신호를 |score| 구간별(2/3/4+)로 버킷팅해 매수·매도 적중률을 따로 집계.
+    순위 정렬 기준(score 내림차순)이 실제 적중률과 상관관계가 있는지 검증하기 위함."""
+    c = [d['close'] for d in ohlcv]; n = len(c)
+    buckets = {}  # tier -> {'buy': [total, ok], 'sell': [total, ok]}
+    prev = 0
+    for i in range(1, n - FWD):
+        s = signals[i]
+        if s != prev and abs(s) >= 2:
+            tier = min(abs(s), 4)  # 4 이상은 '4+' 구간으로 합침
+            kind = 'buy' if s > 0 else 'sell'
+            fut = c[i + FWD]
+            ok = (fut > c[i]) if kind == 'buy' else (fut < c[i])
+            b = buckets.setdefault(tier, {'buy': [0, 0], 'sell': [0, 0]})
+            b[kind][0] += 1
+            b[kind][1] += (1 if ok else 0)
+        prev = s
+    return buckets
+
+
+def run_tiered(label, tickers):
+    print(f"\n  {label} ({len(tickers)}종목) -- 데이터 수집 중...", flush=True)
+    all_ohlcv = {}
+    for i, ticker in enumerate(tickers, 1):
+        print(f"  [{i:>3}/{len(tickers)}] {ticker}", end='  ', flush=True)
+        ohlcv = fetch_ohlcv(ticker)
+        if len(ohlcv) >= 80:
+            all_ohlcv[ticker] = ohlcv
+            print("OK")
+        else:
+            print("skip")
+        time.sleep(0.25)
+
+    print(f"\n  [{label}] score 구간별 집계 중... (유효 {len(all_ohlcv)}종목)", flush=True)
+    agg = {}  # tier -> {'buy': [total, ok], 'sell': [total, ok]}
+    for ticker, ohlcv in all_ohlcv.items():
+        try:
+            sig, _ = strategy_current(ohlcv)
+            buckets = backtest_tiered(ohlcv, sig)
+            for tier, b in buckets.items():
+                a = agg.setdefault(tier, {'buy': [0, 0], 'sell': [0, 0]})
+                a['buy'][0]  += b['buy'][0];  a['buy'][1]  += b['buy'][1]
+                a['sell'][0] += b['sell'][0]; a['sell'][1] += b['sell'][1]
+        except Exception:
+            pass
+
+    def p(ok, tot): return f"{ok / tot * 100:6.1f}%" if tot else "    N/A"
+    print(f"\n  == [{label}] score 구간별 적중률 ({FWD}일 기준, [현재]전략) ==")
+    print(f"  {'|score|':>8} {'매수건':>6} {'매수%':>7}  {'매도건':>6} {'매도%':>7}")
+    print("  " + "-" * 44)
+    for tier in sorted(agg.keys()):
+        label_tier = f"{tier}" if tier < 4 else "4+"
+        a = agg[tier]
+        print(f"  {label_tier:>8} {a['buy'][0]:>6}  {p(a['buy'][1], a['buy'][0])}  "
+              f"{a['sell'][0]:>6}  {p(a['sell'][1], a['sell'][0])}")
+    return agg
+
+
 def load_kr_topN(n):
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         'data', 'kr_stocks.json')
@@ -608,7 +666,15 @@ if __name__ == '__main__':
     us_label = f"US 미국 시총 {N_STOCKS}"
     kr_label = f"KR 국내 시총 {N_STOCKS}"
 
-    if mode == 'spy':
+    if mode == 'tier':
+        # score 구간별(|score|=2/3/4+) 적중률 분리 집계 — [현재] 전략만 대상
+        us_results = run_tiered(us_label, us_tickers)
+        try:
+            kr_tickers = load_kr_topN(N_STOCKS)
+            kr_results = run_tiered(kr_label, kr_tickers)
+        except Exception as e:
+            print(f"\n  KR 로드 오류: {e}")
+    elif mode == 'spy':
         # SPY/KOSPI 시장 추세 필터 테스트
         us_results = run_group(us_label, us_tickers,
                                strategies=SPY_STRATEGIES, market_ticker='SPY')
