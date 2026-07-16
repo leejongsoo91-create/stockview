@@ -2507,10 +2507,23 @@ mark.kw-hl {
   margin-bottom: 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .brief-signals-col-title.buy  { color: #3fb950; }
 .brief-signals-col-title.sell { color: #f85149; }
 .brief-signals-col-title.neutral { color: var(--text); }
+.brief-weak-filter {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.brief-weak-filter input { cursor: pointer; }
 .brief-signals-list { display: flex; flex-direction: column; gap: 2px; }
 .brief-signal-item {
   display: flex;

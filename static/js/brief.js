@@ -3,6 +3,8 @@
    ═══════════════════════════════════════════════════════════════ */
 
 let _briefPeriod = 'daily';
+let _lastDailySignals = { us: null, kr: null };
+const _hideWeakSell = { us: false, kr: false };
 
 function initBrief() {
   document.querySelectorAll('.brief-period-btn').forEach(btn => {
@@ -11,6 +13,13 @@ function initBrief() {
       btn.classList.add('active');
       _briefPeriod = btn.dataset.period;
       loadBrief();
+    });
+  });
+  ['us', 'kr'].forEach(market => {
+    const cb = document.getElementById(`brief-hide-weak-sell-${market}`);
+    if (cb) cb.addEventListener('change', () => {
+      _hideWeakSell[market] = cb.checked;
+      renderDailySignals(market, _lastDailySignals[market]);
     });
   });
   loadBrief();
@@ -135,6 +144,8 @@ function render52wMovers(market, data) {
 async function loadDailySignals() {
   try {
     const data = await api('/api/daily-signals');
+    _lastDailySignals.us = data.us;
+    _lastDailySignals.kr = data.kr;
     renderDailySignals('us', data.us);
     renderDailySignals('kr', data.kr);
   } catch {}
@@ -164,8 +175,9 @@ function _renderSignalList(elId, items) {
 
 function renderDailySignals(market, data) {
   data = data || { buy: [], sell: [] };
+  const sell = _hideWeakSell[market] ? (data.sell || []).filter(s => Math.abs(s.score) !== 2) : data.sell;
   _renderSignalList(`brief-signals-${market}-buy`,  data.buy);
-  _renderSignalList(`brief-signals-${market}-sell`, data.sell);
+  _renderSignalList(`brief-signals-${market}-sell`, sell);
 }
 
 async function loadBriefFearGreed() {
