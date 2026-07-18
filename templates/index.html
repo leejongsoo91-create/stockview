@@ -525,7 +525,13 @@
         <span id="brief-updated" class="brief-updated"></span>
       </div>
 
-      <div class="brief-grid">
+      <!-- 서브탭: 개요 / 신호 -->
+      <div class="news-subtab-bar brief-subtab-bar">
+        <button class="news-subtab active" data-brief-subtab="overview">📊 개요</button>
+        <button class="news-subtab" data-brief-subtab="signals">🎯 신호</button>
+      </div>
+
+      <div id="brief-overview-panel" class="brief-grid">
         <!-- 감성 게이지 -->
         <div class="brief-card brief-mood-card">
           <div class="brief-card-title">📊 Market Mood</div>
@@ -691,6 +697,36 @@
         <div class="brief-card brief-reports-card">
           <div class="brief-card-title">📋 Report Highlights</div>
           <div id="brief-reports" class="brief-stories-list"></div>
+        </div>
+      </div>
+
+      <!-- 🎯 신호 전용 뷰: 신규(NEW)/N일째 유지 배지, 20개까지 표시 -->
+      <div id="brief-signal-panel" class="brief-grid" style="display:none">
+        <div class="brief-card brief-signals-card">
+          <div class="brief-card-title">🇺🇸 US 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
+          <div class="brief-signals-grid">
+            <div class="brief-signals-col">
+              <div class="brief-signals-col-title buy">▲ 매수 신호</div>
+              <div id="brief-fullsignal-us-buy" class="brief-signals-list"></div>
+            </div>
+            <div class="brief-signals-col">
+              <div class="brief-signals-col-title sell">▼ 매도 신호</div>
+              <div id="brief-fullsignal-us-sell" class="brief-signals-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="brief-card brief-signals-card">
+          <div class="brief-card-title">🇰🇷 KR 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
+          <div class="brief-signals-grid">
+            <div class="brief-signals-col">
+              <div class="brief-signals-col-title buy">▲ 매수 신호</div>
+              <div id="brief-fullsignal-kr-buy" class="brief-signals-list"></div>
+            </div>
+            <div class="brief-signals-col">
+              <div class="brief-signals-col-title sell">▼ 매도 신호</div>
+              <div id="brief-fullsignal-kr-sell" class="brief-signals-list"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

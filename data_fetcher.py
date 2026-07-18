@@ -7,8 +7,10 @@
 """
 
 import calendar
+import json
 import logging
 import math
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +22,8 @@ import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 log = logging.getLogger(__name__)
+
+SIGNAL_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "data", "signal_history.json")
 
 YF_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -2033,9 +2037,68 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
     return result
 
 
+# ── 신호 연속 유지일수 기록 ──────────────────────────────────────────────────
+# 다른 data/*.json과 달리 scripts/가 아닌 app.py의 일일 배치가 직접 쓰는 런타임 상태 파일.
+_SIGNAL_HISTORY_STALE_DAYS = 7  # 이 기간 이상 신호가 끊긴 종목은 기록에서 정리
+
+def _load_signal_history() -> dict:
+    try:
+        if os.path.exists(SIGNAL_HISTORY_FILE):
+            with open(SIGNAL_HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        log.warning(f"signal_history.json 로드 실패: {e}")
+    return {}
+
+
+def _save_signal_history(history: dict) -> None:
+    try:
+        with open(SIGNAL_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False)
+    except Exception as e:
+        log.warning(f"signal_history.json 저장 실패: {e}")
+
+
+def _touch_signal_history(history: dict, market: str, direction: str, tickers: list[str], today: str) -> dict:
+    """오늘 신호가 뜬 종목들의 연속 유지일수를 갱신하고 {ticker: held_days}를 반환.
+    어제도 있었으면 +1일, 끊겼다 다시 뜨면 1일로 리셋, 같은 날 재호출(서버 재시작 등)은 그대로 유지."""
+    bucket = history.setdefault(market, {}).setdefault(direction, {})
+    yesterday = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    held_days: dict = {}
+    for ticker in tickers:
+        entry = bucket.get(ticker)
+        if entry and entry.get("last") == today:
+            pass
+        elif entry and entry.get("last") == yesterday:
+            entry["last"] = today
+            entry["days"] = entry.get("days", 1) + 1
+        else:
+            entry = {"start": today, "last": today, "days": 1}
+        bucket[ticker] = entry
+        held_days[ticker] = entry["days"]
+
+    cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=_SIGNAL_HISTORY_STALE_DAYS)).strftime("%Y-%m-%d")
+    for t in [t for t, e in bucket.items() if e.get("last", "") < cutoff]:
+        del bucket[t]
+
+    return held_days
+
+
+def _enrich_with_history(items: list[dict], history: dict, market: str, direction: str, today: str) -> None:
+    held = _touch_signal_history(history, market, direction, [it["ticker"] for it in items], today)
+    for it in items:
+        d = held.get(it["ticker"], 1)
+        it["held_days"] = d
+        it["is_new"] = d == 1
+
+
 def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], top_n: int = 500) -> dict:
     """US/KR 각각 시총 상위 top_n 종목 대상 신호+거래량 급증을 한 번의 일봉 조회로 함께 계산."""
-    def _process(stocks: list[dict], is_kr: bool):
+    history = _load_signal_history()
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    def _process(stocks: list[dict], is_kr: bool, market: str):
         if is_kr:
             stocks = [s for s in stocks if not _is_kr_etf(s)]
         pool = sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)[:top_n]
@@ -2044,6 +2107,8 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
                       key=lambda s: (-s["score"], -(s.get("market_cap") or 0)))
         sell = sorted((s for s in metrics if s["score"] and s["score"] < 0),
                       key=lambda s: (s["score"], -(s.get("market_cap") or 0)))
+        _enrich_with_history(buy,  history, market, "buy",  today)
+        _enrich_with_history(sell, history, market, "sell", today)
         surges = sorted(
             (s for s in metrics if s["volume_ratio"] and s["volume_ratio"] >= _VOLUME_SURGE_RATIO),
             key=lambda s: -s["volume_ratio"],
@@ -2054,8 +2119,10 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
                               key=lambda s: -(s.get("market_cap") or 0))[:15]
         return {"buy": buy, "sell": sell}, surges, {"bullish": bullish_pat, "bearish": bearish_pat}
 
-    us_sig, us_surges, us_patterns = _process(us_stocks, False)
-    kr_sig, kr_surges, kr_patterns = _process(kr_stocks, True)
+    us_sig, us_surges, us_patterns = _process(us_stocks, False, "us")
+    kr_sig, kr_surges, kr_patterns = _process(kr_stocks, True, "kr")
+
+    _save_signal_history(history)
 
     return {
         "us": us_sig,

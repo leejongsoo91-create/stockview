@@ -22,6 +22,15 @@ function initBrief() {
       renderDailySignals(market, _lastDailySignals[market]);
     });
   });
+  document.querySelectorAll('[data-brief-subtab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-brief-subtab]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sub = btn.dataset.briefSubtab;
+      document.getElementById('brief-overview-panel').style.display = sub === 'overview' ? '' : 'none';
+      document.getElementById('brief-signal-panel').style.display   = sub === 'signals'  ? '' : 'none';
+    });
+  });
   loadBrief();
   loadBriefFearGreed();
   loadDailySignals();
@@ -157,18 +166,25 @@ function _fmtSignalPct(pct, isKr) {
   return `<span class="brief-signal-pct ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
 }
 
-function _renderSignalList(elId, items) {
+function _heldBadgeHtml(s) {
+  if (s.held_days == null) return '';
+  if (s.is_new) return '<span class="brief-held-badge new">NEW</span>';
+  return `<span class="brief-held-badge">${s.held_days}일째</span>`;
+}
+
+function _renderSignalList(elId, items, limit = 10) {
   const el = document.getElementById(elId);
   if (!el) return;
   if (!items || !items.length) {
     el.innerHTML = '<div class="brief-empty">오늘은 신호가 없습니다.</div>';
     return;
   }
-  el.innerHTML = items.slice(0, 10).map(s => `
+  el.innerHTML = items.slice(0, limit).map(s => `
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-term term-${s.term}">${s.term}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
       <span class="brief-signal-name">${s.name || ''}</span>
+      ${_heldBadgeHtml(s)}
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');
 }
@@ -176,8 +192,10 @@ function _renderSignalList(elId, items) {
 function renderDailySignals(market, data) {
   data = data || { buy: [], sell: [] };
   const sell = _hideWeakSell[market] ? (data.sell || []).filter(s => Math.abs(s.score) !== 2) : data.sell;
-  _renderSignalList(`brief-signals-${market}-buy`,  data.buy);
-  _renderSignalList(`brief-signals-${market}-sell`, sell);
+  _renderSignalList(`brief-signals-${market}-buy`,  data.buy, 10);
+  _renderSignalList(`brief-signals-${market}-sell`, sell,     10);
+  _renderSignalList(`brief-fullsignal-${market}-buy`,  data.buy,  20);
+  _renderSignalList(`brief-fullsignal-${market}-sell`, data.sell, 20);
 }
 
 async function loadBriefFearGreed() {

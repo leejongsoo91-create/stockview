@@ -19,6 +19,9 @@ server*.log
 # 캐시 / 백업
 pe_eps_cache.backup.json
 
+# 앱이 배치 실행마다 직접 쓰는 런타임 상태 (스크립트 생성 데이터 아님)
+data/signal_history.json
+
 # OS
 .DS_Store
 Thumbs.db

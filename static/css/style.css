@@ -2579,6 +2579,19 @@ mark.kw-hl {
 .brief-signal-pct { font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .brief-signal-pct.up   { color: #3fb950; }
 .brief-signal-pct.down { color: #f85149; }
+.brief-held-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: rgba(139,148,158,.15);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.brief-held-badge.new { background: rgba(63,185,80,.18); color: #3fb950; }
+
+.brief-subtab-bar { margin-bottom: 16px; }
 
 @media (max-width: 900px) {
   .brief-grid { grid-template-columns: 1fr; }
