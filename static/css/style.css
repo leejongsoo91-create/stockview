@@ -1248,6 +1248,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   flex-wrap: wrap;
 }
 .chart-search-row { display: flex; gap: 6px; align-items: center; }
+.chart-search-wrap { position: relative; }
 .chart-mkt-toggle { display: flex; gap: 4px; margin-right: 4px; }
 .chart-mkt-btn {
   padding: 4px 12px;

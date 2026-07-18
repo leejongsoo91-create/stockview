@@ -288,15 +288,31 @@ function _resolveChartTicker(raw, market = _chartSearchMarket) {
 
 // ── 이벤트 바인딩 ─────────────────────────────────────────────────────────────
 function _bindSearchEvents() {
-  const input = document.getElementById('chart-input');
+  const input    = document.getElementById('chart-input');
+  const dropdown = document.getElementById('chart-search-dropdown');
   const go = () => {
     const t = _resolveChartTicker(input.value);
     if (t) loadChart(t);
+    if (dropdown) dropdown.style.display = 'none';
   };
   document.getElementById('chart-go-btn').addEventListener('click', go);
+
+  let _csTimer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(_csTimer);
+    const q = input.value.trim();
+    if (!q || !dropdown) { if (dropdown) { dropdown.innerHTML = ''; dropdown.style.display = 'none'; } return; }
+    _csTimer = setTimeout(() => _chartSearchPreview(q), 200);
+  });
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') go();
+    if (e.key === 'Escape' && dropdown) dropdown.style.display = 'none';
   });
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('chart-search-wrap');
+    if (dropdown && wrap && !wrap.contains(e.target)) dropdown.style.display = 'none';
+  });
+
   document.querySelectorAll('.quick-btn').forEach(btn => {
     btn.addEventListener('click', () => loadChart(btn.dataset.ticker));
   });
@@ -311,8 +327,60 @@ function _bindSearchEvents() {
         ? '티커 또는 종목명 (e.g. 005930, 삼성전자)'
         : '티커 또는 종목명 (e.g. AAPL)';
       input.focus();
+      if (dropdown) { dropdown.innerHTML = ''; dropdown.style.display = 'none'; }
     });
   });
+}
+
+// 입력 중 종목 미리보기 드롭다운 (헤더 전역검색과 동일한 window._scStocks/_krStocks 재사용,
+// _chartSearchMarket으로 선택된 시장 안에서만 검색)
+function _chartSearchPreview(q) {
+  const dropdown = document.getElementById('chart-search-dropdown');
+  if (!dropdown) return;
+  const qLower = q.toLowerCase();
+
+  let results;
+  if (_chartSearchMarket === 'kr') {
+    const krStocks = window._krStocks || [];
+    results = krStocks.filter(s =>
+      (s.code || '').toLowerCase().includes(qLower) ||
+      (s.name || '').toLowerCase().includes(qLower)
+    ).slice(0, 8).map(s => ({ ...s, _isKr: true }));
+  } else {
+    const usStocks = window._scStocks || [];
+    results = usStocks.filter(s =>
+      s.ticker.toLowerCase().includes(qLower) ||
+      (s.name_ko && s.name_ko.includes(q)) ||
+      (s.name || '').toLowerCase().includes(qLower)
+    ).slice(0, 8).map(s => ({ ...s, _isKr: false }));
+  }
+
+  if (!results.length) {
+    dropdown.innerHTML = `<div class="gs-empty">결과 없음</div>`;
+    dropdown.style.display = 'block';
+    return;
+  }
+
+  dropdown.innerHTML = results.map(s => {
+    const pct  = s.change_pct ?? 0;
+    const cls  = pct >= 0 ? 'up' : 'down';
+    const disp = s._isKr ? s.code : s.ticker;
+    const name = s._isKr ? s.name : (s.name_ko || s.name || '');
+    return `<div class="gs-item" onclick="_chartSearchSelect('${s.ticker}')">
+      <span class="gs-ticker">${disp}</span>
+      <span class="gs-name">${name}</span>
+      <span class="gs-pct ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
+    </div>`;
+  }).join('');
+  dropdown.style.display = 'block';
+}
+
+function _chartSearchSelect(ticker) {
+  const input    = document.getElementById('chart-input');
+  const dropdown = document.getElementById('chart-search-dropdown');
+  if (input) input.value = '';
+  if (dropdown) dropdown.style.display = 'none';
+  loadChart(ticker);
 }
 
 const _CUSTOM_YEARS_MIN = 1;

@@ -339,7 +339,10 @@
             <button class="chart-mkt-btn active" data-mkt="us">🇺🇸 US</button>
             <button class="chart-mkt-btn" data-mkt="kr">🇰🇷 KR</button>
           </div>
-          <input id="chart-input" type="text" placeholder="티커 또는 종목명 (e.g. AAPL)">
+          <div class="chart-search-wrap" id="chart-search-wrap">
+            <input id="chart-input" type="text" placeholder="티커 또는 종목명 (e.g. AAPL)" autocomplete="off">
+            <div id="chart-search-dropdown" class="global-search-dropdown"></div>
+          </div>
           <button id="chart-go-btn">Go</button>
           <button id="chart-cmp-toggle" class="chart-cmp-toggle">⇌ 비교</button>
         </div>
