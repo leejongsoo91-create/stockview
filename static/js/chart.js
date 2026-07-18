@@ -76,6 +76,7 @@ function initChart() {
   _bindCompareEvents();
   _bindAlertEvents();
   _bindResizeObserver();
+  _bindChartZoomEvents();
 }
 
 // 차트 탭 이탈 시 타이머 정지 (main.js에서 호출)
@@ -119,6 +120,8 @@ function _createLWChart() {
       fixLeftEdge: true,
       fixRightEdge: true,
     },
+    // 좌클릭 드래그는 국내 HTS 방식 구간 확대/축소 제스처로 대체 (_bindChartZoomEvents 참고) — 기본 패닝은 끔
+    handleScroll: { pressedMouseMove: false },
   });
 
   _candleSeries = _lwChart.addCandlestickSeries({
@@ -168,6 +171,74 @@ function _createLWChart() {
     const x = param.point.x;
     if (_rsiChart  && _rsiSeries)  _rsiChart.setCrosshairPosition(x, 50, _rsiSeries);
     if (_macdChart && _macdLine)   _macdChart.setCrosshairPosition(x, 0,  _macdLine);
+  });
+
+  // 구간 확대 드래그 시 표시할 선택 박스 (컨테이너 안에 절대 위치로 삽입)
+  _zoomBoxEl = document.createElement('div');
+  _zoomBoxEl.className = 'chart-zoom-box';
+  container.appendChild(_zoomBoxEl);
+}
+
+// ── 국내 HTS 방식 구간 확대/축소 (왼쪽 드래그 방향 감지) ────────────────────────
+let _zoomBoxEl        = null;
+let _zoomDragStartX   = null;
+let _prevVisibleRange = null;   // 더블클릭으로 되돌아갈 직전 화면 범위 (1단계)
+const _ZOOM_DRAG_MIN_PX = 5;    // 이보다 작은 드래그는 클릭으로 간주해 무시
+
+function _bindChartZoomEvents() {
+  const container = document.getElementById('lw-chart');
+
+  container.addEventListener('mousedown', e => {
+    if (e.button !== 0) return; // 왼쪽 버튼만
+    _zoomDragStartX = e.clientX - container.getBoundingClientRect().left;
+    _zoomBoxEl.style.left  = `${_zoomDragStartX}px`;
+    _zoomBoxEl.style.width = '0px';
+    _zoomBoxEl.style.display = 'block';
+  });
+
+  container.addEventListener('mousemove', e => {
+    if (_zoomDragStartX == null) return;
+    const x = e.clientX - container.getBoundingClientRect().left;
+    const left  = Math.min(_zoomDragStartX, x);
+    const width = Math.abs(x - _zoomDragStartX);
+    _zoomBoxEl.style.left  = `${left}px`;
+    _zoomBoxEl.style.width = `${width}px`;
+  });
+
+  const finishDrag = e => {
+    if (_zoomDragStartX == null) return;
+    const container = document.getElementById('lw-chart');
+    const endX = e.clientX - container.getBoundingClientRect().left;
+    const startX = _zoomDragStartX;
+    _zoomDragStartX = null;
+    _zoomBoxEl.style.display = 'none';
+
+    const deltaPx = endX - startX;
+    if (Math.abs(deltaPx) < _ZOOM_DRAG_MIN_PX) return; // 클릭으로 간주, 무시
+
+    const timeScale = _lwChart.timeScale();
+    if (deltaPx > 0) {
+      // 왼쪽 → 오른쪽: 드래그한 구간만 확대
+      const t1 = timeScale.coordinateToTime(startX);
+      const t2 = timeScale.coordinateToTime(endX);
+      if (t1 == null || t2 == null) return;
+      _prevVisibleRange = timeScale.getVisibleLogicalRange();
+      timeScale.setVisibleRange({
+        from: t1 < t2 ? t1 : t2,
+        to:   t1 < t2 ? t2 : t1,
+      });
+    } else {
+      // 오른쪽 → 왼쪽: 전체보기로 복귀
+      timeScale.fitContent();
+    }
+  };
+  container.addEventListener('mouseup', finishDrag);
+  container.addEventListener('mouseleave', finishDrag);
+
+  container.addEventListener('dblclick', () => {
+    if (!_prevVisibleRange) return;
+    _lwChart.timeScale().setVisibleLogicalRange(_prevVisibleRange);
+    _prevVisibleRange = null;
   });
 }
 

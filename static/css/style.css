@@ -1586,6 +1586,26 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   margin-left: 6px;
 }
 
+/* 마우스 드래그 확대/축소 조작법 안내 */
+.chart-zoom-hint {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 10px;
+}
+
+/* 드래그 중 표시되는 구간 확대 선택 박스 */
+.chart-zoom-box {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(88,166,255,.15);
+  border-left: 1px dashed #58a6ff;
+  border-right: 1px dashed #58a6ff;
+  pointer-events: none;
+  display: none;
+  z-index: 3;
+}
+
 .chart-layout {
   display: grid;
   grid-template-columns: 1fr 260px;
@@ -1610,7 +1630,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .chart-ticker-name  { font-size: 20px; font-weight: 800; margin-right: 8px; }
 .chart-company-name { font-size: 13px; color: var(--muted); }
 #chart-price-badge  { font-size: 15px; font-weight: 700; text-align: right; line-height: 1.5; }
-#lw-chart { padding: 0; }
+#lw-chart { padding: 0; position: relative; }
 
 .chart-sidebar {
   background: var(--bg-card);
