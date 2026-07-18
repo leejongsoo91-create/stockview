@@ -895,10 +895,10 @@ def brief():
 
 
 VALID_PERIODS   = {"1mo", "3mo", "6mo", "1y", "2y"}
-VALID_INTERVALS = {"1m", "5m", "15m", "30m", "60m", "1d"}
+VALID_INTERVALS = {"1m", "5m", "15m", "30m", "60m", "1d", "mo", "yr"}
 _CUSTOM_YEARS_RANGE = range(1, 31)  # 기간 직접 입력(연수) 허용 범위 — 2Y 버튼 이상 커버
 
-# interval별 캐시 TTL (초): 분봉일수록 짧게
+# interval별 캐시 TTL (초): 분봉일수록 짧게, 월봉·연봉은 하루종일 안 변해도 무방
 _CHART_TTL = {
     "1m":  30,
     "5m":  60,
@@ -906,6 +906,8 @@ _CHART_TTL = {
     "30m": 300,
     "60m": 600,
     "1d":  300,
+    "mo":  3600,
+    "yr":  3600,
 }
 
 @app.route("/api/chart/<ticker>")

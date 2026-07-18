@@ -43,6 +43,7 @@ let _cmpSeries     = null;   // 비교 종목 정규화 라인
 const _CANDLE_REFRESH = {
   '1m': 30_000, '5m': 60_000, '15m': 120_000,
   '30m': 300_000, '60m': 600_000, '1d': 60_000,
+  'mo': 1_800_000, 'yr': 1_800_000, // 월봉·연봉은 자주 안 변해서 30분 주기면 충분
 };
 
 // 지수 심볼 → 표시 이름 매핑
@@ -352,14 +353,15 @@ function _bindPeriodEvents() {
       document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _currentInterval = iv;
-      // 인트라데이 선택: 기간 버튼·직접입력 숨김 / 1D: 표시
+      // 기간 버튼(1M~2Y)은 1D에서만 의미 있음, 직접입력(연수)은 1D/월봉/연봉 전부에서 유용
       const pg = document.getElementById('period-group');
       const sep = document.querySelector('.chart-sep');
       const yg = document.querySelector('.chart-years-group');
-      const isIntraday = iv !== '1d';
-      if (pg)  pg.style.display  = isIntraday ? 'none' : '';
-      if (sep) sep.style.display = isIntraday ? 'none' : '';
-      if (yg)  yg.style.display  = isIntraday ? 'none' : '';
+      const showPeriodButtons = iv === '1d';
+      const showYearsInput    = _DAILY_FAMILY_INTERVALS.has(iv);
+      if (pg)  pg.style.display  = showPeriodButtons ? '' : 'none';
+      if (sep) sep.style.display = showPeriodButtons ? '' : 'none';
+      if (yg)  yg.style.display  = showYearsInput    ? '' : 'none';
       if (_currentTicker) loadChart(_currentTicker);
     });
   });
@@ -380,11 +382,14 @@ function _bindResizeObserver() {
 }
 
 // interval/기간(버튼 또는 직접입력 연수) 상태에 맞는 /api/chart URL 조립 (loadChart·자동갱신 공용)
+// 1d/mo(월봉)/yr(연봉)는 기간버튼·직접입력(연수)을 함께 씀, 나머지(분/시)는 인터벌만 지정
+const _DAILY_FAMILY_INTERVALS = new Set(['1d', 'mo', 'yr']);
+
 function _buildChartUrl(ticker) {
   const enc = encodeURIComponent(ticker);
-  if (_currentInterval !== '1d') return `/api/chart/${enc}?interval=${_currentInterval}`;
-  if (_currentCustomYears)       return `/api/chart/${enc}?interval=1d&years=${_currentCustomYears}`;
-  return `/api/chart/${enc}?interval=1d&period=${_currentPeriod}`;
+  if (!_DAILY_FAMILY_INTERVALS.has(_currentInterval)) return `/api/chart/${enc}?interval=${_currentInterval}`;
+  if (_currentCustomYears) return `/api/chart/${enc}?interval=${_currentInterval}&years=${_currentCustomYears}`;
+  return `/api/chart/${enc}?interval=${_currentInterval}&period=${_currentPeriod}`;
 }
 
 // ── 차트 데이터 로드 ─────────────────────────────────────────────────────────

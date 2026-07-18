@@ -1279,39 +1279,66 @@ _PERIOD_RANGE: dict[str, str] = {
 }
 
 
+# 일봉 계열(기간/연수 파라미터를 쓰는 인터벌) — 값은 실제 Yahoo interval
+# 'yr'(연봉)은 Yahoo API에 없어 월봉을 받아 _resample_yearly()로 직접 집계함
+_DAILY_FAMILY_YF_INTERVAL: dict[str, str] = {"1d": "1d", "mo": "1mo", "yr": "1mo"}
+
+
+def _resample_yearly(monthly_rows: list[dict]) -> list[dict]:
+    """월봉 rows(시간순 정렬)를 연도 단위 OHLCV로 집계."""
+    buckets: dict[str, dict] = {}
+    for row in monthly_rows:
+        year = row["time"][:4]
+        b = buckets.get(year)
+        if b is None:
+            buckets[year] = {
+                "time": f"{year}-01-01", "open": row["open"],
+                "high": row["high"], "low": row["low"],
+                "close": row["close"], "volume": row["volume"],
+            }
+        else:
+            b["high"]   = max(b["high"], row["high"])
+            b["low"]    = min(b["low"],  row["low"])
+            b["close"]  = row["close"]        # 시간순이므로 마지막에 덮어쓴 값이 연말 종가
+            b["volume"] += row["volume"]
+    return list(buckets.values())
+
+
 def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: int | None = None) -> list[dict]:
     """
     Yahoo Finance chart API로 OHLCV 데이터 조회.
 
-    interval: '1m'|'5m'|'15m'|'30m'|'60m'|'1d'
-    period:   일봉(1d)일 때만 사용: '1mo'|'3mo'|'6mo'|'1y'|'2y'
-    years:    일봉(1d)일 때만 사용, 지정 시 period 무시 — period1/period2(유닉스 타임스탬프)로
+    interval: '1m'|'5m'|'15m'|'30m'|'60m'|'1d'|'mo'(월봉)|'yr'(연봉, 월봉을 연 단위로 재집계)
+    period:   1d/mo/yr일 때만 사용: '1mo'|'3mo'|'6mo'|'1y'|'2y' (mo/yr은 무시하고 10y 기본 사용)
+    years:    1d/mo/yr일 때만 사용, 지정 시 period 무시 — period1/period2(유닉스 타임스탬프)로
               정확히 N년 전부터 지금까지 조회 (range 프리셋에 없는 2년 초과 임의 기간용)
     반환 time 필드:
-      - 일봉: 'YYYY-MM-DD' 문자열 (Lightweight Charts BusinessDay)
+      - 1d/mo/yr: 'YYYY-MM-DD' 문자열 (Lightweight Charts BusinessDay)
       - 분봉/시봉: UTC UNIX 초 정수 (Lightweight Charts UTCTimestamp)
     """
-    intraday = interval != "1d"
+    daily_family = interval in _DAILY_FAMILY_YF_INTERVAL
 
-    if intraday:
+    if not daily_family:
         yf_interval, yf_range = _INTERVAL_MAP.get(interval, ("5m", "5d"))
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
             f"?interval={yf_interval}&range={yf_range}"
         )
-    elif years:
-        period2 = int(time.time())
-        period1 = period2 - years * 365 * 86400
-        url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-            f"?interval=1d&period1={period1}&period2={period2}"
-        )
     else:
-        yf_range = _PERIOD_RANGE.get(period, "1y")
-        url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-            f"?interval=1d&range={yf_range}"
-        )
+        yf_interval = _DAILY_FAMILY_YF_INTERVAL[interval]
+        if years:
+            period2 = int(time.time())
+            period1 = period2 - years * 365 * 86400
+            url = (
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+                f"?interval={yf_interval}&period1={period1}&period2={period2}"
+            )
+        else:
+            yf_range = "10y" if interval in ("mo", "yr") else _PERIOD_RANGE.get(period, "1y")
+            url = (
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+                f"?interval={yf_interval}&range={yf_range}"
+            )
     try:
         r = requests.get(url, headers=YF_HEADERS, timeout=15)
         r.raise_for_status()
@@ -1336,8 +1363,8 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
             if c is None:
                 continue
 
-            # 일봉: 날짜 문자열 / 분봉·시봉: UTC 타임스탬프(초)
-            time_val = ts if intraday else datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            # 1d/mo/yr: 날짜 문자열 / 분봉·시봉: UTC 타임스탬프(초)
+            time_val = ts if not daily_family else datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
 
             rows.append({
                 "time":     time_val,
@@ -1347,6 +1374,8 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
                 "close":    round(c, 2),
                 "volume":   v,
             })
+        if interval == "yr":
+            rows = _resample_yearly(rows)
         return rows
     except Exception as e:
         log.warning(f"fetch_ohlcv({ticker}, {interval}, {period}): {e}")
