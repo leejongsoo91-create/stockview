@@ -4,11 +4,13 @@
 
 const LS_KEY = 'stockview_watchlist'; // localStorage 저장 키
 const WLG_KEY = 'stockview_watchlist_groups'; // 종목별 그룹 저장 키
+const WLG_NAMES_KEY = 'stockview_watchlist_group_names'; // 생성된 그룹명 목록 (종목 미배정 상태에서도 유지)
 let _wlGroupFilter = '전체'; // '전체' | '미분류' | 그룹명
 
 // ── 관심종목 그룹 저장소 (티커 -> 그룹명, 없으면 미분류) ───────────────────────
 const WLG = {
   _map: null,
+  _names: null,
 
   load() {
     if (this._map) return this._map;
@@ -23,16 +25,34 @@ const WLG = {
 
   set(ticker, group) {
     const m = this.load();
-    if (group) m[ticker] = group; else delete m[ticker];
+    if (group) { m[ticker] = group; this.addGroupName(group); } else delete m[ticker];
     this.save();
   },
 
   remove(ticker) { this.set(ticker, ''); },
 
-  // 현재 워치리스트에 있는 종목들 기준으로 사용 중인 그룹명 목록
+  loadNames() {
+    if (this._names) return this._names;
+    try { this._names = JSON.parse(localStorage.getItem(WLG_NAMES_KEY) || '[]'); }
+    catch { this._names = []; }
+    return this._names;
+  },
+
+  saveNames() { localStorage.setItem(WLG_NAMES_KEY, JSON.stringify(this._names)); },
+
+  // 종목 배정 여부와 무관하게 그룹명을 등록 (빈 그룹도 목록에 유지되도록)
+  addGroupName(name) {
+    const names = this.loadNames();
+    if (!names.includes(name)) {
+      names.push(name);
+      this.saveNames();
+    }
+  },
+
+  // 저장된 그룹명 + 현재 워치리스트 종목에 실제 배정된 그룹명을 합쳐 반환
   allGroups(tickers) {
     const m = this.load();
-    const set = new Set();
+    const set = new Set(this.loadNames());
     tickers.forEach(t => { if (m[t]) set.add(m[t]); });
     return [...set].sort();
   },
@@ -278,7 +298,9 @@ function _wlSelectGroupFilter(group) {
 function _wlAddGroupPrompt() {
   const name = prompt('새 그룹 이름을 입력하세요 (예: 반도체, 배당주)');
   if (!name || !name.trim()) return;
-  _wlGroupFilter = name.trim();
+  const trimmed = name.trim();
+  WLG.addGroupName(trimmed);
+  _wlGroupFilter = trimmed;
   renderWatchlist();
 }
 
@@ -299,6 +321,8 @@ function clearWatchlist() {
   WL.save();
   WLG._map = {};
   WLG.save();
+  WLG._names = [];
+  WLG.saveNames();
   _wlGroupFilter = '전체';
   // 모든 ★ 버튼 초기화
   document.querySelectorAll('.star-btn.active').forEach(b => {
