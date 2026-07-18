@@ -2320,6 +2320,32 @@ def _sector_avg_pe(ticker: str, sector: str | None, market_stocks: list[dict], m
     return round(sum(pes) / len(pes), 1)
 
 
+def _detect_ma_cross(closes: list[float], lookback: int = 10) -> dict:
+    """MA50/MA200 골든크로스·데드크로스 감지.
+    최근 lookback거래일 내 교차 이벤트가 있으면 우선 반환, 없으면 현재 정배열/역배열 상태만 반환."""
+    ma50  = _sig_sma(closes, 50)
+    ma200 = _sig_sma(closes, 200)
+    n = len(closes)
+    if n < 200 or ma200[-1] is None:
+        return {"event": None, "state": None, "days_ago": None}
+
+    for i in range(max(1, n - lookback), n):
+        if None in (ma50[i - 1], ma200[i - 1], ma50[i], ma200[i]):
+            continue
+        if ma50[i - 1] <= ma200[i - 1] and ma50[i] > ma200[i]:
+            return {"event": "golden", "state": "golden", "days_ago": n - 1 - i}
+        if ma50[i - 1] >= ma200[i - 1] and ma50[i] < ma200[i]:
+            return {"event": "dead", "state": "dead", "days_ago": n - 1 - i}
+
+    if ma50[-1] > ma200[-1]:
+        state = "golden"
+    elif ma50[-1] < ma200[-1]:
+        state = "dead"
+    else:
+        state = None
+    return {"event": None, "state": state, "days_ago": None}
+
+
 def build_stock_analysis(ticker: str, stock: dict, market_stocks: list[dict],
                           is_kr: bool, earnings_items: list[dict] | None = None) -> dict:
     """종목 하나를 여러 데이터 축(기술적 신호·밸류에이션·52주 위치·거래량·수급/뉴스감성)으로
@@ -2386,7 +2412,36 @@ def build_stock_analysis(ticker: str, stock: dict, market_stocks: list[dict],
         verdict, detail = "neutral", "거래량 평범"
     items.append({"key": "volume", "label": "거래량", "verdict": verdict, "detail": detail})
 
-    # 5) KR: 외국인·기관 수급 / US: 뉴스 감성 (한글 VADER 미지원이라 KR은 감성분석 대신 수급 사용)
+    # 5) 캔들 패턴
+    pattern = _candle_pattern_today(ohlcv) if ohlcv else None
+    if pattern:
+        pat_name, pat_dir = pattern
+        if pat_dir > 0:
+            verdict, detail = "buy", f"오늘 봉: {pat_name} (상승형 패턴)"
+        else:
+            verdict, detail = "sell", f"오늘 봉: {pat_name} (하락형 패턴)"
+    else:
+        verdict, detail = "neutral", "특이 캔들 패턴 없음"
+    items.append({"key": "candle_pattern", "label": "캔들 패턴", "verdict": verdict, "detail": detail})
+
+    # 6) 골든크로스/데드크로스 (MA50 vs MA200) — 기술적 신호 점수와 일부 정보 겹칠 수 있음
+    closes = [d["close"] for d in ohlcv]
+    cross  = _detect_ma_cross(closes)
+    if cross["event"] == "golden":
+        when = "오늘" if cross["days_ago"] == 0 else f"{cross['days_ago']}거래일 전"
+        verdict, detail = "buy", f"{when} 골든크로스 발생 (MA50이 MA200 상향 돌파)"
+    elif cross["event"] == "dead":
+        when = "오늘" if cross["days_ago"] == 0 else f"{cross['days_ago']}거래일 전"
+        verdict, detail = "sell", f"{when} 데드크로스 발생 (MA50이 MA200 하향 돌파)"
+    elif cross["state"] == "golden":
+        verdict, detail = "neutral", "정배열 유지 중 (MA50 > MA200, 최근 교차 없음)"
+    elif cross["state"] == "dead":
+        verdict, detail = "neutral", "역배열 유지 중 (MA50 < MA200, 최근 교차 없음)"
+    else:
+        verdict, detail = "unknown", "데이터 부족(200거래일 미만)"
+    items.append({"key": "ma_cross", "label": "골든/데드크로스", "verdict": verdict, "detail": detail})
+
+    # 7) KR: 외국인·기관 수급 / US: 뉴스 감성 (한글 VADER 미지원이라 KR은 감성분석 대신 수급 사용)
     if is_kr:
         code = ticker.split(".")[0]
         investor_rows = fetch_kr_investor(code)
