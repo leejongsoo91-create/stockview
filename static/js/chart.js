@@ -361,7 +361,7 @@ async function loadChart(ticker) {
   }
 }
 
-function _renderCandles(ohlcv) {
+function _renderCandles(ohlcv, { fit = true } = {}) {
   _candleSeries.setData(ohlcv.map(d => ({
     time: d.time, open: d.open, high: d.high, low: d.low, close: d.close,
   })));
@@ -370,7 +370,7 @@ function _renderCandles(ohlcv) {
     value: d.volume,
     color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
   })));
-  _lwChart.timeScale().fitContent();
+  if (fit) _lwChart.timeScale().fitContent();
   _applyIndicators();
 }
 
@@ -1523,9 +1523,9 @@ function _startAutoRefresh() {
           color: latest.close >= latest.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
         });
       } else {
-        // 새 날짜 캔들 추가: 전체 재렌더
+        // 새 날짜 캔들 추가: 데이터만 갱신, 사용자가 맞춰둔 확대/스크롤 위치는 유지
         _lastOhlcv = ohlcv;
-        _renderCandles(ohlcv);
+        _renderCandles(ohlcv, { fit: false });
       }
 
       _lastOhlcv = ohlcv;
