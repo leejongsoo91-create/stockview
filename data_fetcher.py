@@ -2346,6 +2346,61 @@ def _detect_ma_cross(closes: list[float], lookback: int = 10) -> dict:
     return {"event": None, "state": state, "days_ago": None}
 
 
+# ── 수박지표 (오리지널) — 키움 HTS 강의 커스텀 지표, US 전용 참고 항목 ─────────
+# scripts/backtest_watermelon_stairs.py로 US 671종목/KR 2,509종목(코스피+코스닥) 백테스트한 결과
+# US만 약한 매수 우위(20일 기준 61.2%), KR은 랜덤 수준(49.5%)이라 US 전용으로만 사용.
+# EMA448 계산 필요 -> 최소 460거래일 이상 데이터 필요(build_stock_analysis에서 2년치 조회)
+def _watermelon_original_shell(ohlcv: list[dict]) -> list:
+    """수박지표(오리지널)의 '껍질'(x·y 중 작은 값) 시계열. 키움 커스텀 수식을 그대로 번역."""
+    closes  = [d["close"] for d in ohlcv]
+    highs   = [d["high"]  for d in ohlcv]
+    typical = [(d["close"] + d["high"] + d["low"]) / 3 for d in ohlcv]
+    n = len(ohlcv)
+
+    ema112, ema224, ema448 = _sig_ema(closes, 112), _sig_ema(closes, 224), _sig_ema(closes, 448)
+    ema26 = _sig_ema(closes, 26)
+    std26: list = [None] * n
+    for i in range(25, n):
+        if ema26[i] is None:
+            continue
+        sl = typical[i - 25:i + 1]
+        mean = sum(sl) / 26
+        std26[i] = (sum((x - mean) ** 2 for x in sl) / 26) ** 0.5
+
+    raw = [ema26[i] + 2.5 * std26[i] if ema26[i] is not None and std26[i] is not None else None
+           for i in range(n)]
+    a2 = [raw[i - 25] if i >= 25 else None for i in range(n)]
+    subak = [v / 7.5 if v is not None else None for v in a2]
+
+    size1, size2 = 7.5, 4.5
+    shell: list = [None] * n
+    for i in range(n):
+        if subak[i] is None or ema112[i] is None or ema224[i] is None or ema448[i] is None:
+            continue
+        x1 = 0.0 if ema224[i] > ema448[i] else subak[i]
+        x  = x1 if ema112[i] > ema224[i] else subak[i]
+
+        b1, b2 = highs[i] / size1, highs[i] / size2
+        y1 = b2 if subak[i] < b1 else b1
+        y2 = 0.0 if ema224[i] > ema448[i] else y1
+        y  = y2 if ema112[i] > ema224[i] else y1
+
+        shell[i] = x if x < y else y
+    return shell
+
+
+def watermelon_signal(ohlcv: list[dict], lookback: int = 10) -> dict:
+    """수박지표 껍질이 0에서 양수로 전환된 최근 이벤트 감지(lookback거래일 이내)."""
+    shell = _watermelon_original_shell(ohlcv)
+    n = len(shell)
+    for i in range(max(1, n - lookback), n):
+        if shell[i - 1] is None or shell[i] is None:
+            continue
+        if shell[i - 1] <= 0 and shell[i] > 0:
+            return {"event": True, "days_ago": n - 1 - i}
+    return {"event": False, "days_ago": None}
+
+
 def build_stock_analysis(ticker: str, stock: dict, market_stocks: list[dict],
                           is_kr: bool, earnings_items: list[dict] | None = None) -> dict:
     """종목 하나를 여러 데이터 축(기술적 신호·밸류에이션·52주 위치·거래량·수급/뉴스감성)으로
@@ -2354,7 +2409,8 @@ def build_stock_analysis(ticker: str, stock: dict, market_stocks: list[dict],
     items: list[dict] = []  # 방향성 있는 항목 (요약 카운트에 포함)
     info:  list[dict] = []  # 참고 정보 (방향성 없음, 요약 제외)
 
-    ohlcv = fetch_ohlcv(ticker, period="1y", interval="1d")
+    # 2년치 조회 -- 수박지표(EMA448) 계산에 최소 460거래일 필요, 골든/데드크로스(MA200) 여유도 개선
+    ohlcv = fetch_ohlcv(ticker, period="2y", interval="1d")
 
     # 1) 기술적 신호
     if len(ohlcv) >= 60:
@@ -2477,6 +2533,18 @@ def build_stock_analysis(ticker: str, stock: dict, market_stocks: list[dict],
         else:
             verdict, detail = "unknown", "최근 뉴스 없음"
         items.append({"key": "news_sentiment", "label": "뉴스 감성", "verdict": verdict, "detail": detail})
+
+        # 8) 수박지표(오리지널, US 전용) -- 백테스트(20일 기준) 61.2%로 약한 우위, KR은 랜덤 수준이라 제외
+        if len(ohlcv) >= 460:
+            wm = watermelon_signal(ohlcv)
+            if wm["event"]:
+                when = "오늘" if wm["days_ago"] == 0 else f"{wm['days_ago']}거래일 전"
+                verdict, detail = "buy", f"{when} 매수 신호 발생 (참고용 — 백테스트 20일 적중률 61.2%)"
+            else:
+                verdict, detail = "neutral", "최근 신호 없음"
+        else:
+            verdict, detail = "unknown", "데이터 부족(460거래일 미만)"
+        items.append({"key": "watermelon", "label": "수박지표(참고)", "verdict": verdict, "detail": detail})
 
     # 참고 정보: 실적 발표 임박 (방향성 없음, 요약 카운트 제외)
     if earnings_items:
