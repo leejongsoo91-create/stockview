@@ -24,7 +24,7 @@ import data_fetcher
 HEADERS      = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 FWD_DAYS     = [5, 10, 20]
 MAX_WORKERS  = 5
-N_STOCKS     = int(sys.argv[1]) if len(sys.argv) > 1 else 700
+N_STOCKS     = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] != 'kr' else 700
 
 
 # ── 종목 유니버스 로드 ────────────────────────────────────────────────────────
@@ -46,6 +46,20 @@ def load_kr_topN(n):
     valid.sort(key=lambda s: s['market_cap'], reverse=True)
     tickers = [s['ticker'] for s in valid[:n]]
     print(f"  KR {len(tickers)}종목 로드 완료")
+    return tickers
+
+
+def load_kr_kospi_kosdaq(n_kospi, n_kosdaq):
+    """코스피(.KS)·코스닥(.KQ)을 시총 상위 개수로 각각 나눠서 로드 -- 시총 통합정렬(top-N)이면
+    코스피 대형주 위주로 쏠려서 코스닥이 거의 안 뽑히는 문제를 피하기 위함."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'kr_stocks.json')
+    with open(path, encoding='utf-8') as f:
+        stocks = json.load(f)
+    valid = [s for s in stocks if s.get('market_cap') and s['market_cap'] > 0]
+    kospi  = sorted((s for s in valid if s['ticker'].endswith('.KS')), key=lambda s: s['market_cap'], reverse=True)
+    kosdaq = sorted((s for s in valid if s['ticker'].endswith('.KQ')), key=lambda s: s['market_cap'], reverse=True)
+    tickers = [s['ticker'] for s in kospi[:n_kospi]] + [s['ticker'] for s in kosdaq[:n_kosdaq]]
+    print(f"  KR 코스피 {min(n_kospi, len(kospi))}종목 + 코스닥 {min(n_kosdaq, len(kosdaq))}종목 = {len(tickers)}종목 로드 완료")
     return tickers
 
 
@@ -344,13 +358,22 @@ def run(label, tickers):
 
 
 if __name__ == '__main__':
-    print(f"\n  수박지표(오리지널/업그레이드)·세력계단 백테스트 -- US/KR {N_STOCKS}종목 / 5·10·20일 매수 적중률")
-    print("  (전부 매수전용 신호 -- 매도 신호는 정의되지 않음)\n")
+    if len(sys.argv) > 1 and sys.argv[1] == 'kr':
+        # KR만, 코스피/코스닥 개수를 따로 지정: python ... kr <코스피개수> <코스닥개수>
+        n_kospi  = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
+        n_kosdaq = int(sys.argv[3]) if len(sys.argv) > 3 else 1000
+        print(f"\n  수박지표(오리지널/업그레이드)·세력계단 백테스트 -- KR 코스피{n_kospi}+코스닥{n_kosdaq}종목")
+        print("  (전부 매수전용 신호 -- 매도 신호는 정의되지 않음)\n")
+        kr_tickers = load_kr_kospi_kosdaq(n_kospi, n_kosdaq)
+        kr_agg = run(f"KR 코스피{n_kospi}+코스닥{n_kosdaq}", kr_tickers)
+    else:
+        print(f"\n  수박지표(오리지널/업그레이드)·세력계단 백테스트 -- US/KR {N_STOCKS}종목 / 5·10·20일 매수 적중률")
+        print("  (전부 매수전용 신호 -- 매도 신호는 정의되지 않음)\n")
 
-    us_tickers = load_us_topN(N_STOCKS)
-    us_agg = run(f"US 시총상위 {N_STOCKS}", us_tickers)
+        us_tickers = load_us_topN(N_STOCKS)
+        us_agg = run(f"US 시총상위 {N_STOCKS}", us_tickers)
 
-    kr_tickers = load_kr_topN(N_STOCKS)
-    kr_agg = run(f"KR 시총상위 {N_STOCKS}", kr_tickers)
+        kr_tickers = load_kr_topN(N_STOCKS)
+        kr_agg = run(f"KR 시총상위 {N_STOCKS}", kr_tickers)
 
     print("\n  백테스트 완료.")
