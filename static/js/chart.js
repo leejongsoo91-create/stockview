@@ -7,6 +7,7 @@ let _candleSeries   = null;
 let _volSeries      = null;
 let _currentTicker  = null;
 let _currentPeriod  = '1y';
+let _currentCustomYears = null; // 기간 직접 입력(연수) — period 버튼과 상호 배타
 let _currentInterval = '1d';
 let _priceTimer     = null;
 let _candleTimer    = null;
@@ -313,10 +314,15 @@ function _bindSearchEvents() {
   });
 }
 
+const _CUSTOM_YEARS_MIN = 1;
+const _CUSTOM_YEARS_MAX = 30;
+
 function _bindPeriodEvents() {
   // 기간 버튼 (1D interval일 때만 활성)
   document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      _currentCustomYears = null; // 직접입력과 상호 배타
+      document.getElementById('chart-years-input').classList.remove('active');
       if (btn.dataset.period === _currentPeriod) return;
       document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -324,6 +330,19 @@ function _bindPeriodEvents() {
       if (_currentTicker) loadChart(_currentTicker);
     });
   });
+
+  // 기간 직접 입력(연수) — 2Y 이상 임의 기간 조회
+  const yearsInput = document.getElementById('chart-years-input');
+  const applyCustomYears = () => {
+    const n = parseInt(yearsInput.value, 10);
+    if (!Number.isFinite(n) || n < _CUSTOM_YEARS_MIN || n > _CUSTOM_YEARS_MAX) return;
+    _currentCustomYears = n;
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    yearsInput.classList.add('active');
+    if (_currentTicker) loadChart(_currentTicker);
+  };
+  document.getElementById('chart-years-go-btn').addEventListener('click', applyCustomYears);
+  yearsInput.addEventListener('keydown', e => { if (e.key === 'Enter') applyCustomYears(); });
 
   // interval 버튼 (1m/5m/15m/30m/1H/1D)
   document.querySelectorAll('.interval-btn').forEach(btn => {
@@ -333,12 +352,14 @@ function _bindPeriodEvents() {
       document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _currentInterval = iv;
-      // 인트라데이 선택: 기간 버튼 숨김 / 1D: 표시
+      // 인트라데이 선택: 기간 버튼·직접입력 숨김 / 1D: 표시
       const pg = document.getElementById('period-group');
       const sep = document.querySelector('.chart-sep');
+      const yg = document.querySelector('.chart-years-group');
       const isIntraday = iv !== '1d';
       if (pg)  pg.style.display  = isIntraday ? 'none' : '';
       if (sep) sep.style.display = isIntraday ? 'none' : '';
+      if (yg)  yg.style.display  = isIntraday ? 'none' : '';
       if (_currentTicker) loadChart(_currentTicker);
     });
   });
@@ -356,6 +377,14 @@ function _bindResizeObserver() {
     }
   });
   resizeObs.observe(document.getElementById('lw-chart'));
+}
+
+// interval/기간(버튼 또는 직접입력 연수) 상태에 맞는 /api/chart URL 조립 (loadChart·자동갱신 공용)
+function _buildChartUrl(ticker) {
+  const enc = encodeURIComponent(ticker);
+  if (_currentInterval !== '1d') return `/api/chart/${enc}?interval=${_currentInterval}`;
+  if (_currentCustomYears)       return `/api/chart/${enc}?interval=1d&years=${_currentCustomYears}`;
+  return `/api/chart/${enc}?interval=1d&period=${_currentPeriod}`;
 }
 
 // ── 차트 데이터 로드 ─────────────────────────────────────────────────────────
@@ -377,9 +406,7 @@ async function loadChart(ticker) {
 
   try {
     const encodedTicker = encodeURIComponent(ticker);
-    const chartUrl = _currentInterval === '1d'
-      ? `/api/chart/${encodedTicker}?interval=1d&period=${_currentPeriod}`
-      : `/api/chart/${encodedTicker}?interval=${_currentInterval}`;
+    const chartUrl = _buildChartUrl(ticker);
 
     let ohlcv, stockData;
 
@@ -1572,10 +1599,7 @@ function _startAutoRefresh() {
   _candleTimer = setInterval(async () => {
     if (!_currentTicker) return;
     try {
-      const enc = encodeURIComponent(_currentTicker);
-      const chartUrl = _currentInterval === '1d'
-        ? `/api/chart/${enc}?interval=1d&period=${_currentPeriod}`
-        : `/api/chart/${enc}?interval=${_currentInterval}`;
+      const chartUrl = _buildChartUrl(_currentTicker);
       const ohlcv = await api(chartUrl);
       if (!ohlcv.length) return;
 

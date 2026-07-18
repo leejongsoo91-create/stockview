@@ -896,6 +896,7 @@ def brief():
 
 VALID_PERIODS   = {"1mo", "3mo", "6mo", "1y", "2y"}
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "60m", "1d"}
+_CUSTOM_YEARS_RANGE = range(1, 31)  # 기간 직접 입력(연수) 허용 범위 — 2Y 버튼 이상 커버
 
 # interval별 캐시 TTL (초): 분봉일수록 짧게
 _CHART_TTL = {
@@ -912,14 +913,17 @@ def chart(ticker):
     t        = ticker.upper()
     period   = request.args.get("period",   "1y")
     interval = request.args.get("interval", "1d")
+    years    = request.args.get("years", type=int)
     if period   not in VALID_PERIODS:   period   = "1y"
     if interval not in VALID_INTERVALS: interval = "1d"
+    if years is not None and years not in _CUSTOM_YEARS_RANGE:
+        years = None
     ttl  = _CHART_TTL.get(interval, 300)
-    key  = f"chart_{t}_{interval}_{period}"
+    key  = f"chart_{t}_{interval}_{years}y-custom" if years else f"chart_{t}_{interval}_{period}"
     cached = cache.get_fresh(key)
     if cached:
         return jsonify(cached)
-    ohlcv = df.fetch_ohlcv(t, period=period, interval=interval)
+    ohlcv = df.fetch_ohlcv(t, period=period, interval=interval, years=years)
     if ohlcv:
         cache.set(key, ohlcv, ttl=ttl)
         return jsonify(ohlcv)

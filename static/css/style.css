@@ -1500,6 +1500,31 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .period-btn:hover  { border-color: var(--accent); color: var(--accent); }
 .period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* 기간 직접 입력(연수) */
+.chart-years-group { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
+.chart-years-input {
+  width: 48px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.chart-years-input.active { border-color: var(--accent); color: var(--accent); }
+.chart-years-go-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.chart-years-go-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 /* 비교 모드 버튼 */
 .chart-cmp-toggle {
   background: var(--bg-input);

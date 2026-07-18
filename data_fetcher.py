@@ -1279,12 +1279,14 @@ _PERIOD_RANGE: dict[str, str] = {
 }
 
 
-def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d") -> list[dict]:
+def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: int | None = None) -> list[dict]:
     """
     Yahoo Finance chart API로 OHLCV 데이터 조회.
 
     interval: '1m'|'5m'|'15m'|'30m'|'60m'|'1d'
     period:   일봉(1d)일 때만 사용: '1mo'|'3mo'|'6mo'|'1y'|'2y'
+    years:    일봉(1d)일 때만 사용, 지정 시 period 무시 — period1/period2(유닉스 타임스탬프)로
+              정확히 N년 전부터 지금까지 조회 (range 프리셋에 없는 2년 초과 임의 기간용)
     반환 time 필드:
       - 일봉: 'YYYY-MM-DD' 문자열 (Lightweight Charts BusinessDay)
       - 분봉/시봉: UTC UNIX 초 정수 (Lightweight Charts UTCTimestamp)
@@ -1293,14 +1295,23 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d") -> list[d
 
     if intraday:
         yf_interval, yf_range = _INTERVAL_MAP.get(interval, ("5m", "5d"))
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"?interval={yf_interval}&range={yf_range}"
+        )
+    elif years:
+        period2 = int(time.time())
+        period1 = period2 - years * 365 * 86400
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"?interval=1d&period1={period1}&period2={period2}"
+        )
     else:
-        yf_interval = "1d"
-        yf_range    = _PERIOD_RANGE.get(period, "1y")
-
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-        f"?interval={yf_interval}&range={yf_range}"
-    )
+        yf_range = _PERIOD_RANGE.get(period, "1y")
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"?interval=1d&range={yf_range}"
+        )
     try:
         r = requests.get(url, headers=YF_HEADERS, timeout=15)
         r.raise_for_status()
