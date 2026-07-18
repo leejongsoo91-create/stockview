@@ -452,7 +452,12 @@ async function loadChart(ticker) {
     _updateAlertBadge();
     document.getElementById('chart-alert-panel').style.display = 'none';
 
-    if (!_isIndex(ticker)) _loadStockNews(ticker);
+    if (!_isIndex(ticker)) {
+      _loadStockNews(ticker);
+      renderStockAnalysis(ticker);
+    } else {
+      document.getElementById('stock-analysis-card').style.display = 'none';
+    }
 
     _startAutoRefresh();
 
@@ -1632,6 +1637,58 @@ function _startAutoRefresh() {
       _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));
     } catch {}
   }, candleMs);
+}
+
+// ── 종목 종합 진단 (참고용 — 항목별 근거만 제공, 자동 매수/매도 결론 없음) ─────
+const _ANALYSIS_VERDICT_ICON  = { buy: '🟢', sell: '🔴', neutral: '⚪', unknown: '⚪' };
+const _ANALYSIS_VERDICT_LABEL = { buy: '매수 우호', sell: '매도 우호', neutral: '중립', unknown: '정보부족' };
+
+async function renderStockAnalysis(ticker) {
+  const card = document.getElementById('stock-analysis-card');
+  if (!card) return;
+  card.style.display = '';
+  card.innerHTML = `<div class="info-section-title">📊 종합 진단</div><div class="analysis-loading">분석 중…</div>`;
+
+  let data;
+  try {
+    data = await api(`/api/stock-analysis/${encodeURIComponent(ticker)}`);
+  } catch {
+    card.style.display = 'none';
+    return;
+  }
+  if (!data || data.error || !data.items) {
+    card.style.display = 'none';
+    return;
+  }
+
+  const { items, info, summary } = data;
+
+  const itemsHtml = items.map(it => `
+    <div class="analysis-item">
+      <span class="analysis-icon">${_ANALYSIS_VERDICT_ICON[it.verdict] || '⚪'}</span>
+      <div class="analysis-item-body">
+        <div class="analysis-item-label">${it.label} <span class="analysis-item-verdict verdict-${it.verdict}">${_ANALYSIS_VERDICT_LABEL[it.verdict] || ''}</span></div>
+        <div class="analysis-item-detail">${it.detail}</div>
+      </div>
+    </div>`).join('');
+
+  const infoHtml = (info || []).map(it => {
+    if (it.key === 'news' && it.items && it.items.length) {
+      return `
+        <div class="analysis-info-block">
+          <div class="analysis-info-label">${it.label} <span class="analysis-info-note">(${it.detail})</span></div>
+          ${it.items.map(n => `<div class="analysis-news-item">${n.title}<span class="analysis-news-src"> — ${n.source}</span></div>`).join('')}
+        </div>`;
+    }
+    return `<div class="analysis-info-block"><div class="analysis-info-label">${it.label}</div><div class="analysis-info-note">${it.detail}</div></div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="info-section-title">📊 종합 진단 <span class="analysis-disclaimer">(참고용 · 투자 조언 아님)</span></div>
+    <div class="analysis-summary">${summary.total}개 항목 중 매수 우호 ${summary.buy} · 매도 우호 ${summary.sell} · 중립 ${summary.neutral}</div>
+    <div class="analysis-items">${itemsHtml}</div>
+    ${infoHtml ? `<div class="analysis-info">${infoHtml}</div>` : ''}
+  `;
 }
 
 // ── 종목 정보 사이드바 ────────────────────────────────────────────────────────

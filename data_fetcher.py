@@ -956,6 +956,39 @@ def fetch_kr_investor(code: str) -> list[dict]:
         return []
 
 
+# ── 국내주식 종목별 뉴스 ──────────────────────────────────────────────────────
+def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
+    """네이버 금융 종목 뉴스 (감성분석 없음 — VADER는 한글 미지원)."""
+    import html as _html
+    try:
+        url = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1&sm=title_entity_id.basic&clusterId="
+        r   = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0", "Referer": "https://finance.naver.com",
+        }, timeout=8)
+        content = r.content.decode("euc-kr", errors="replace")
+
+        result = []
+        for row in re.findall(r'<tr[^>]*>(.*?)</tr>', content, re.DOTALL):
+            title_m = re.search(r'class=["\'\s]*title["\'\s]*>(.*?)</td>', row, re.DOTALL)
+            info_m  = re.search(r'class=["\'\s]*info["\'\s]*>(.*?)</td>',  row, re.DOTALL)
+            date_m  = re.search(r'class=["\'\s]*date["\'\s]*>(.*?)</td>',  row, re.DOTALL)
+            if not (title_m and info_m):
+                continue
+            title  = _html.unescape(re.sub(r"<[^>]+>", "", title_m.group(1)).strip())
+            source = _html.unescape(re.sub(r"<[^>]+>", "", info_m.group(1)).strip())
+            date   = re.sub(r"<[^>]+>", "", date_m.group(1)).strip() if date_m else ""
+            link_m = re.search(r'href=["\'](/item/news_read[^"\']+)', title_m.group(1))
+            raw_url = "https://finance.naver.com" + link_m.group(1) if link_m else ""
+            if title and len(title) > 5:
+                result.append({"title": title, "source": source, "time": date, "url": raw_url})
+            if len(result) >= limit:
+                break
+        return result
+    except Exception as e:
+        log.warning(f"KR 뉴스 조회 실패 {code}: {e}")
+        return []
+
+
 # ── 국내주식 공시 피드 (KRX KIND) ─────────────────────────────────────────────
 def fetch_kr_disclosures(page_size: int = 20) -> list[dict]:
     """
@@ -2267,6 +2300,145 @@ def get_earnings_signal_combo(earnings_items: list[dict], us_signals: dict, limi
         })
     combo.sort(key=lambda x: (x["date"], -abs(x["score"])))
     return combo[:limit]
+
+
+# ── 종목 종합 진단 (온디맨드 단일 종목) ─────────────────────────────────────────
+_ANALYSIS_PE_OUTLIER_MAX = 200  # 업종평균 계산 시 이 이상 PE는 적자/이상치로 보고 제외
+
+
+def _sector_avg_pe(ticker: str, sector: str | None, market_stocks: list[dict], min_sample: int = 3) -> float | None:
+    """같은 업종 종목들의 단순 평균 PE (자기 자신 제외). 표본 부족하면 None."""
+    if not sector:
+        return None
+    pes = [
+        s["pe"] for s in market_stocks
+        if s.get("sector") == sector and s.get("ticker") != ticker
+        and s.get("pe") and 0 < s["pe"] < _ANALYSIS_PE_OUTLIER_MAX
+    ]
+    if len(pes) < min_sample:
+        return None
+    return round(sum(pes) / len(pes), 1)
+
+
+def build_stock_analysis(ticker: str, stock: dict, market_stocks: list[dict],
+                          is_kr: bool, earnings_items: list[dict] | None = None) -> dict:
+    """종목 하나를 여러 데이터 축(기술적 신호·밸류에이션·52주 위치·거래량·수급/뉴스감성)으로
+    진단 — 기존 신호·수급·뉴스 함수를 조합만 할 뿐 새 데이터 수집은 하지 않음.
+    항목별 판정 근거를 투명하게 제공하고, 자동으로 단일 매수/매도 결론을 내지 않는다."""
+    items: list[dict] = []  # 방향성 있는 항목 (요약 카운트에 포함)
+    info:  list[dict] = []  # 참고 정보 (방향성 없음, 요약 제외)
+
+    ohlcv = fetch_ohlcv(ticker, period="1y", interval="1d")
+
+    # 1) 기술적 신호
+    if len(ohlcv) >= 60:
+        score = compute_today_signal(ohlcv, is_kr)
+        if score >= 2:
+            verdict, detail = "buy", f"기술적 신호 점수 {score:+d} (매수 신호)"
+        elif score <= -2:
+            verdict, detail = "sell", f"기술적 신호 점수 {score:+d} (매도 신호)"
+        else:
+            verdict, detail = "neutral", "뚜렷한 기술적 신호 없음"
+    else:
+        verdict, detail = "unknown", "가격 이력 부족(60거래일 미만)"
+    items.append({"key": "technical", "label": "기술적 신호", "verdict": verdict, "detail": detail})
+
+    # 2) 밸류에이션 (PE vs 업종평균)
+    pe = stock.get("pe")
+    sector = stock.get("sector")
+    avg_pe = _sector_avg_pe(ticker, sector, market_stocks)
+    if pe and pe > 0 and avg_pe:
+        ratio = pe / avg_pe
+        if ratio <= 0.85:
+            verdict, detail = "buy", f"PE {pe:.1f} vs 업종평균 {avg_pe:.1f} — 저평가"
+        elif ratio >= 1.15:
+            verdict, detail = "sell", f"PE {pe:.1f} vs 업종평균 {avg_pe:.1f} — 고평가"
+        else:
+            verdict, detail = "neutral", f"PE {pe:.1f} vs 업종평균 {avg_pe:.1f} — 평균 수준"
+    else:
+        verdict, detail = "unknown", "PE 또는 업종평균 데이터 부족"
+    items.append({"key": "valuation", "label": "밸류에이션", "verdict": verdict, "detail": detail})
+
+    # 3) 52주 위치
+    pos = _calc_52w_pos(stock)
+    if pos is not None:
+        if pos >= 90:
+            verdict, detail = "buy", f"52주 범위 상위 {pos:.0f}% — 신고가 근접"
+        elif pos <= 10:
+            verdict, detail = "sell", f"52주 범위 하위 {pos:.0f}% — 신저가 근접"
+        else:
+            verdict, detail = "neutral", f"52주 범위 중간권 ({pos:.0f}%)"
+    else:
+        verdict, detail = "unknown", "52주 고저 데이터 부족"
+    items.append({"key": "position_52w", "label": "52주 위치", "verdict": verdict, "detail": detail})
+
+    # 4) 거래량 (급증 여부 + 등락 방향 결합)
+    vol_ratio  = _calc_volume_ratio(ohlcv) if ohlcv else None
+    change_pct = stock.get("change_pct") or 0
+    if vol_ratio and vol_ratio >= 2.0:
+        if change_pct > 0:
+            verdict, detail = "buy", f"거래량 평균 대비 {vol_ratio:.1f}배 급증 + 상승"
+        elif change_pct < 0:
+            verdict, detail = "sell", f"거래량 평균 대비 {vol_ratio:.1f}배 급증 + 하락"
+        else:
+            verdict, detail = "neutral", f"거래량 평균 대비 {vol_ratio:.1f}배 급증"
+    else:
+        verdict, detail = "neutral", "거래량 평범"
+    items.append({"key": "volume", "label": "거래량", "verdict": verdict, "detail": detail})
+
+    # 5) KR: 외국인·기관 수급 / US: 뉴스 감성 (한글 VADER 미지원이라 KR은 감성분석 대신 수급 사용)
+    if is_kr:
+        code = ticker.split(".")[0]
+        investor_rows = fetch_kr_investor(code)
+        net5 = sum(r["foreign"] + r["institution"] for r in investor_rows) if investor_rows else None
+        if net5 is not None:
+            if net5 > 0:
+                verdict, detail = "buy", f"최근 5일 외국인+기관 순매수 {net5:,}주"
+            elif net5 < 0:
+                verdict, detail = "sell", f"최근 5일 외국인+기관 순매도 {abs(net5):,}주"
+            else:
+                verdict, detail = "neutral", "최근 5일 수급 중립"
+        else:
+            verdict, detail = "unknown", "수급 데이터 조회 실패"
+        items.append({"key": "supply_demand", "label": "외국인·기관 수급", "verdict": verdict, "detail": detail})
+
+        news = fetch_kr_stock_news(code, limit=5)
+        info.append({
+            "key": "news", "label": "최근 뉴스",
+            "detail": "감성분석 미지원(한글) — 최근 헤드라인만 제공",
+            "items": [{"title": n["title"], "source": n["source"]} for n in news],
+        })
+    else:
+        news = fetch_finnhub_company_news(ticker)[:10]
+        pos_n = sum(1 for n in news if n["sentiment"] == "positive")
+        neg_n = sum(1 for n in news if n["sentiment"] == "negative")
+        if news:
+            if pos_n > neg_n:
+                verdict, detail = "buy", f"최근 뉴스 {len(news)}건 중 긍정 {pos_n} · 부정 {neg_n}"
+            elif neg_n > pos_n:
+                verdict, detail = "sell", f"최근 뉴스 {len(news)}건 중 긍정 {pos_n} · 부정 {neg_n}"
+            else:
+                verdict, detail = "neutral", f"최근 뉴스 {len(news)}건 — 긍정/부정 비슷"
+        else:
+            verdict, detail = "unknown", "최근 뉴스 없음"
+        items.append({"key": "news_sentiment", "label": "뉴스 감성", "verdict": verdict, "detail": detail})
+
+    # 참고 정보: 실적 발표 임박 (방향성 없음, 요약 카운트 제외)
+    if earnings_items:
+        upcoming = next((e for e in earnings_items if e.get("symbol") == ticker), None)
+        if upcoming:
+            info.append({"key": "earnings", "label": "실적 발표 임박", "detail": f"{upcoming['date']} 발표 예정"})
+
+    buy_n  = sum(1 for it in items if it["verdict"] == "buy")
+    sell_n = sum(1 for it in items if it["verdict"] == "sell")
+    neu_n  = sum(1 for it in items if it["verdict"] in ("neutral", "unknown"))
+
+    return {
+        "ticker":  ticker,
+        "items":   items,
+        "info":    info,
+        "summary": {"total": len(items), "buy": buy_n, "sell": sell_n, "neutral": neu_n},
+    }
 
 
 # ── 어닝스 캘린더 ──────────────────────────────────────────────────────────────

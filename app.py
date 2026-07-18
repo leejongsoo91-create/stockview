@@ -640,7 +640,7 @@ def kr_disclosures():
 @app.route("/api/kr-news/<code>")
 def kr_news(code: str):
     """국내주식 종목별 뉴스 (Naver Finance, 30분 lazy 캐시)"""
-    import re, html
+    import re
     code = re.sub(r"[^0-9]", "", code)[:6]
     if not code:
         return jsonify([])
@@ -648,34 +648,9 @@ def kr_news(code: str):
     cached = cache.get(key)
     if cached is not None:
         return jsonify(cached)
-    try:
-        import requests as _req
-        hdrs = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.naver.com"}
-        url  = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1&sm=title_entity_id.basic&clusterId="
-        r    = _req.get(url, headers=hdrs, timeout=8)
-        content = r.content.decode("euc-kr", errors="replace")
-        # td.title + td.info + td.date 파싱
-        result = []
-        for row in re.findall(r'<tr[^>]*>(.*?)</tr>', content, re.DOTALL):
-            title_m = re.search(r'class=["\'\s]*title["\'\s]*>(.*?)</td>', row, re.DOTALL)
-            info_m  = re.search(r'class=["\'\s]*info["\'\s]*>(.*?)</td>',  row, re.DOTALL)
-            date_m  = re.search(r'class=["\'\s]*date["\'\s]*>(.*?)</td>',  row, re.DOTALL)
-            if not (title_m and info_m):
-                continue
-            title  = html.unescape(re.sub(r"<[^>]+>", "", title_m.group(1)).strip())
-            source = html.unescape(re.sub(r"<[^>]+>", "", info_m.group(1)).strip())
-            date   = re.sub(r"<[^>]+>", "", date_m.group(1)).strip() if date_m else ""
-            link_m = re.search(r'href=["\'](/item/news_read[^"\']+)', title_m.group(1))
-            raw_url = "https://finance.naver.com" + link_m.group(1) if link_m else ""
-            if title and len(title) > 5:
-                result.append({"title": title, "source": source, "time": date, "url": raw_url})
-            if len(result) >= 5:
-                break
-        cache.set(key, result, ttl=1800)
-        return jsonify(result)
-    except Exception as e:
-        log.warning(f"KR 뉴스 조회 실패 {code}: {e}")
-        return jsonify([])
+    result = df.fetch_kr_stock_news(code)
+    cache.set(key, result, ttl=1800)
+    return jsonify(result)
 
 
 @app.route("/api/stock-news/<ticker>")
@@ -953,6 +928,32 @@ def stock_detail(ticker):
     if kr_stock:
         return jsonify(dict(kr_stock))
     return jsonify({"error": "Not found"}), 404
+
+
+@app.route("/api/stock-analysis/<ticker>")
+def stock_analysis(ticker):
+    """종목 종합 진단 — 기술적 신호·밸류에이션·52주 위치·거래량·수급(KR)/뉴스감성(US)을
+    항목별로 판정해 요약. 단일 매수/매도 결론을 자동 산출하지 않고 근거만 제공."""
+    t = ticker.upper()
+    key = f"stock_analysis_{t}"
+    cached = cache.get_fresh(key)
+    if cached is not None:
+        return jsonify(cached)
+
+    us_stocks = _get_merged_us_stocks()
+    stock = next((s for s in us_stocks if s["ticker"] == t), None)
+    if stock:
+        earnings_items = cache.get("earnings") or []
+        result = df.build_stock_analysis(t, stock, us_stocks, is_kr=False, earnings_items=earnings_items)
+    else:
+        kr_data = cache.get("kr_stocks") or []
+        stock = next((s for s in kr_data if s["ticker"] == t), None)
+        if not stock:
+            return jsonify({"error": "Not found"}), 404
+        result = df.build_stock_analysis(t, stock, kr_data, is_kr=True)
+
+    cache.set(key, result, ttl=600)
+    return jsonify(result)
 
 
 @app.route("/api/fear-greed")
