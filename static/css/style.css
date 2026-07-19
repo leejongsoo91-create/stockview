@@ -2052,11 +2052,11 @@ mark.kw-hl {
 .wl-header-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 14px;
 }
-.wl-total { font-size: 13px; color: var(--muted); }
-.wl-clear-btn {
+.wl-total { font-size: 13px; color: var(--muted); flex: 1; }
+.wl-clear-btn, .wl-csv-btn {
   background: none;
   border: 1px solid var(--border);
   color: var(--muted);
@@ -2067,6 +2067,9 @@ mark.kw-hl {
   transition: border-color .15s, color .15s;
 }
 .wl-clear-btn:hover { border-color: var(--red); color: var(--red); }
+.wl-csv-btn:hover { border-color: var(--accent); color: var(--accent); }
+.wl-csv-import-label { display: inline-flex; align-items: center; }
+.wl-csv-import-input { display: none; }
 
 /* 관심종목 그룹/태그 */
 .wl-group-tabs { margin-bottom: 12px; }

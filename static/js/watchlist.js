@@ -227,6 +227,12 @@ async function renderWatchlist() {
   container.innerHTML = `
     <div class="wl-header-row">
       <span class="wl-total">${filtered.length}개 종목</span>
+      <button class="wl-csv-btn" onclick="exportWatchlistCSV()">⬇ CSV 내보내기</button>
+      <label class="wl-csv-btn wl-csv-import-label">
+        ⬆ CSV 가져오기
+        <input type="file" accept=".csv" class="wl-csv-import-input"
+               onchange="if(this.files[0]) importWatchlistCSV(this.files[0]); this.value='';">
+      </label>
       <button class="wl-clear-btn" onclick="clearWatchlist()">전체 삭제</button>
     </div>
     <div class="news-filter-bar wl-group-tabs">${tabsHtml}</div>
@@ -288,6 +294,81 @@ async function renderWatchlist() {
         </tbody>
       </table>
     </div>`;
+}
+
+// ── CSV 내보내기/가져오기 ─────────────────────────────────────────────────────
+async function exportWatchlistCSV() {
+  const tickers = WL.load();
+  if (!tickers.length) return;
+
+  let stocks = [];
+  try {
+    const all = await api('/api/stocks');
+    const set = new Set(tickers);
+    stocks = all.filter(s => set.has(s.ticker));
+    const found = new Set(stocks.map(s => s.ticker));
+    const missing = tickers.filter(t => !found.has(t));
+    for (const t of missing) {
+      try { const s = await api(`/api/stock/${t}`); if (s && !s.error) stocks.push(s); } catch {}
+    }
+  } catch { return; }
+
+  const headers = ['Ticker', 'Name', 'Group', 'Sector', 'Price', 'Change%'];
+  const rows = tickers.map(t => {
+    const s = stocks.find(x => x.ticker === t) || {};
+    return [
+      t,
+      `"${(s.name || '').replace(/"/g, '""')}"`,
+      WLG.get(t) || '',
+      s.sector || '',
+      s.price != null ? s.price : '',
+      s.change_pct != null ? s.change_pct : '',
+    ].join(',');
+  });
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `watchlist_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importWatchlistCSV(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const text  = String(reader.result).replace(/^﻿/, '');
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { alert('빈 파일입니다.'); return; }
+
+      const header    = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
+      const hasHeader = header.includes('ticker');
+      const tIdx      = hasHeader ? header.indexOf('ticker') : 0;
+      const groupIdx  = hasHeader ? header.indexOf('group') : -1;
+      const startIdx  = hasHeader ? 1 : 0;
+
+      let added = 0;
+      for (let i = startIdx; i < lines.length; i++) {
+        const cols   = lines[i].split(',');
+        const ticker = (cols[tIdx] || '').trim().toUpperCase().replace(/^"|"$/g, '');
+        if (!ticker) continue;
+        if (!WL.has(ticker)) { WL.add(ticker); added++; }
+        if (groupIdx !== -1) {
+          const group = (cols[groupIdx] || '').trim().replace(/^"|"$/g, '');
+          if (group) WLG.set(ticker, group);
+        }
+      }
+      alert(`${added}개 종목을 관심종목에 추가했습니다.`);
+      updateWLCount();
+      renderWatchlist();
+    } catch (e) {
+      alert('CSV 파일을 읽는 중 오류가 발생했습니다.');
+    }
+  };
+  reader.readAsText(file);
 }
 
 function _wlSelectGroupFilter(group) {
