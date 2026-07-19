@@ -19,7 +19,16 @@ async function initEarnings() {
     });
   });
 
+  ['earn-filter-sector', 'earn-filter-cap'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', renderEarnings);
+  });
+
   loadEarnings();
+}
+
+function _getEarnSector(symbol) {
+  const s = (window._scStocks || []).find(x => x.ticker === symbol);
+  return s ? s.sector : null;
 }
 
 async function loadEarnings() {
@@ -40,9 +49,28 @@ function renderEarnings() {
     return;
   }
 
+  const sectorF = document.getElementById('earn-filter-sector')?.value || 'all';
+  const capF    = document.getElementById('earn-filter-cap')?.value || 'all';
+  let filtered = _earnData;
+  if (sectorF !== 'all') filtered = filtered.filter(item => _getEarnSector(item.symbol) === sectorF);
+  if (capF !== 'all') filtered = filtered.filter(item => {
+    const cap = item.market_cap;
+    if (!cap) return false;
+    if (capF === 'mega')  return cap >= 500;
+    if (capF === 'large') return cap >= 100 && cap < 500;
+    if (capF === 'mid')   return cap >= 10  && cap < 100;
+    if (capF === 'small') return cap < 10;
+    return true;
+  });
+
+  if (!filtered.length) {
+    content.innerHTML = '<div class="loading-msg">필터 조건에 맞는 실적 발표 일정이 없습니다.</div>';
+    return;
+  }
+
   // 날짜별로 그룹핑
   const byDate = {};
-  _earnData.forEach(item => {
+  filtered.forEach(item => {
     if (!byDate[item.date]) byDate[item.date] = [];
     byDate[item.date].push(item);
   });

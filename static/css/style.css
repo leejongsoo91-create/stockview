@@ -876,6 +876,11 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 #screener-table thead th.sort-active { color: var(--accent); background: rgba(88,166,255,.06); }
 #screener-table thead th.sort-active::after { content: ' ↓'; font-size: 11px; }
 #screener-table thead th.sort-active.asc::after { content: ' ↑'; font-size: 11px; }
+/* Shift+클릭 2차 정렬 */
+#screener-table thead th.sort-active-2 { color: var(--muted); background: rgba(88,166,255,.03); }
+#screener-table thead th.sort-active-2::after { content: ' ⇓'; font-size: 10px; opacity: .8; }
+#screener-table thead th.sort-active-2.asc::after { content: ' ⇑'; font-size: 10px; opacity: .8; }
+.sc-th.sort-active-2 { color: var(--muted); }
 #screener-table tbody tr { border-bottom: 1px solid #1e2530; cursor: pointer; transition: background .1s; }
 #screener-table tbody tr:last-child { border-bottom: none; }
 #screener-table tbody tr:hover { background: var(--bg-input); }
@@ -1934,6 +1939,19 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .badge-negative { background: var(--red); }
 .badge-neutral  { background: var(--muted); }
 .news-body { flex: 1; }
+.news-bookmark-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px;
+  transition: color .15s;
+}
+.news-bookmark-btn:hover  { color: var(--text); }
+.news-bookmark-btn.active { color: #e3b341; }
 .news-title { font-size: 14px; line-height: 1.5; margin-bottom: 6px; }
 .news-meta  { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--muted); }
 .news-source { font-weight: 600; color: var(--muted); }
@@ -2404,6 +2422,18 @@ mark.kw-hl {
 }
 .earnings-title { font-size: 20px; font-weight: 700; margin: 0; }
 .earnings-period-bar { display: flex; gap: 6px; }
+.earnings-filter-bar { display: flex; gap: 8px; margin-left: auto; }
+.earnings-filter-bar select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.earnings-filter-bar select:hover,
+.earnings-filter-bar select:focus { border-color: var(--accent); }
 .earn-period-btn {
   padding: 5px 14px;
   border-radius: 16px;

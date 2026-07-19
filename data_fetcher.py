@@ -1115,8 +1115,8 @@ def _fetch_mc_html(ticker: str) -> tuple[str, float | None]:
 
 
 def fetch_heatmap_perf(tickers: list[str], period: str = "1w", max_workers: int = 40) -> dict[str, float]:
-    """히트맵 기간 수익률 수집. period: '1w'(5거래일) | '1m'(1개월)"""
-    range_map = {"1w": "5d", "1m": "1mo"}
+    """히트맵 기간 수익률 수집. period: '1w'(5거래일)|'1m'(1개월)|'3m'|'6m'|'ytd'(연초대비)"""
+    range_map = {"1w": "5d", "1m": "1mo", "3m": "3mo", "6m": "6mo", "ytd": "ytd"}
     yf_range = range_map.get(period, "5d")
 
     rate_limited = 0

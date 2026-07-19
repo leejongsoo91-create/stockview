@@ -969,7 +969,7 @@ def fear_greed_api():
 @app.route("/api/heatmap-perf")
 def heatmap_perf():
     period = request.args.get("period", "1w")
-    if period not in ("1w", "1m"):
+    if period not in ("1w", "1m", "3m", "6m", "ytd"):
         period = "1w"
     market = request.args.get("market", "us")
     is_kr  = market == "kr"

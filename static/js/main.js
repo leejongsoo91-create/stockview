@@ -562,6 +562,27 @@ function renderHomePortfolioSummary() {
     <div class="home-pf-pnl ${cls}">${pnl >= 0 ? '+' : '-'}${fmt$(Math.abs(pnl))} (${fmtPct(pnlPct)})</div>`;
 }
 
+// ── 뉴스 북마크 저장소 (url -> 뉴스 아이템) ──────────────────────────────────
+const NB_KEY = 'stockview_news_bookmarks';
+const NB = {
+  _map: null,
+  load() {
+    if (this._map) return this._map;
+    try { this._map = JSON.parse(localStorage.getItem(NB_KEY) || '{}'); }
+    catch { this._map = {}; }
+    return this._map;
+  },
+  save() { localStorage.setItem(NB_KEY, JSON.stringify(this._map)); },
+  has(url) { return !!this.load()[url]; },
+  toggle(item) {
+    const m = this.load();
+    if (m[item.url]) delete m[item.url];
+    else m[item.url] = item;
+    this.save();
+    return !!m[item.url];
+  },
+};
+
 // ── 뉴스 탭 ──────────────────────────────────────────────────────────────────
 let _allNews        = [];
 let _allReports     = [];
@@ -569,6 +590,21 @@ let _activeSubtab   = 'news';
 let _activeSentiment = 'all';
 let _activeSource    = 'all';
 let _activeKeyword   = '';
+let _showBookmarkedOnly = false;
+
+function _toggleBookmarkFilter() {
+  _showBookmarkedOnly = !_showBookmarkedOnly;
+  const btn = document.getElementById('news-bookmark-toggle');
+  if (btn) btn.classList.toggle('active', _showBookmarkedOnly);
+  renderNews();
+}
+
+function _toggleNewsBookmark(url) {
+  const item = _allNews.find(n => n.url === url) || NB.load()[url];
+  if (!item) return;
+  NB.toggle(item);
+  renderNews();
+}
 
 function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -729,7 +765,8 @@ function renderReports(rtype) {
   }).join('');
 }
 function renderNews() {
-  let list = _activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment);
+  let list = _showBookmarkedOnly ? Object.values(NB.load())
+    : (_activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment));
   if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
   if (_activeKeyword) list = list.filter(n =>
     n.title.toLowerCase().includes(_activeKeyword) ||
@@ -746,15 +783,17 @@ function renderNews() {
   }
 
   if (!list.length) {
-    el.innerHTML = `<div style="color:var(--muted);padding:20px 0;text-align:center">No news found${kw ? ` for "<b>${_escHtml(kw)}</b>"` : ''}.</div>`;
+    const emptyMsg = _showBookmarkedOnly ? '북마크한 뉴스가 없습니다.' : `No news found${kw ? ` for "<b>${_escHtml(kw)}</b>"` : ''}.`;
+    el.innerHTML = `<div style="color:var(--muted);padding:20px 0;text-align:center">${emptyMsg}</div>`;
     return;
   }
 
   el.innerHTML = list.map(n => {
     const tickerBadge = n.ticker
-      ? `<span class="news-ticker-badge" onclick="navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>`
+      ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>`
       : '';
     const titleHtml = _highlightKw(n.title, kw);
+    const bookmarked = NB.has(n.url);
     return `
       <div class="news-card" onclick="window.open('${_escHtml(n.url)}','_blank')" style="cursor:pointer">
         <div class="news-sentiment-badge badge-${n.sentiment}"></div>
@@ -766,6 +805,9 @@ function renderNews() {
             ${tickerBadge}
           </div>
         </div>
+        <button class="news-bookmark-btn${bookmarked ? ' active' : ''}"
+                onclick="event.stopPropagation(); _toggleNewsBookmark('${_escHtml(n.url)}')"
+                title="${bookmarked ? '북마크 해제' : '북마크'}">${bookmarked ? '★' : '☆'}</button>
       </div>`;
   }).join('');
 }
@@ -881,7 +923,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 테마 초기화
   initTheme();
+
+  // 전역 키보드 단축키
+  initGlobalKeyboardShortcuts();
 });
+
+// ── 전역 키보드 단축키 ────────────────────────────────────────────────────────
+const _SHORTCUT_TABS = { '1':'home','2':'screener','3':'heatmap','4':'chart','5':'news','6':'brief','7':'earnings','8':'watchlist','9':'portfolio' };
+
+function initGlobalKeyboardShortcuts() {
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const tag = (e.target.tagName || '').toLowerCase();
+    const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+
+    if (e.key === '/' && !typing) {
+      e.preventDefault();
+      const gs = document.getElementById('global-search');
+      if (gs) gs.focus();
+      return;
+    }
+    if (e.key === 'Escape' && typing) {
+      e.target.blur();
+      return;
+    }
+    if (typing) return;
+
+    if (_SHORTCUT_TABS[e.key]) {
+      _currentView = _SHORTCUT_TABS[e.key];
+      switchView(_SHORTCUT_TABS[e.key]);
+    }
+  });
+}
 
 // ── 라이트/다크 테마 ────────────────────────────────────────────────────────
 function initTheme() {

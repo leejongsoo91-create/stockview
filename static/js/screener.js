@@ -8,6 +8,8 @@ let _krStocks       = [];
 window._krStocks    = _krStocks;   // 글로벌 검색 참조용
 let _sortCol        = 'change_pct';
 let _sortDir        = -1;   // -1: 내림차순, 1: 오름차순
+let _sortCol2       = null; // Shift+클릭으로 지정하는 2차 정렬 컬럼 (1차 값이 같을 때만 적용)
+let _sortDir2       = -1;
 let _scRefreshTimer = null;
 let _scLoading      = false;
 let _scView         = 'overview';   // overview | fundamental | performance
@@ -105,6 +107,7 @@ function _currentFilterValues() {
     search:   document.getElementById('filter-search')?.value   || '',
     normalOnly: document.getElementById('filter-normal-only')?.checked || false,
     signalOnly: document.getElementById('filter-signal-only')?.checked || false,
+    watchlistOnly: document.getElementById('filter-watchlist-only')?.checked || false,
   };
 }
 
@@ -122,6 +125,8 @@ function _applyFilterValues(vals) {
   if (normalOnlyEl) normalOnlyEl.checked = !!vals.normalOnly;
   const signalOnlyEl = document.getElementById('filter-signal-only');
   if (signalOnlyEl) signalOnlyEl.checked = !!vals.signalOnly;
+  const watchlistOnlyEl = document.getElementById('filter-watchlist-only');
+  if (watchlistOnlyEl) watchlistOnlyEl.checked = !!vals.watchlistOnly;
   // industry: 섹터 변경 후 동적 목록이 채워진 뒤 적용
   const secEl = document.getElementById('filter-sector');
   if (secEl && vals.sector !== 'all') {
@@ -322,6 +327,7 @@ function getFilteredStocks() {
   const search   = document.getElementById('filter-search').value.trim().toLowerCase();
   const normalOnly = document.getElementById('filter-normal-only')?.checked || false;
   const signalOnly = document.getElementById('filter-signal-only')?.checked || false;
+  const watchlistOnly = document.getElementById('filter-watchlist-only')?.checked || false;
 
   let list = _scStocks.filter(s => {
     if (sector   !== 'all' && s.sector   !== sector)   return false;
@@ -330,6 +336,7 @@ function getFilteredStocks() {
     if (search && !s.ticker.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
     if (normalOnly && _isAbnormalListing(s)) return false;
     if (signalOnly && !_scSignalMap[s.ticker]) return false;
+    if (watchlistOnly && typeof WL !== 'undefined' && !WL.has(s.ticker)) return false;
 
     // Change %
     switch (change) {
@@ -371,15 +378,20 @@ function getFilteredStocks() {
     return true;
   });
 
-  // 정렬
-  list.sort((a, b) => {
-    let av = a[_sortCol], bv = b[_sortCol];
-    if (_sortCol === '_52wpos') { av = _calc52wPos(a); bv = _calc52wPos(b); }
+  // 정렬 (1차 + Shift+클릭으로 지정한 2차)
+  const _cmpCol = (a, b, col, dir) => {
+    let av = a[col], bv = b[col];
+    if (col === '_52wpos') { av = _calc52wPos(a); bv = _calc52wPos(b); }
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
-    if (typeof av === 'string') return av.localeCompare(bv) * _sortDir;
-    return (av - bv) * _sortDir;
+    if (typeof av === 'string') return av.localeCompare(bv) * dir;
+    return (av - bv) * dir;
+  };
+  list.sort((a, b) => {
+    const primary = _cmpCol(a, b, _sortCol, _sortDir);
+    if (primary !== 0 || !_sortCol2) return primary;
+    return _cmpCol(a, b, _sortCol2, _sortDir2);
   });
 
   return list;
@@ -391,17 +403,26 @@ function _renderHead() {
   const thead = document.getElementById('screener-head');
   thead.innerHTML = '<tr>' + cols.map(c => {
     if (!c.key) return `<th></th>`;
-    const active = c.key === _sortCol ? ' sort-active ' + (_sortDir === 1 ? 'asc' : 'desc') : '';
+    let active = c.key === _sortCol ? ' sort-active ' + (_sortDir === 1 ? 'asc' : 'desc') : '';
+    if (c.key === _sortCol2) active += ' sort-active-2 ' + (_sortDir2 === 1 ? 'asc' : 'desc');
     const skip = ['_no'].includes(c.key) ? '' : ` data-col="${c.key}"`;
-    return `<th class="${c.cls}${active}"${skip}>${c.label}</th>`;
+    const title = c.key && c.key !== '_no' ? ' title="Shift+클릭: 2차 정렬"' : '';
+    return `<th class="${c.cls}${active}"${skip}${title}>${c.label}</th>`;
   }).join('') + '</tr>';
 
-  // 정렬 이벤트 재바인딩
+  // 정렬 이벤트 재바인딩 (Shift+클릭 = 2차 정렬)
   thead.querySelectorAll('th[data-col]').forEach(th => {
-    th.addEventListener('click', () => {
+    th.addEventListener('click', e => {
       const col = th.dataset.col;
-      _sortDir = _sortCol === col ? _sortDir * -1 : -1;
-      _sortCol = col;
+      if (e.shiftKey) {
+        if (col === _sortCol) return; // 1차 정렬 컬럼과 같으면 무시
+        _sortDir2 = _sortCol2 === col ? _sortDir2 * -1 : -1;
+        _sortCol2 = col;
+      } else {
+        _sortDir = _sortCol === col ? _sortDir * -1 : -1;
+        _sortCol = col;
+        _sortCol2 = null; // 새 1차 정렬 지정 시 2차 정렬 초기화
+      }
       renderScreener();
     });
   });
@@ -611,7 +632,7 @@ function bindScreenerEvents() {
 
   // 필터 변경 (US/KR 모드에 따라 분기)
   ['filter-sector','filter-industry','filter-country','filter-change',
-   'filter-cap','filter-pe','filter-52w','filter-normal-only','filter-signal-only'].forEach(id => {
+   'filter-cap','filter-pe','filter-52w','filter-normal-only','filter-signal-only','filter-watchlist-only'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
       if (_scMarket === 'kr') renderKrScreener();
@@ -905,16 +926,25 @@ function _getKrFiltered() {
   if (document.getElementById('filter-signal-only')?.checked) {
     list = list.filter(s => _scSignalMap[s.ticker]);
   }
-  // 정렬 — 가격 없는 종목은 항상 맨 뒤
+  // 관심종목만
+  if (document.getElementById('filter-watchlist-only')?.checked && typeof WL !== 'undefined') {
+    list = list.filter(s => WL.has(s.ticker));
+  }
+  // 정렬 — 가격 없는 종목은 항상 맨 뒤 (1차 + Shift+클릭 2차)
+  const _krCmpCol = (a, b, col, dir) => {
+    let av = a[col] ?? 0, bv = b[col] ?? 0;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    return av < bv ? dir : av > bv ? -dir : 0;
+  };
   list.sort((a, b) => {
     const aNoPx = !a.price, bNoPx = !b.price;
     if (aNoPx && bNoPx) return 0;
     if (aNoPx) return 1;
     if (bNoPx) return -1;
-    let av = a[_sortCol] ?? 0, bv = b[_sortCol] ?? 0;
-    if (typeof av === 'string') av = av.toLowerCase();
-    if (typeof bv === 'string') bv = bv.toLowerCase();
-    return av < bv ? _sortDir : av > bv ? -_sortDir : 0;
+    const primary = _krCmpCol(a, b, _sortCol, _sortDir);
+    if (primary !== 0 || !_sortCol2) return primary;
+    return _krCmpCol(a, b, _sortCol2, _sortDir2);
   });
   return list;
 }
@@ -1014,15 +1044,24 @@ function renderKrScreener() {
 
   head.innerHTML = '<tr>' + cols.map(c => {
     if (!c.key) return '<th style="width:28px"></th>';
-    const active = _sortCol === c.key;
-    const arrow  = active ? (_sortDir === -1 ? ' ▼' : ' ▲') : '';
-    return `<th class="sc-th${active ? ' sort-active' : ''}" data-col="${c.key}" style="cursor:pointer">${c.label}${arrow}</th>`;
+    const active  = _sortCol === c.key;
+    const active2 = _sortCol2 === c.key;
+    const arrow   = active ? (_sortDir === -1 ? ' ▼' : ' ▲') : active2 ? (_sortDir2 === -1 ? ' ▽' : ' △') : '';
+    const cls     = active ? ' sort-active' : active2 ? ' sort-active-2' : '';
+    return `<th class="sc-th${cls}" data-col="${c.key}" style="cursor:pointer" title="Shift+클릭: 2차 정렬">${c.label}${arrow}</th>`;
   }).join('') + '</tr>';
 
   head.querySelectorAll('.sc-th').forEach(th => {
-    th.addEventListener('click', () => {
+    th.addEventListener('click', e => {
       const col = th.dataset.col;
-      if (_sortCol === col) _sortDir *= -1; else { _sortCol = col; _sortDir = -1; }
+      if (e.shiftKey) {
+        if (col === _sortCol) return;
+        _sortDir2 = _sortCol2 === col ? _sortDir2 * -1 : -1;
+        _sortCol2 = col;
+      } else {
+        if (_sortCol === col) _sortDir *= -1; else { _sortCol = col; _sortDir = -1; }
+        _sortCol2 = null;
+      }
       renderKrScreener();
     });
   });

@@ -154,15 +154,18 @@ function starBtn(ticker) {
     data-ticker="${ticker}"
     onclick="event.stopPropagation(); toggleStar('${ticker}', this)"
     title="${active ? '관심종목 제거' : '관심종목 추가'}"
+    aria-label="${active ? '관심종목 제거' : '관심종목 추가'}"
   >${active ? '★' : '☆'}</button>`;
 }
 
 // ★ 클릭 핸들러 (모든 탭 공용)
 function toggleStar(ticker, btn) {
   const added = WL.toggle(ticker);
+  const label = added ? '관심종목 제거' : '관심종목 추가';
   btn.textContent = added ? '★' : '☆';
   btn.classList.toggle('active', added);
-  btn.title = added ? '관심종목 제거' : '관심종목 추가';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
 
   // 워치리스트 탭이 열려 있으면 즉시 갱신
   const wlView = document.getElementById('view-watchlist');
@@ -175,6 +178,8 @@ function toggleStar(ticker, btn) {
     if (b !== btn) {
       b.textContent = added ? '★' : '☆';
       b.classList.toggle('active', added);
+      b.title = label;
+      b.setAttribute('aria-label', label);
     }
   });
 
