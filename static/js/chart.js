@@ -121,8 +121,7 @@ function _createLWChart() {
       borderColor: '#30363d',
       timeVisible: true,
       fixLeftEdge: true,
-      fixRightEdge: true,
-      rightOffset: 40, // 마지막 봉 오른쪽 여백(HTS처럼) — 추세선을 미래 방향으로 그릴 공간 확보
+      rightOffset: 40, // 마지막 봉 오른쪽 여백(HTS처럼) — 추세선을 미래 방향으로 그릴 공간 확보. fixRightEdge와 같이 쓰면 여백이 무시되므로 fixRightEdge는 뺌
     },
     // 좌클릭 드래그는 국내 HTS 방식 구간 확대/축소 제스처로 대체 (_bindChartZoomEvents 참고) — 기본 패닝은 끔
     handleScroll: { pressedMouseMove: false },
@@ -1752,7 +1751,7 @@ function _createRSIChart() {
     grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.05, bottom: 0.05 } },
-    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
+    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true }, // fixRightEdge 빼서 메인차트 rightOffset 여백과 정렬 맞춤
     handleScroll: false,
     handleScale: false,
   });
@@ -1772,7 +1771,7 @@ function _createMACDChart() {
     grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.15, bottom: 0.15 } },
-    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
+    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true }, // fixRightEdge 빼서 메인차트 rightOffset 여백과 정렬 맞춤
     handleScroll: false,
     handleScale: false,
   });
@@ -1798,7 +1797,7 @@ function _createSTOChart() {
     grid:   { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.05, bottom: 0.05 } },
-    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
+    timeScale: { borderColor: '#30363d', timeVisible: false, fixLeftEdge: true }, // fixRightEdge 빼서 메인차트 rightOffset 여백과 정렬 맞춤
     handleScroll: false,
     handleScale: false,
   });
