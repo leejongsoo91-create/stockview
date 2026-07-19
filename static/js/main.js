@@ -345,6 +345,8 @@ async function loadHome() {
   renderHomeNews(news);
   renderMarketStatBar(stocks);
   loadEconomicCalendar();
+  renderHomeWatchlistSummary();
+  renderHomePortfolioSummary();
   // 섹터 기간 버튼 이벤트 (최초 1회 바인딩)
   document.querySelectorAll('.sp-period-btn').forEach(b => {
     b.addEventListener('click', () => loadSectorPerf(b.dataset.period));
@@ -489,6 +491,75 @@ function renderHomeNews(news) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ── 홈 — 내 워치리스트 / 포트폴리오 요약 (WL/PT 재사용) ─────────────────────────
+function renderHomeWatchlistSummary() {
+  const el = document.getElementById('home-watchlist-summary');
+  if (!el || typeof WL === 'undefined') return;
+  const tickers = WL.load();
+  if (!tickers.length) {
+    el.innerHTML = `<div class="home-my-empty">관심종목이 없습니다. <a href="javascript:void(0)" onclick="switchView('screener')">스크리너</a>에서 ☆를 눌러 추가하세요.</div>`;
+    return;
+  }
+  const us = window._scStocks || [];
+  const kr = window._krStocks || [];
+  const rows = tickers
+    .map(t => us.find(s => s.ticker === t) || kr.find(s => s.ticker === t))
+    .filter(Boolean);
+  if (!rows.length) {
+    el.innerHTML = `<div class="home-my-empty">데이터 불러오는 중…</div>`;
+    return;
+  }
+  rows.sort((a, b) => Math.abs(b.change_pct || 0) - Math.abs(a.change_pct || 0));
+  const top = rows.slice(0, 5);
+  el.innerHTML = `
+    <div class="home-my-count">${tickers.length}개 종목 중 변동폭 상위 ${top.length}개</div>
+    <table class="movers-table"><tbody>
+      ${top.map(s => {
+        const disp = s.code || s.ticker;
+        const name = s.name_ko || s.name || '';
+        const pct  = s.change_pct || 0;
+        return `<tr onclick="navigateToChart('${s.ticker}')">
+          <td class="m-ticker">${disp}</td>
+          <td class="m-name">${name}</td>
+          <td class="m-pct ${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+}
+
+function renderHomePortfolioSummary() {
+  const el = document.getElementById('home-portfolio-summary');
+  if (!el || typeof PT === 'undefined') return;
+  const data = PT.load();
+  const tickers = Object.keys(data);
+  if (!tickers.length) {
+    el.innerHTML = `<div class="home-my-empty">포트폴리오가 없습니다. <a href="javascript:void(0)" onclick="switchView('portfolio')">포트폴리오</a> 탭에서 보유 종목을 추가하세요.</div>`;
+    return;
+  }
+  const us = window._scStocks || [];
+  const kr = window._krStocks || [];
+  let totalCost = 0, totalValue = 0, found = 0;
+  tickers.forEach(t => {
+    const h = data[t];
+    const s = us.find(x => x.ticker === t) || kr.find(x => x.ticker === t);
+    if (!s || s.price == null) return;
+    found++;
+    totalCost  += h.qty * h.avgPrice;
+    totalValue += h.qty * s.price;
+  });
+  if (!found) {
+    el.innerHTML = `<div class="home-my-empty">데이터 불러오는 중…</div>`;
+    return;
+  }
+  const pnl    = totalValue - totalCost;
+  const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
+  const cls    = pnl >= 0 ? 'up' : 'down';
+  el.innerHTML = `
+    <div class="home-my-count">${tickers.length}개 보유 종목</div>
+    <div class="home-pf-value">${fmt$(totalValue)}</div>
+    <div class="home-pf-pnl ${cls}">${pnl >= 0 ? '+' : '-'}${fmt$(Math.abs(pnl))} (${fmtPct(pnlPct)})</div>`;
 }
 
 // ── 뉴스 탭 ──────────────────────────────────────────────────────────────────
@@ -800,7 +871,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 글로벌 검색 초기화
   initGlobalSearch();
-  _preloadGlobalSearchData();
+  _preloadGlobalSearchData().then(() => {
+    // 홈 위젯이 먼저 렌더된 경우(전역검색 데이터 로딩 전) 로딩 완료 후 다시 채움
+    if (_currentView === 'home') {
+      renderHomeWatchlistSummary();
+      renderHomePortfolioSummary();
+    }
+  });
 
   // 테마 초기화
   initTheme();
