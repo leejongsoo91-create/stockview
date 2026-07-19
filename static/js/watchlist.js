@@ -5,7 +5,45 @@
 const LS_KEY = 'stockview_watchlist'; // localStorage 저장 키
 const WLG_KEY = 'stockview_watchlist_groups'; // 종목별 그룹 저장 키
 const WLG_NAMES_KEY = 'stockview_watchlist_group_names'; // 생성된 그룹명 목록 (종목 미배정 상태에서도 유지)
+const WLN_KEY = 'stockview_watchlist_notes'; // 종목별 메모/목표가 저장 키
 let _wlGroupFilter = '전체'; // '전체' | '미분류' | 그룹명
+
+// ── 관심종목 메모/목표가 저장소 (티커 -> {memo, target}) ────────────────────────
+const WLN = {
+  _map: null,
+
+  load() {
+    if (this._map) return this._map;
+    try { this._map = JSON.parse(localStorage.getItem(WLN_KEY) || '{}'); }
+    catch { this._map = {}; }
+    return this._map;
+  },
+
+  save() { localStorage.setItem(WLN_KEY, JSON.stringify(this._map)); },
+
+  get(ticker) { return this.load()[ticker] || {}; },
+
+  setMemo(ticker, memo) {
+    const m = this.load();
+    const cur = { ...(m[ticker] || {}) };
+    if (memo) cur.memo = memo; else delete cur.memo;
+    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
+    this.save();
+  },
+
+  setTarget(ticker, target) {
+    const m = this.load();
+    const cur = { ...(m[ticker] || {}) };
+    const n = parseFloat(target);
+    if (target !== '' && Number.isFinite(n)) cur.target = n; else delete cur.target;
+    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
+    this.save();
+  },
+};
+
+function _wlEsc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
 
 // ── 관심종목 그룹 저장소 (티커 -> 그룹명, 없으면 미분류) ───────────────────────
 const WLG = {
@@ -252,6 +290,8 @@ async function renderWatchlist() {
             <th class="num">Mkt Cap</th>
             <th class="num">52W High</th>
             <th class="num">52W Low</th>
+            <th>메모</th>
+            <th class="num">목표가</th>
           </tr>
         </thead>
         <tbody>
@@ -289,6 +329,16 @@ async function renderWatchlist() {
                 <td class="num">${cap}</td>
                 <td class="num">${hi}</td>
                 <td class="num">${lo}</td>
+                <td onclick="event.stopPropagation()">
+                  <input type="text" class="wl-memo-input" placeholder="메모"
+                         value="${_wlEsc(WLN.get(s.ticker).memo)}"
+                         onchange="WLN.setMemo('${s.ticker}', this.value.trim())">
+                </td>
+                <td class="num" onclick="event.stopPropagation()">
+                  <input type="number" step="0.01" class="wl-target-input" placeholder="목표가"
+                         value="${WLN.get(s.ticker).target ?? ''}"
+                         onchange="WLN.setTarget('${s.ticker}', this.value)">
+                </td>
               </tr>`;
           }).join('')}
         </tbody>
