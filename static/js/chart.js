@@ -122,7 +122,7 @@ function _createLWChart() {
       timeVisible: true,
       fixLeftEdge: true,
       fixRightEdge: true,
-      rightOffset: 15, // 마지막 봉 오른쪽 여백(HTS처럼) — 추세선을 미래 방향으로 그릴 공간 확보
+      rightOffset: 40, // 마지막 봉 오른쪽 여백(HTS처럼) — 추세선을 미래 방향으로 그릴 공간 확보
     },
     // 좌클릭 드래그는 국내 HTS 방식 구간 확대/축소 제스처로 대체 (_bindChartZoomEvents 참고) — 기본 패닝은 끔
     handleScroll: { pressedMouseMove: false },
