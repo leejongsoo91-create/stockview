@@ -306,6 +306,79 @@ function _updatePtCount() {
   }
 }
 
+// ── CSV 내보내기/가져오기 ─────────────────────────────────────────────────────
+async function exportPortfolioCSV() {
+  const data    = PT.load();
+  const tickers = PT.tickers();
+  if (!tickers.length) return;
+
+  let priceMap = {};
+  try {
+    const all = await api('/api/stocks');
+    all.forEach(s => { priceMap[s.ticker] = s; });
+    for (const t of tickers) {
+      if (!priceMap[t]) { try { priceMap[t] = await api(`/api/stock/${t}`); } catch {} }
+    }
+  } catch {}
+
+  const headers = ['Ticker', 'Qty', 'AvgPrice', 'Name', 'CurrentPrice'];
+  const rows = tickers.map(t => {
+    const { qty, avgPrice } = data[t];
+    const s = priceMap[t] || {};
+    return [
+      t, qty, avgPrice,
+      `"${(s.name || '').replace(/"/g, '""')}"`,
+      s.price != null ? s.price : '',
+    ].join(',');
+  });
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `portfolio_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importPortfolioCSV(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const text  = String(reader.result).replace(/^﻿/, '');
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { alert('빈 파일입니다.'); return; }
+
+      const header    = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
+      const hasHeader = header.includes('ticker');
+      const tIdx      = hasHeader ? header.indexOf('ticker')    : 0;
+      const qIdx      = hasHeader ? header.indexOf('qty')       : 1;
+      const pIdx      = hasHeader ? header.indexOf('avgprice')  : 2;
+      const startIdx  = hasHeader ? 1 : 0;
+
+      if (qIdx === -1 || pIdx === -1) { alert('CSV에 Qty/AvgPrice 컬럼이 필요합니다.'); return; }
+
+      let added = 0;
+      for (let i = startIdx; i < lines.length; i++) {
+        const cols   = lines[i].split(',');
+        const ticker = (cols[tIdx] || '').trim().toUpperCase().replace(/^"|"$/g, '');
+        const qty    = parseFloat(cols[qIdx]);
+        const price  = parseFloat(cols[pIdx]);
+        if (!ticker || !Number.isFinite(qty) || !Number.isFinite(price)) continue;
+        PT.set(ticker, qty, price);
+        added++;
+      }
+      alert(`${added}개 종목을 포트폴리오에 반영했습니다.`);
+      _updatePtCount();
+      renderPortfolio();
+    } catch (e) {
+      alert('CSV 파일을 읽는 중 오류가 발생했습니다.');
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ── 포트폴리오 렌더링 ─────────────────────────────────────────────────────────
 async function renderPortfolio() {
   const container = document.getElementById('pt-content');

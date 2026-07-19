@@ -778,6 +778,12 @@
     <div id="view-portfolio" class="view">
       <div class="pt-header-bar">
         <h3 class="pt-title">내 포트폴리오</h3>
+        <button class="pt-csv-btn" onclick="exportPortfolioCSV()">⬇ CSV 내보내기</button>
+        <label class="pt-csv-btn pt-csv-import-label">
+          ⬆ CSV 가져오기
+          <input type="file" accept=".csv" class="pt-csv-import-input"
+                 onchange="if(this.files[0]) importPortfolioCSV(this.files[0]); this.value='';">
+        </label>
         <button class="pt-add-btn" onclick="openPtModal()">+ 종목 추가</button>
       </div>
       <div id="pt-content"></div>

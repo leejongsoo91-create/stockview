@@ -2137,10 +2137,10 @@ mark.kw-hl {
 .pt-header-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 16px;
 }
-.pt-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.pt-title { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; }
 .pt-add-btn {
   background: var(--accent);
   border: none;
@@ -2153,6 +2153,19 @@ mark.kw-hl {
   transition: opacity .15s;
 }
 .pt-add-btn:hover { opacity: .85; }
+.pt-csv-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.pt-csv-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pt-csv-import-label { display: inline-flex; align-items: center; }
+.pt-csv-import-input { display: none; }
 
 /* 요약 카드 */
 .pt-summary {
