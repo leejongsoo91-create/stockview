@@ -79,6 +79,7 @@ function initChart() {
   _bindAlertEvents();
   _bindResizeObserver();
   _bindChartZoomEvents();
+  _bindDrawToolEvents();
 }
 
 // 차트 탭 이탈 시 타이머 정지 (main.js에서 호출)
@@ -156,11 +157,12 @@ function _createLWChart() {
     borderVisible: false,
   });
 
-  // 서브 패널(RSI·MACD) 시간축 동기화
+  // 서브 패널(RSI·MACD) 시간축 동기화 + 그리기 도구 재렌더
   _lwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
     if (!range) return;
     if (_rsiChart)  _rsiChart.timeScale().setVisibleLogicalRange(range);
     if (_macdChart) _macdChart.timeScale().setVisibleLogicalRange(range);
+    _redrawDrawings();
   });
 
   // 서브 패널 크로스헤어 동기화
@@ -179,6 +181,13 @@ function _createLWChart() {
   _zoomBoxEl = document.createElement('div');
   _zoomBoxEl.className = 'chart-zoom-box';
   container.appendChild(_zoomBoxEl);
+
+  // 그리기 도구용 캔버스 오버레이
+  _drawCanvas = document.createElement('canvas');
+  _drawCanvas.id = 'chart-draw-canvas';
+  container.appendChild(_drawCanvas);
+  _drawCtx = _drawCanvas.getContext('2d');
+  _resizeDrawCanvas();
 }
 
 // ── 국내 HTS 방식 구간 확대/축소 (왼쪽 드래그 방향 감지) ────────────────────────
@@ -192,15 +201,56 @@ function _bindChartZoomEvents() {
 
   container.addEventListener('mousedown', e => {
     if (e.button !== 0) return; // 왼쪽 버튼만
-    _zoomDragStartX = e.clientX - container.getBoundingClientRect().left;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // 1) 그리기 도구가 켜져 있으면 줌 대신 그리기 클릭 처리
+    if (_drawTool) {
+      _handleDrawClick(x, y);
+      return;
+    }
+
+    // 2) 선택된 그림의 손잡이를 잡으면 끝점 드래그 시작
+    if (_selectedDrawId) {
+      const hp = _hitTestHandle(_selectedDrawId, x, y);
+      if (hp != null) {
+        _dragHandleInfo = { id: _selectedDrawId, pointIndex: hp };
+        return;
+      }
+    }
+
+    // 3) 평소: 기존 HTS 줌 드래그 시작
+    _selectedDrawId = null;
+    _redrawDrawings();
+    _zoomDragStartX = x;
     _zoomBoxEl.style.left  = `${_zoomDragStartX}px`;
     _zoomBoxEl.style.width = '0px';
     _zoomBoxEl.style.display = 'block';
   });
 
   container.addEventListener('mousemove', e => {
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // 손잡이 드래그 중: 끝점 위치 실시간 갱신
+    if (_dragHandleInfo) {
+      _updateDragHandle(x, y);
+      return;
+    }
+
+    // 2클릭 도구(추세선/피보나치)의 첫 점을 찍은 후 마우스를 따라다니는 미리보기
+    if (_drawTool && _drawPending) {
+      const time = _xToTime(x), price = _yToPrice(y);
+      if (time != null && price != null) {
+        _drawPreview = { type: _drawTool, points: [_drawPending, { time, price }] };
+        _redrawDrawings();
+      }
+      return;
+    }
+
     if (_zoomDragStartX == null) return;
-    const x = e.clientX - container.getBoundingClientRect().left;
     const left  = Math.min(_zoomDragStartX, x);
     const width = Math.abs(x - _zoomDragStartX);
     _zoomBoxEl.style.left  = `${left}px`;
@@ -208,15 +258,28 @@ function _bindChartZoomEvents() {
   });
 
   const finishDrag = e => {
+    if (_dragHandleInfo) {
+      _dragHandleInfo = null;
+      _persistCurrentDrawings();
+      return;
+    }
     if (_zoomDragStartX == null) return;
     const container = document.getElementById('lw-chart');
-    const endX = e.clientX - container.getBoundingClientRect().left;
+    const rect = container.getBoundingClientRect();
+    const endX = e.clientX - rect.left;
     const startX = _zoomDragStartX;
     _zoomDragStartX = null;
     _zoomBoxEl.style.display = 'none';
 
     const deltaPx = endX - startX;
-    if (Math.abs(deltaPx) < _ZOOM_DRAG_MIN_PX) return; // 클릭으로 간주, 무시
+    if (Math.abs(deltaPx) < _ZOOM_DRAG_MIN_PX) {
+      // 클릭으로 간주 — 기존 그림 선택 시도
+      const y = e.clientY - rect.top;
+      const hit = _hitTestDrawings(endX, y);
+      _selectedDrawId = hit ? hit.id : null;
+      _redrawDrawings();
+      return;
+    }
 
     const timeScale = _lwChart.timeScale();
     if (deltaPx > 0) {
@@ -242,6 +305,389 @@ function _bindChartZoomEvents() {
     _lwChart.timeScale().setVisibleLogicalRange(_prevVisibleRange);
     _prevVisibleRange = null;
   });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && _drawTool) _exitDrawMode();
+  });
+}
+
+// ── 차트 그리기 도구 (추세선/수평선/수직선/피보나치 되돌림) ───────────────────
+// 좌클릭 드래그를 HTS 줌 제스처와 나눠 쓰므로, 도구가 켜진 동안엔 줌이 잠깐 꺼짐(_bindChartZoomEvents 참고)
+const DRAW_KEY = 'stockview_chart_drawings';
+let _drawCanvas      = null;
+let _drawCtx         = null;
+let _drawings        = [];     // 현재 종목의 그림들: {id, type, points:[{time,price}], color, _priceLineRef?}
+let _drawTool        = null;   // 'trend'|'hline'|'vline'|'fib'|null
+let _drawPending     = null;   // 2클릭 도구(trend/fib)의 첫 번째 점
+let _drawPreview     = null;   // 두 번째 점 확정 전 마우스 추적 미리보기
+let _selectedDrawId  = null;   // 손잡이가 표시 중인 그림 id
+let _dragHandleInfo  = null;   // 손잡이 드래그 중: {id, pointIndex}
+let _drawIdSeq       = 1;
+const _DRAW_TYPE_LABEL = { trend: '📈 추세선', hline: '➖ 수평선', vline: '┃ 수직선', fib: '🌀 피보나치' };
+
+function _xToTime(x) { return _lwChart.timeScale().coordinateToTime(x); }
+function _yToPrice(y) { return _candleSeries.coordinateToPrice(y); }
+function _timeToX(time) { return _lwChart.timeScale().timeToCoordinate(time); }
+function _priceToY(price) { return _candleSeries.priceToCoordinate(price); }
+
+function _resizeDrawCanvas() {
+  if (!_drawCanvas) return;
+  const container = document.getElementById('lw-chart');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  _drawCanvas.width  = w * dpr;
+  _drawCanvas.height = h * dpr;
+  _drawCanvas.style.width  = w + 'px';
+  _drawCanvas.style.height = h + 'px';
+  _drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  _redrawDrawings();
+}
+
+// ── 저장/불러오기 (티커별 localStorage) ───────────────────────────────────────
+function _loadAllDrawings() {
+  try { return JSON.parse(localStorage.getItem(DRAW_KEY) || '{}'); }
+  catch { return {}; }
+}
+function _saveAllDrawings(all) { localStorage.setItem(DRAW_KEY, JSON.stringify(all)); }
+
+function _persistCurrentDrawings() {
+  if (!_currentTicker) return;
+  const all = _loadAllDrawings();
+  const serializable = _drawings.map(({ _priceLineRef, ...rest }) => rest);
+  if (serializable.length) all[_currentTicker] = serializable; else delete all[_currentTicker];
+  _saveAllDrawings(all);
+}
+
+function _clearDrawingsRuntime() {
+  _drawings.forEach(d => {
+    if (d.type === 'hline' && d._priceLineRef) {
+      try { _candleSeries.removePriceLine(d._priceLineRef); } catch {}
+    }
+  });
+  _drawings = [];
+  _selectedDrawId = null;
+  _drawPending = null;
+  _drawPreview = null;
+}
+
+function _loadDrawingsForCurrentTicker() {
+  _clearDrawingsRuntime();
+  const saved = (_loadAllDrawings()[_currentTicker] || []).map(d => ({ ...d }));
+  saved.forEach(d => {
+    if (d.type === 'hline') {
+      d._priceLineRef = _candleSeries.createPriceLine({
+        price: d.points[0].price,
+        color: d.color || '#58a6ff',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: '',
+      });
+    }
+  });
+  _drawings = saved;
+  _renderDrawList();
+  _redrawDrawings();
+}
+
+// ── 도구 모드 전환 ────────────────────────────────────────────────────────────
+function _bindDrawToolEvents() {
+  document.querySelectorAll('.draw-tool-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool;
+      if (_drawTool === tool) { _exitDrawMode(); return; }
+      _drawTool = tool;
+      _drawPending = null;
+      _drawPreview = null;
+      _selectedDrawId = null;
+      document.querySelectorAll('.draw-tool-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const lw = document.getElementById('lw-chart');
+      if (lw) lw.classList.add('draw-active');
+      const hint = document.getElementById('draw-mode-hint');
+      if (hint) hint.style.display = 'inline';
+      _redrawDrawings();
+    });
+  });
+}
+
+function _exitDrawMode() {
+  _drawTool = null;
+  _drawPending = null;
+  _drawPreview = null;
+  document.querySelectorAll('.draw-tool-btn').forEach(b => b.classList.remove('active'));
+  const lw = document.getElementById('lw-chart');
+  if (lw) lw.classList.remove('draw-active');
+  const hint = document.getElementById('draw-mode-hint');
+  if (hint) hint.style.display = 'none';
+  _redrawDrawings();
+}
+
+// ── 그리기 생성 ───────────────────────────────────────────────────────────────
+function _handleDrawClick(x, y) {
+  const time = _xToTime(x), price = _yToPrice(y);
+  if (time == null || price == null) return; // 유효한 캔들 영역 밖 클릭은 무시
+
+  if (_drawTool === 'hline') {
+    _addDrawing({ type: 'hline', points: [{ time: null, price }] });
+    _exitDrawMode();
+    return;
+  }
+  if (_drawTool === 'vline') {
+    _addDrawing({ type: 'vline', points: [{ time, price: null }] });
+    _exitDrawMode();
+    return;
+  }
+  // trend / fib: 두 번 클릭
+  if (!_drawPending) {
+    _drawPending = { time, price };
+    return;
+  }
+  _addDrawing({ type: _drawTool, points: [_drawPending, { time, price }] });
+  _exitDrawMode();
+}
+
+function _addDrawing(partial) {
+  const d = { id: 'd' + (_drawIdSeq++), color: '#58a6ff', ...partial };
+  if (d.type === 'hline') {
+    d._priceLineRef = _candleSeries.createPriceLine({
+      price: d.points[0].price,
+      color: d.color,
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Solid,
+      axisLabelVisible: true,
+      title: '',
+    });
+  }
+  _drawings.push(d);
+  _persistCurrentDrawings();
+  _renderDrawList();
+  _redrawDrawings();
+}
+
+function _deleteDrawing(id) {
+  const idx = _drawings.findIndex(d => d.id === id);
+  if (idx === -1) return;
+  const d = _drawings[idx];
+  if (d.type === 'hline' && d._priceLineRef) {
+    try { _candleSeries.removePriceLine(d._priceLineRef); } catch {}
+  }
+  _drawings.splice(idx, 1);
+  if (_selectedDrawId === id) _selectedDrawId = null;
+  _persistCurrentDrawings();
+  _renderDrawList();
+  _redrawDrawings();
+}
+
+function clearAllDrawings() {
+  if (!_drawings.length) return;
+  if (!confirm(`${_currentTicker}의 그린 선 ${_drawings.length}개를 모두 삭제하시겠습니까?`)) return;
+  _clearDrawingsRuntime();
+  _persistCurrentDrawings();
+  _renderDrawList();
+  _redrawDrawings();
+}
+
+function _selectDrawing(id) {
+  _selectedDrawId = id;
+  _redrawDrawings();
+}
+
+// ── 히트테스팅 (클릭 선택 / 손잡이 드래그) ─────────────────────────────────────
+function _distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const ex = x1 + t * dx, ey = y1 + t * dy;
+  return Math.hypot(px - ex, py - ey);
+}
+
+function _pointToScreen(p) {
+  const x = _timeToX(p.time), y = _priceToY(p.price);
+  if (x == null || y == null) return null;
+  return { x, y };
+}
+
+function _hitTestDrawings(x, y, threshold = 6) {
+  for (let i = _drawings.length - 1; i >= 0; i--) {
+    const d = _drawings[i];
+    if (d.type === 'hline') {
+      const py = _priceToY(d.points[0].price);
+      if (py != null && Math.abs(y - py) <= threshold) return d;
+    } else if (d.type === 'vline') {
+      const px = _timeToX(d.points[0].time);
+      if (px != null && Math.abs(x - px) <= threshold) return d;
+    } else if (d.type === 'trend') {
+      const p1 = _pointToScreen(d.points[0]), p2 = _pointToScreen(d.points[1]);
+      if (p1 && p2 && _distToSegment(x, y, p1.x, p1.y, p2.x, p2.y) <= threshold) return d;
+    } else if (d.type === 'fib') {
+      const p1 = _pointToScreen(d.points[0]), p2 = _pointToScreen(d.points[1]);
+      if (p1 && p2) {
+        const xMin = Math.min(p1.x, p2.x) - threshold, xMax = Math.max(p1.x, p2.x) + threshold;
+        const yMin = Math.min(p1.y, p2.y) - threshold, yMax = Math.max(p1.y, p2.y) + threshold;
+        if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) return d;
+      }
+    }
+  }
+  return null;
+}
+
+// hline/vline은 선 전체 어디를 잡아도 드래그 가능(끝점이 하나뿐이라 실질적으로 하나의 손잡이)
+function _hitTestHandle(drawId, x, y, threshold = 8) {
+  const d = _drawings.find(dr => dr.id === drawId);
+  if (!d) return null;
+  if (d.type === 'hline') {
+    const py = _priceToY(d.points[0].price);
+    return (py != null && Math.abs(y - py) <= threshold) ? 0 : null;
+  }
+  if (d.type === 'vline') {
+    const px = _timeToX(d.points[0].time);
+    return (px != null && Math.abs(x - px) <= threshold) ? 0 : null;
+  }
+  for (let i = 0; i < d.points.length; i++) {
+    const p = _pointToScreen(d.points[i]);
+    if (p && Math.hypot(x - p.x, y - p.y) <= threshold) return i;
+  }
+  return null;
+}
+
+function _updateDragHandle(x, y) {
+  const d = _drawings.find(dr => dr.id === _dragHandleInfo.id);
+  if (!d) return;
+  if (d.type === 'hline') {
+    const price = _yToPrice(y);
+    if (price == null) return;
+    d.points[0] = { time: null, price };
+    if (d._priceLineRef) d._priceLineRef.applyOptions({ price });
+    _renderDrawList();
+    return;
+  }
+  if (d.type === 'vline') {
+    const time = _xToTime(x);
+    if (time == null) return;
+    d.points[0] = { time, price: null };
+  } else {
+    const time = _xToTime(x), price = _yToPrice(y);
+    if (time == null || price == null) return;
+    d.points[_dragHandleInfo.pointIndex] = { time, price };
+  }
+  _renderDrawList();
+  _redrawDrawings();
+}
+
+// ── 렌더링 ────────────────────────────────────────────────────────────────────
+function _redrawDrawings() {
+  if (!_drawCtx || !_drawCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = _drawCanvas.width / dpr, h = _drawCanvas.height / dpr;
+  _drawCtx.clearRect(0, 0, w, h);
+
+  _drawings.forEach(d => _drawOne(d, d.id === _selectedDrawId, false));
+  if (_drawPreview) _drawOne(_drawPreview, false, true);
+}
+
+function _drawOne(d, selected, isPreview) {
+  const ctx = _drawCtx;
+  if (!ctx) return;
+
+  if (d.type === 'hline') {
+    // 라인 자체는 라이브러리(createPriceLine)가 그려줌 — 손잡이만 캔버스에 표시
+    if (selected) _drawHandle(d);
+    return;
+  }
+
+  ctx.save();
+  ctx.lineWidth = selected ? 2 : 1.5;
+  ctx.strokeStyle = isPreview ? 'rgba(255,255,255,.5)' : (d.color || '#58a6ff');
+  ctx.setLineDash(isPreview ? [4, 4] : []);
+
+  if (d.type === 'vline') {
+    const x = _timeToX(d.points[0].time);
+    if (x != null) {
+      const h = _drawCanvas.height / (window.devicePixelRatio || 1);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+  } else if (d.type === 'trend') {
+    const p1 = _pointToScreen(d.points[0]), p2 = _pointToScreen(d.points[1]);
+    if (p1 && p2) {
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+  } else if (d.type === 'fib') {
+    const p1 = d.points[0], p2 = d.points[1];
+    const x1 = _timeToX(p1.time), x2 = _timeToX(p2.time);
+    if (x1 != null && x2 != null) {
+      const xMin = Math.min(x1, x2), xMax = Math.max(x1, x2);
+      [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].forEach(lv => {
+        const price = p1.price + (p2.price - p1.price) * lv;
+        const y = _priceToY(price);
+        if (y == null) return;
+        ctx.beginPath();
+        ctx.moveTo(xMin, y);
+        ctx.lineTo(xMax, y);
+        ctx.stroke();
+        if (!isPreview) {
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.font = '10px sans-serif';
+          ctx.fillText(`${(lv * 100).toFixed(1)}%`, xMax + 4, y + 3);
+        }
+      });
+    }
+  }
+  ctx.restore();
+
+  if (selected) _drawHandle(d);
+}
+
+function _drawHandle(d) {
+  const ctx = _drawCtx;
+  ctx.save();
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#e3b341';
+  ctx.lineWidth = 2;
+  const dot = (x, y) => { if (x == null || y == null) return; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); };
+
+  if (d.type === 'hline') {
+    const w = _drawCanvas.width / (window.devicePixelRatio || 1);
+    dot(w - 40, _priceToY(d.points[0].price));
+  } else if (d.type === 'vline') {
+    const h = _drawCanvas.height / (window.devicePixelRatio || 1);
+    dot(_timeToX(d.points[0].time), h - 30);
+  } else {
+    d.points.forEach(p => { const s = _pointToScreen(p); if (s) dot(s.x, s.y); });
+  }
+  ctx.restore();
+}
+
+function _fmtDrawTime(t) {
+  if (t == null) return '';
+  return typeof t === 'string' ? t : new Date(t * 1000).toLocaleDateString('ko-KR');
+}
+
+function _renderDrawList() {
+  const card = document.getElementById('chart-draw-list-card');
+  const list = document.getElementById('chart-draw-list');
+  if (!card || !list) return;
+  if (!_drawings.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  list.innerHTML = _drawings.map(d => {
+    let detail;
+    if (d.type === 'hline') detail = (d.points[0].price ?? 0).toFixed(2);
+    else if (d.type === 'vline') detail = _fmtDrawTime(d.points[0].time);
+    else detail = `${_fmtDrawTime(d.points[0].time)} → ${_fmtDrawTime(d.points[1].time)}`;
+    return `<div class="draw-item">
+      <span class="draw-item-icon">${_DRAW_TYPE_LABEL[d.type]}</span>
+      <span class="draw-item-label" onclick="_selectDrawing('${d.id}')">${detail}</span>
+      <button class="draw-item-del" onclick="_deleteDrawing('${d.id}')" title="삭제">✕</button>
+    </div>`;
+  }).join('');
 }
 
 // 티커/코드 직접 일치가 없으면 한글·영문 종목명으로 검색해 티커를 찾는다
@@ -444,6 +890,7 @@ function _bindResizeObserver() {
       if (_stoChart)  _stoChart.resize(w, 105);
       // 메인 차트 높이는 _resizeChartPanels()가 관리
       _resizeChartPanels();
+      _resizeDrawCanvas();
     }
   });
   resizeObs.observe(document.getElementById('lw-chart'));
@@ -514,6 +961,7 @@ async function loadChart(ticker) {
 
     _lastOhlcv = ohlcv;
     _renderCandles(ohlcv);
+    _loadDrawingsForCurrentTicker();
     _renderHeader(stockData);
     renderStockInfo(stockData);
     _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));

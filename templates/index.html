@@ -446,6 +446,14 @@
           <button class="ind-btn ind-sto"    data-ind="sto">STO</button>
           <button class="ind-btn ind-volma"  data-ind="volma">Vol MA</button>
         </div>
+        <div class="chart-draw-row">
+          <span class="quick-label">Draw:</span>
+          <button class="draw-tool-btn" data-tool="trend" title="추세선: 두 점 클릭">📈 추세선</button>
+          <button class="draw-tool-btn" data-tool="hline" title="수평선: 한 점 클릭">➖ 수평선</button>
+          <button class="draw-tool-btn" data-tool="vline" title="수직선: 한 점 클릭">┃ 수직선</button>
+          <button class="draw-tool-btn" data-tool="fib" title="피보나치 되돌림: 두 점 클릭">🌀 피보나치</button>
+          <span class="chart-zoom-hint" id="draw-mode-hint" style="display:none">그리기 모드 — 차트를 클릭하세요 (Esc로 취소)</span>
+        </div>
       </div>
       <div class="chart-layout">
         <div class="chart-main">
@@ -489,6 +497,10 @@
           </div>
         </div>
         <aside class="chart-sidebar">
+          <div id="chart-draw-list-card" style="display:none">
+            <div class="info-section-title">✏️ 그린 선 <button id="draw-clear-all-btn" class="draw-clear-all-btn" onclick="clearAllDrawings()">전체 삭제</button></div>
+            <div id="chart-draw-list"></div>
+          </div>
           <div id="signal-card" style="display:none"></div>
           <div id="stock-analysis-card" style="display:none"></div>
           <div id="stock-info-panel">
