@@ -45,6 +45,14 @@ function _wlEsc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+// 목표가 도달 여부/거리 표시 — 목표가는 상승 목표로 간주(달성 = 현재가 ≥ 목표가)
+function _wlTargetStatusHtml(price, target) {
+  if (!target || !price) return '';
+  if (price >= target) return `<span class="wl-target-hit">달성 ✓</span>`;
+  const gap = ((target - price) / price) * 100;
+  return `<span class="wl-target-gap">+${gap.toFixed(1)}% 남음</span>`;
+}
+
 // ── 관심종목 그룹 저장소 (티커 -> 그룹명, 없으면 미분류) ───────────────────────
 const WLG = {
   _map: null,
@@ -339,10 +347,11 @@ async function renderWatchlist() {
                          value="${_wlEsc(WLN.get(s.ticker).memo)}"
                          onchange="WLN.setMemo('${s.ticker}', this.value.trim())">
                 </td>
-                <td class="num" onclick="event.stopPropagation()">
+                <td class="num wl-target-cell" onclick="event.stopPropagation()">
                   <input type="number" step="0.01" class="wl-target-input" placeholder="목표가"
                          value="${WLN.get(s.ticker).target ?? ''}"
-                         onchange="WLN.setTarget('${s.ticker}', this.value)">
+                         onchange="WLN.setTarget('${s.ticker}', this.value); renderWatchlist();">
+                  ${_wlTargetStatusHtml(s.price, WLN.get(s.ticker).target)}
                 </td>
               </tr>`;
           }).join('')}

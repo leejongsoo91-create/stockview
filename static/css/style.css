@@ -2190,6 +2190,9 @@ mark.kw-hl {
 }
 .wl-target-input { width: 70px; text-align: right; }
 .wl-memo-input:focus, .wl-target-input:focus { border-color: var(--accent); }
+.wl-target-cell { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.wl-target-hit { font-size: 10.5px; color: var(--green); font-weight: 600; }
+.wl-target-gap { font-size: 10.5px; color: var(--muted); }
 
 /* 빈 상태 */
 .wl-empty {

@@ -850,6 +850,8 @@ function initSocketIO() {
       if (_currentView === 'portfolio' && typeof renderPortfolio === 'function') {
         renderPortfolio();
       }
+      // 가격 알림 확인 — 차트 탭을 안 보고 있어도(다른 탭이거나 다른 티커여도) 동작
+      if (typeof _checkAllAlerts === 'function') _checkAllAlerts(stocks);
       updateTimestamp();
     } catch {}
   });

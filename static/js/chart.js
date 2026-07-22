@@ -1851,6 +1851,17 @@ function _alertRemove(id) {
   _alertSave(_alertLoad().filter(a => a.id !== id));
 }
 
+// 차트 탭을 안 보고 있어도(다른 탭이거나 다른 티커를 보는 중이어도) 알림이 동작하도록,
+// main.js의 stocks_update 소켓 푸시(5분 주기, US 전종목)에서 저장된 알림 티커들을 훑어 확인
+function _checkAllAlerts(stocksArr) {
+  const list = _alertLoad();
+  if (!list.length || !stocksArr || !stocksArr.length) return;
+  const alertTickers = new Set(list.map(a => a.ticker));
+  for (const s of stocksArr) {
+    if (alertTickers.has(s.ticker) && s.price != null) _alertCheck(s.ticker, s.price);
+  }
+}
+
 function _alertCheck(ticker, price) {
   if (!ticker || price == null) return;
   const list = _alertLoad();
