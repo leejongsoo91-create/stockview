@@ -2121,6 +2121,9 @@ function _renderHeader(stock) {
   document.getElementById('chart-company-label').textContent =
     stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name;
   _updatePriceBadge(stock);
+  // 지수(S&P500·VIX 등)는 관심종목 대상이 아니라 ★ 버튼 숨김
+  const starWrap = document.getElementById('chart-star-wrap');
+  if (starWrap) starWrap.innerHTML = _isIndex(stock.ticker) ? '' : starBtn(stock.ticker);
 }
 
 function _updatePriceBadge(stock) {
