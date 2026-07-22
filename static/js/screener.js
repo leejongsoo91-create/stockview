@@ -97,6 +97,7 @@ function _savePresets(list) {
 
 function _currentFilterValues() {
   return {
+    market:   _scMarket,   // 'us' | 'kr' — 프리셋을 저장한 시장. 적용 시 이 시장으로 자동 전환됨
     sector:   document.getElementById('filter-sector')?.value   || 'all',
     industry: document.getElementById('filter-industry')?.value || 'all',
     country:  document.getElementById('filter-country')?.value  || 'all',
@@ -111,8 +112,13 @@ function _currentFilterValues() {
   };
 }
 
-function _applyFilterValues(vals) {
+async function _applyFilterValues(vals) {
   if (!vals) return;
+  // 프리셋 저장 당시 시장과 현재 화면이 다르면 먼저 전환(데이터 로드까지 대기) —
+  // sector 등 select의 option 목록 자체가 시장별로 다르게 채워지므로 순서가 중요함
+  const targetMarket = vals.market || 'us'; // market 필드 없는 구버전 프리셋은 US로 간주
+  if (targetMarket !== _scMarket) await _switchScMarket(targetMarket);
+
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('filter-sector',   vals.sector);
   set('filter-country',  vals.country);
@@ -127,6 +133,11 @@ function _applyFilterValues(vals) {
   if (signalOnlyEl) signalOnlyEl.checked = !!vals.signalOnly;
   const watchlistOnlyEl = document.getElementById('filter-watchlist-only');
   if (watchlistOnlyEl) watchlistOnlyEl.checked = !!vals.watchlistOnly;
+
+  if (targetMarket === 'kr') {
+    renderKrScreener();
+    return;
+  }
   // industry: 섹터 변경 후 동적 목록이 채워진 뒤 적용
   const secEl = document.getElementById('filter-sector');
   if (secEl && vals.sector !== 'all') {
@@ -211,26 +222,32 @@ function _updateScTimestamp() {
   if (el) el.textContent = new Date().toLocaleTimeString('ko-KR');
 }
 
+// ── 시장(US/KR) 전환 ─────────────────────────────────────────────────────────
+// 탭 버튼 클릭과 프리셋 적용(_applyFilterValues) 양쪽에서 공유하는 전환 로직.
+// 데이터 로드가 끝나야 렌더/필터를 적용할 수 있어 async로 대기 가능하게 함.
+async function _switchScMarket(target) {
+  document.querySelectorAll('.sc-market-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.market === target);
+  });
+  _scMarket = target;
+  _scPage = 1;
+  if (target === 'kr') {
+    _showKrMktBar();
+    await loadKrScreener(true);
+  } else {
+    _hideKrMktBar();
+    _showUsMode();
+    await loadScreenerData(true);
+  }
+}
+
 // ── 스크리너 탭 진입 ─────────────────────────────────────────────────────────
 function initScreener() {
   // 마켓 탭 이벤트 (최초 1회만 등록)
   if (!initScreener._marketBound) {
     initScreener._marketBound = true;
     document.querySelectorAll('.sc-market-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.sc-market-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        _scMarket = btn.dataset.market;
-        _scPage = 1;
-        if (_scMarket === 'kr') {
-          _showKrMktBar();
-          loadKrScreener(true);
-        } else {
-          _hideKrMktBar();
-          _showUsMode();
-          loadScreenerData(true);
-        }
-      });
+      btn.addEventListener('click', () => _switchScMarket(btn.dataset.market));
     });
     document.querySelectorAll('.sc-kr-mkt-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -822,6 +839,13 @@ function exportScreenerCSV() {
 // 국내주식 (KR) 스크리너
 // ══════════════════════════════════════════════════════════════════
 
+// ── 스팩/우선주 등 비정상 종목 판별 (KR) ─────────────────────────────────────
+// 우선주는 "우"/"N우B"로 끝나는 한국 증시 표준 표기 (예: 삼성전자우, 현대차2우B)
+const _KR_ABNORMAL_NAME_RE = /(스팩|우B?$)/;
+function _isAbnormalKrListing(s) {
+  return _KR_ABNORMAL_NAME_RE.test((s.name || '').trim());
+}
+
 async function loadKrScreener(showSpinner = false) {
   if (_scLoading) return;
   _scLoading = true;
@@ -929,6 +953,10 @@ function _getKrFiltered() {
   // 관심종목만
   if (document.getElementById('filter-watchlist-only')?.checked && typeof WL !== 'undefined') {
     list = list.filter(s => WL.has(s.ticker));
+  }
+  // 정상 종목만 (스팩/우선주 제외)
+  if (document.getElementById('filter-normal-only')?.checked) {
+    list = list.filter(s => !_isAbnormalKrListing(s));
   }
   // 정렬 — 가격 없는 종목은 항상 맨 뒤 (1차 + Shift+클릭 2차)
   const _krCmpCol = (a, b, col, dir) => {
