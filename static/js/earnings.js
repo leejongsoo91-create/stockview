@@ -23,7 +23,19 @@ async function initEarnings() {
     document.getElementById(id)?.addEventListener('change', renderEarnings);
   });
 
-  loadEarnings();
+  await Promise.all([loadEarnings(), _ensureScStocksLoaded()]);
+}
+
+// 업종 필터가 window._scStocks(스크리너 탭 방문 시에만 채워짐)에 의존하므로,
+// 스크리너를 거치지 않고 Earnings에 바로 들어온 경우를 위해 직접 로드
+async function _ensureScStocksLoaded() {
+  if (window._scStocks && window._scStocks.length) return;
+  try {
+    window._scStocks = await api('/api/stocks');
+    renderEarnings();
+  } catch (e) {
+    console.warn('earnings: sector data load failed', e);
+  }
 }
 
 function _getEarnSector(symbol) {

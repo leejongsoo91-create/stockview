@@ -679,9 +679,11 @@ function bindScreenerEvents() {
   const btn = document.getElementById('sc-refresh-btn');
   if (btn) btn.addEventListener('click', () => loadScreenerData(false));
 
-  // CSV 내보내기 버튼
+  // CSV 내보내기 버튼 — 현재 시장에 맞는 함수 1개만 호출(단일 리스너로 통합, 중복 다운로드 방지)
   const exportBtn = document.getElementById('sc-export-btn');
-  if (exportBtn) exportBtn.addEventListener('click', exportScreenerCSV);
+  if (exportBtn) exportBtn.addEventListener('click', () => {
+    (_scMarket === 'kr' ? exportKrCSV : exportScreenerCSV)();
+  });
 
   // 뷰 탭 전환
   document.querySelectorAll('.sc-view-btn').forEach(btn => {
@@ -860,13 +862,6 @@ async function loadKrScreener(showSpinner = false) {
     _scSignalMap = sigMap;
     window._krStocks = _krStocks;
     _populateKrSectorFilter();
-    // KR 모드에서 CSV 버튼 연결
-    const exportBtn = document.getElementById('sc-export-btn');
-    if (exportBtn && !exportBtn._krBound) {
-      exportBtn._krBound = true;
-      exportBtn._origClick = exportBtn.onclick;
-    }
-    if (exportBtn) exportBtn.onclick = exportKrCSV;
     renderKrScreener();
   } catch (e) {
     if (body) body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--red)">데이터 로드 실패</td></tr>';
@@ -1145,8 +1140,6 @@ function _showUsMode() {
   const row = document.querySelector('.sc-view-tabs-row');
   if (row) row.style.display = '';
   _restoreUsSectorFilter();
-  const exportBtn = document.getElementById('sc-export-btn');
-  if (exportBtn) exportBtn.onclick = exportScreenerCSV;
   const newsBtn = document.getElementById('sm-news-btn');
   if (newsBtn) newsBtn.style.display = '';
 }
