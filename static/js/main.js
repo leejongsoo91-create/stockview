@@ -17,11 +17,13 @@ async function api(path) {
 }
 
 // ── 오늘의 신호 맵 (Watchlist/Portfolio 공용) ──────────────────────────────────
-// { ticker: {direction:'buy'|'sell', score, term} } — 세션 중 1회만 조회
+// { ticker: {direction:'buy'|'sell', score, term} } — 하루에 1회, 날짜 바뀌면 재조회
 let _dailySignalMap = null;
+let _dailySignalMapDate = null;
 
 async function loadDailySignalMap() {
-  if (_dailySignalMap) return _dailySignalMap;
+  const today = new Date().toDateString();
+  if (_dailySignalMap && _dailySignalMapDate === today) return _dailySignalMap;
   const map = {};
   try {
     const data = await api('/api/daily-signals');
@@ -32,6 +34,7 @@ async function loadDailySignalMap() {
     });
   } catch {}
   _dailySignalMap = map;
+  _dailySignalMapDate = today;
   return map;
 }
 
@@ -825,10 +828,15 @@ function initSocketIO() {
   const socket = io({ transports: ['websocket', 'polling'] });
 
   socket.on('connect', () => {
+    const el = document.getElementById('last-updated');
+    if (el) el.classList.remove('disconnected');
     updateTimestamp();
   });
 
-  socket.on('disconnect', () => {});
+  socket.on('disconnect', () => {
+    const el = document.getElementById('last-updated');
+    if (el) { el.textContent = '⚠ 연결 끊김'; el.classList.add('disconnected'); }
+  });
 
   // 종목 가격 갱신 Push
   socket.on('stocks_update', async () => {

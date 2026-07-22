@@ -80,6 +80,7 @@ function initChart() {
   _bindResizeObserver();
   _bindChartZoomEvents();
   _bindDrawToolEvents();
+  _bindDrawColorEvent();
 }
 
 // 차트 탭 이탈 시 타이머 정지 (main.js에서 호출)
@@ -125,6 +126,8 @@ function _createLWChart() {
     },
     // 좌클릭 드래그는 국내 HTS 방식 구간 확대/축소 제스처로 대체 (_bindChartZoomEvents 참고) — 기본 패닝은 끔
     handleScroll: { pressedMouseMove: false },
+    // 휠/핀치 줌도 끔 — 커스텀 드래그 제스처와 동시에 반응하면 터치에서 충돌하므로 줌 조작은 하나로 통일
+    handleScale: false,
   });
 
   _candleSeries = _lwChart.addCandlestickSeries({
@@ -198,9 +201,12 @@ const _ZOOM_DRAG_MIN_PX = 5;    // 이보다 작은 드래그는 클릭으로 �
 
 function _bindChartZoomEvents() {
   const container = document.getElementById('lw-chart');
+  // 터치 더블탭 감지용 (마우스의 dblclick에 해당 — 전체보기 복귀)
+  let _lastTapTime = 0, _lastTapX = null, _lastTapY = null;
 
-  container.addEventListener('mousedown', e => {
-    if (e.button !== 0) return; // 왼쪽 버튼만
+  // pointerdown/move/up: 마우스·터치·펜을 하나의 이벤트로 통합 처리(로직 중복 없이 터치 지원)
+  container.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return; // 마우스는 왼쪽 버튼만, 터치/펜은 통과
     const rect = container.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -229,7 +235,7 @@ function _bindChartZoomEvents() {
     _zoomBoxEl.style.display = 'block';
   });
 
-  container.addEventListener('mousemove', e => {
+  container.addEventListener('pointermove', e => {
     const rect = container.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -267,17 +273,32 @@ function _bindChartZoomEvents() {
     const container = document.getElementById('lw-chart');
     const rect = container.getBoundingClientRect();
     const endX = e.clientX - rect.left;
+    const endY = e.clientY - rect.top;
     const startX = _zoomDragStartX;
     _zoomDragStartX = null;
     _zoomBoxEl.style.display = 'none';
 
     const deltaPx = endX - startX;
     if (Math.abs(deltaPx) < _ZOOM_DRAG_MIN_PX) {
-      // 클릭으로 간주 — 기존 그림 선택 시도
-      const y = e.clientY - rect.top;
-      const hit = _hitTestDrawings(endX, y);
+      // 클릭(탭)으로 간주 — 기존 그림 선택 시도
+      const hit = _hitTestDrawings(endX, endY);
       _selectedDrawId = hit ? hit.id : null;
       _redrawDrawings();
+
+      // 터치 더블탭 — 마우스 dblclick과 동일하게 전체보기 복귀(더블클릭이 없는 터치용 대체 제스처)
+      if (e.pointerType === 'touch') {
+        const now = Date.now();
+        const near = _lastTapX != null && Math.hypot(endX - _lastTapX, endY - _lastTapY) < 25;
+        if (near && (now - _lastTapTime) < 350) {
+          if (_prevVisibleRange) {
+            _lwChart.timeScale().setVisibleLogicalRange(_prevVisibleRange);
+            _prevVisibleRange = null;
+          }
+          _lastTapTime = 0; _lastTapX = null; _lastTapY = null;
+        } else {
+          _lastTapTime = now; _lastTapX = endX; _lastTapY = endY;
+        }
+      }
       return;
     }
 
@@ -297,8 +318,9 @@ function _bindChartZoomEvents() {
       timeScale.fitContent();
     }
   };
-  container.addEventListener('mouseup', finishDrag);
-  container.addEventListener('mouseleave', finishDrag);
+  container.addEventListener('pointerup', finishDrag);
+  container.addEventListener('pointerleave', finishDrag);
+  container.addEventListener('pointercancel', finishDrag);
 
   container.addEventListener('dblclick', () => {
     if (!_prevVisibleRange) return;
@@ -323,6 +345,7 @@ let _drawPreview     = null;   // 두 번째 점 확정 전 마우스 추적 미
 let _selectedDrawId  = null;   // 손잡이가 표시 중인 그림 id
 let _dragHandleInfo  = null;   // 손잡이 드래그 중: {id, pointIndex}
 let _drawIdSeq       = 1;
+let _currentDrawColor = '#58a6ff'; // 색상 선택기로 바꾸면 이후 새 그림 + 선택된 그림에 적용
 const _DRAW_TYPE_LABEL = { trend: '📈 추세선', hline: '➖ 수평선', vline: '┃ 수직선', fib: '🌀 피보나치' };
 
 function _xToTime(x) { return _lwChart.timeScale().coordinateToTime(x); }
@@ -412,6 +435,26 @@ function _bindDrawToolEvents() {
   });
 }
 
+function _bindDrawColorEvent() {
+  const picker = document.getElementById('draw-color-picker');
+  if (!picker) return;
+  picker.addEventListener('input', () => {
+    _currentDrawColor = picker.value;
+    // 선택된 그림이 있으면 그 자리에서 색상도 즉시 반영
+    if (_selectedDrawId) {
+      const d = _drawings.find(x => x.id === _selectedDrawId);
+      if (d) {
+        d.color = _currentDrawColor;
+        if (d.type === 'hline' && d._priceLineRef) {
+          d._priceLineRef.applyOptions({ color: _currentDrawColor });
+        }
+        _redrawDrawings();
+        _persistCurrentDrawings();
+      }
+    }
+  });
+}
+
 function _exitDrawMode() {
   _drawTool = null;
   _drawPending = null;
@@ -449,7 +492,7 @@ function _handleDrawClick(x, y) {
 }
 
 function _addDrawing(partial) {
-  const d = { id: 'd' + (_drawIdSeq++), color: '#58a6ff', ...partial };
+  const d = { id: 'd' + (_drawIdSeq++), color: _currentDrawColor, ...partial };
   if (d.type === 'hline') {
     d._priceLineRef = _candleSeries.createPriceLine({
       price: d.points[0].price,
