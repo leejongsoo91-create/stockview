@@ -166,12 +166,6 @@ function _fmtSignalPct(pct, isKr) {
   return `<span class="brief-signal-pct ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
 }
 
-function _heldBadgeHtml(s) {
-  if (s.held_days == null) return '';
-  if (s.is_new) return '<span class="brief-held-badge new">NEW</span>';
-  return `<span class="brief-held-badge">${s.held_days}일째</span>`;
-}
-
 function _renderSignalList(elId, items, limit = 10) {
   const el = document.getElementById(elId);
   if (!el) return;

@@ -38,12 +38,19 @@ async function loadDailySignalMap() {
   return map;
 }
 
+// 신호 연속 유지일수 배지 — Brief/Watchlist/Portfolio 공용(main.js가 여러 탭 공유 유틸 위치)
+function _heldBadgeHtml(s) {
+  if (s.held_days == null) return '';
+  if (s.is_new) return '<span class="brief-held-badge new">NEW</span>';
+  return `<span class="brief-held-badge">${s.held_days}일째</span>`;
+}
+
 function signalBadgeHtml(ticker, map) {
   const s = map[ticker];
   if (!s) return '<span class="sig-badge-none">—</span>';
   const cls   = s.direction === 'buy' ? 'buy' : 'sell';
   const label = s.direction === 'buy' ? '▲매수' : '▼매도';
-  return `<span class="sig-badge ${cls}" title="${s.term} 신호 · 점수 ${s.score}">${label} <span class="sig-badge-term">${s.term}</span></span>`;
+  return `<span class="sig-badge ${cls}" title="${s.term} 신호 · 점수 ${s.score}">${label} <span class="sig-badge-term">${s.term}</span></span>${_heldBadgeHtml(s)}`;
 }
 
 // ── 뷰 전환 ─────────────────────────────────────────────────────────────────
@@ -741,11 +748,33 @@ function loadReports() {
   });
 }
 
+let _showReportsBookmarkedOnly = false;
+let _activeReportType = 'all';
+
+function _toggleReportsBookmarkFilter() {
+  _showReportsBookmarkedOnly = !_showReportsBookmarkedOnly;
+  const btn = document.getElementById('reports-bookmark-toggle');
+  if (btn) btn.classList.toggle('active', _showReportsBookmarkedOnly);
+  renderReports(_activeReportType);
+}
+
+function _toggleReportBookmark(url) {
+  const item = _allReports.find(r => r.url === url) || NB.load()[url];
+  if (!item) return;
+  NB.toggle(item);
+  renderReports(_activeReportType);
+}
+
 function renderReports(rtype) {
-  const list = rtype === 'all' ? _allReports : _allReports.filter(r => r.report_type === rtype);
+  _activeReportType = rtype;
+  // 북마크는 News와 같은 NB 저장소를 공유 — report_type 필드로 뉴스 항목과 구분
+  const list = _showReportsBookmarkedOnly
+    ? Object.values(NB.load()).filter(item => item.report_type != null)
+    : (rtype === 'all' ? _allReports : _allReports.filter(r => r.report_type === rtype));
   const el = document.getElementById('reports-list');
   if (!list.length) {
-    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">No reports available.</div>';
+    const emptyMsg = _showReportsBookmarkedOnly ? '북마크한 리포트가 없습니다.' : 'No reports available.';
+    el.innerHTML = `<div style="color:var(--muted);padding:20px 0">${emptyMsg}</div>`;
     return;
   }
   const badgeClass = t => 'badge-' + t.replace(/\s+/g, '-');
@@ -753,6 +782,7 @@ function renderReports(rtype) {
     const tickerBadge = r.ticker
       ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${r.ticker}')">${r.ticker}</span>`
       : '';
+    const bookmarked = NB.has(r.url);
     return `
       <div class="report-card" onclick="window.open('${r.url}','_blank')">
         <span class="report-type-badge ${badgeClass(r.report_type)}">${r.report_type}</span>
@@ -764,11 +794,15 @@ function renderReports(rtype) {
             ${tickerBadge}
           </div>
         </div>
+        <button class="news-bookmark-btn${bookmarked ? ' active' : ''}"
+                onclick="event.stopPropagation(); _toggleReportBookmark('${r.url}')"
+                title="${bookmarked ? '북마크 해제' : '북마크'}">${bookmarked ? '★' : '☆'}</button>
       </div>`;
   }).join('');
 }
 function renderNews() {
-  let list = _showBookmarkedOnly ? Object.values(NB.load())
+  // 북마크는 Reports와 NB 저장소를 공유 — report_type 필드로 리포트 항목은 제외
+  let list = _showBookmarkedOnly ? Object.values(NB.load()).filter(item => item.report_type == null)
     : (_activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment));
   if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
   if (_activeKeyword) list = list.filter(n =>

@@ -26,11 +26,81 @@ const PT = {
   remove(ticker) {
     delete this.load()[ticker];
     this.save();
+    PTG.remove(ticker);
   },
 
   tickers() { return Object.keys(this.load()); },
   count()   { return this.tickers().length; },
 };
+
+// ── 포트폴리오 메모/목표가 저장소 (Watchlist WLN과 동일 구조, 별도 키) ─────────
+const PTN_KEY = 'stockview_portfolio_notes';
+const PTN = {
+  _map: null,
+  load() {
+    if (this._map) return this._map;
+    try { this._map = JSON.parse(localStorage.getItem(PTN_KEY) || '{}'); }
+    catch { this._map = {}; }
+    return this._map;
+  },
+  save() { localStorage.setItem(PTN_KEY, JSON.stringify(this._map)); },
+  get(ticker) { return this.load()[ticker] || {}; },
+  setMemo(ticker, memo) {
+    const m = this.load();
+    const cur = { ...(m[ticker] || {}) };
+    if (memo) cur.memo = memo; else delete cur.memo;
+    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
+    this.save();
+  },
+  setTarget(ticker, target) {
+    const m = this.load();
+    const cur = { ...(m[ticker] || {}) };
+    const n = parseFloat(target);
+    if (target !== '' && Number.isFinite(n)) cur.target = n; else delete cur.target;
+    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
+    this.save();
+  },
+};
+
+// ── 포트폴리오 그룹 저장소 (Watchlist WLG와 동일 구조, 별도 키) ────────────────
+const PTG_KEY = 'stockview_portfolio_groups';
+const PTG_NAMES_KEY = 'stockview_portfolio_group_names';
+const PTG = {
+  _map: null,
+  _names: null,
+  load() {
+    if (this._map) return this._map;
+    try { this._map = JSON.parse(localStorage.getItem(PTG_KEY) || '{}'); }
+    catch { this._map = {}; }
+    return this._map;
+  },
+  save() { localStorage.setItem(PTG_KEY, JSON.stringify(this._map)); },
+  get(ticker) { return this.load()[ticker] || ''; },
+  set(ticker, group) {
+    const m = this.load();
+    if (group) { m[ticker] = group; this.addGroupName(group); } else delete m[ticker];
+    this.save();
+  },
+  remove(ticker) { this.set(ticker, ''); },
+  loadNames() {
+    if (this._names) return this._names;
+    try { this._names = JSON.parse(localStorage.getItem(PTG_NAMES_KEY) || '[]'); }
+    catch { this._names = []; }
+    return this._names;
+  },
+  saveNames() { localStorage.setItem(PTG_NAMES_KEY, JSON.stringify(this._names)); },
+  addGroupName(name) {
+    const names = this.loadNames();
+    if (!names.includes(name)) { names.push(name); this.saveNames(); }
+  },
+  allGroups(tickers) {
+    const m = this.load();
+    const set = new Set(this.loadNames());
+    tickers.forEach(t => { if (m[t]) set.add(m[t]); });
+    return [...set].sort();
+  },
+};
+let _ptGroupFilter = '전체';
 
 // ── 차트 색상 ─────────────────────────────────────────────────────────────────
 const _SECTOR_COLORS = {
@@ -433,6 +503,26 @@ async function renderPortfolio() {
   const totalPnl    = totalValue - totalCost;
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : null;
 
+  // 그룹 필터 탭 구성 (Watchlist와 동일 패턴) — 표에 보여줄 행만 걸러냄, 요약카드·차트는 전체 유지
+  const groups = PTG.allGroups(tickers);
+  if (!groups.includes(_ptGroupFilter) && _ptGroupFilter !== '전체' && _ptGroupFilter !== '미분류') {
+    _ptGroupFilter = '전체';
+  }
+  const groupTabsHtml = ['전체', ...groups, '미분류'].map(g => {
+    const cnt = g === '전체' ? rows.length
+      : g === '미분류' ? rows.filter(r => !PTG.get(r.ticker)).length
+      : rows.filter(r => PTG.get(r.ticker) === g).length;
+    return `<button class="report-tag${g === _ptGroupFilter ? ' active' : ''}" onclick="_ptSelectGroupFilter('${g}')">${g} <span class="wl-group-count">${cnt}</span></button>`;
+  }).join('') + `<button class="wl-group-add-btn" onclick="_ptAddGroupPrompt()" title="새 그룹 추가">+ 그룹</button>`;
+
+  const filteredRows = _ptGroupFilter === '전체' ? rows
+    : _ptGroupFilter === '미분류' ? rows.filter(r => !PTG.get(r.ticker))
+    : rows.filter(r => PTG.get(r.ticker) === _ptGroupFilter);
+
+  const groupOptionsHtml = (current) => ['', ...groups].map(g =>
+    `<option value="${g}" ${g === current ? 'selected' : ''}>${g || '(없음)'}</option>`
+  ).join('') + `<option value="__new__">+ 새 그룹...</option>`;
+
   // 요약 카드
   const summaryHtml = `
     <div class="pt-summary">
@@ -463,6 +553,7 @@ async function renderPortfolio() {
             <th></th>
             <th>Ticker</th>
             <th>Name</th>
+            <th>Group</th>
             <th>Signal</th>
             <th class="num">수량</th>
             <th class="num">평균단가</th>
@@ -471,11 +562,13 @@ async function renderPortfolio() {
             <th class="num">수익률(%)</th>
             <th class="num">투자금액</th>
             <th class="num">평가금액</th>
+            <th>메모</th>
+            <th class="num">목표가</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          ${rows.map(r => {
+          ${filteredRows.map(r => {
             const cls    = _clsPnl(r.pnl);
             const name   = r.stock.name   || r.ticker;
             const nameKo = r.stock.name_ko || '';
@@ -486,6 +579,11 @@ async function renderPortfolio() {
                 <td class="td-name">${name}
                   ${nameKo ? `<span class="td-name-ko">(${nameKo})</span>` : ''}
                 </td>
+                <td onclick="event.stopPropagation()">
+                  <select class="wl-group-select" onchange="_ptOnGroupChange('${r.ticker}', this)">
+                    ${groupOptionsHtml(PTG.get(r.ticker))}
+                  </select>
+                </td>
                 <td>${signalBadgeHtml(r.ticker, sigMap)}</td>
                 <td class="num">${r.qty.toLocaleString()}</td>
                 <td class="num">$${r.avgPrice.toFixed(2)}</td>
@@ -494,6 +592,17 @@ async function renderPortfolio() {
                 <td class="num ${cls}">${_fmtPnlPct(r.pnlPct)}</td>
                 <td class="num">$${r.cost.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
                 <td class="num">${r.value != null ? '$' + r.value.toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</td>
+                <td onclick="event.stopPropagation()">
+                  <input type="text" class="wl-memo-input" placeholder="메모"
+                         value="${_wlEsc(PTN.get(r.ticker).memo)}"
+                         onchange="PTN.setMemo('${r.ticker}', this.value.trim())">
+                </td>
+                <td class="num wl-target-cell" onclick="event.stopPropagation()">
+                  <input type="number" step="0.01" class="wl-target-input" placeholder="목표가"
+                         value="${PTN.get(r.ticker).target ?? ''}"
+                         onchange="PTN.setTarget('${r.ticker}', this.value); renderPortfolio();">
+                  ${_wlTargetStatusHtml(r.curPrice, PTN.get(r.ticker).target)}
+                </td>
                 <td onclick="event.stopPropagation()">
                   <button class="pt-edit-btn" onclick="openPtModal('${r.ticker}', ${r.qty}, ${r.avgPrice})" title="수정">✎</button>
                   <button class="pt-del-btn" onclick="removePtStock('${r.ticker}')" title="삭제">✕</button>
@@ -539,11 +648,38 @@ async function renderPortfolio() {
     </div>
     ${summaryHtml}
     ${chartsHtml}
+    <div class="news-filter-bar wl-group-tabs">${groupTabsHtml}</div>
     ${tableHtml}`;
 
   _renderCharts(rows, totalValue);
   if (totalValue > 0) _recordPtSnapshot(totalValue);
   _drawHistoryChart();
+}
+
+// ── 그룹 필터/배정 (Watchlist와 동일 패턴) ─────────────────────────────────────
+function _ptSelectGroupFilter(group) {
+  _ptGroupFilter = group;
+  renderPortfolio();
+}
+
+function _ptAddGroupPrompt() {
+  const name = prompt('새 그룹 이름을 입력하세요 (예: 성장주, 배당주)');
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  PTG.addGroupName(trimmed);
+  _ptGroupFilter = trimmed;
+  renderPortfolio();
+}
+
+function _ptOnGroupChange(ticker, sel) {
+  let value = sel.value;
+  if (value === '__new__') {
+    const name = prompt('새 그룹 이름을 입력하세요');
+    if (!name || !name.trim()) { renderPortfolio(); return; }
+    value = name.trim();
+  }
+  PTG.set(ticker, value);
+  renderPortfolio();
 }
 
 // ── 종목 삭제 ─────────────────────────────────────────────────────────────────
