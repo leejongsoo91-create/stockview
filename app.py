@@ -910,18 +910,10 @@ def chart(ticker):
 @app.route("/api/stock/<ticker>")
 def stock_detail(ticker):
     t    = ticker.upper()
-    # US 종목 먼저 검색
-    data = cache.get("stocks") or STOCKS
-    stock = next((s for s in data if s["ticker"] == t), None)
+    # US 종목 먼저 검색 (_get_merged_us_stocks가 extra_fields·pe_eps 병합까지 처리)
+    stock = next((s for s in _get_merged_us_stocks() if s["ticker"] == t), None)
     if stock:
-        row    = dict(stock)
-        extras = cache.get("extra_fields") or {}
-        pe_eps = cache.get("pe_eps") or {}
-        if extras.get(t):
-            row.update(extras[t])
-        if pe_eps.get(t):
-            row.update(pe_eps[t])
-        return jsonify(row)
+        return jsonify(stock)
     # KR 종목 검색 (.KS / .KQ)
     kr_data = cache.get("kr_stocks") or []
     kr_stock = next((s for s in kr_data if s["ticker"] == t), None)
