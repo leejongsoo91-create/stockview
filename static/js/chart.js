@@ -1042,6 +1042,10 @@ function _renderCandles(ohlcv, { fit = true } = {}) {
 }
 
 // ── 기술 지표 계산 ────────────────────────────────────────────────────────────
+// data_fetcher.py의 _sig_ema/_sig_rsi/_sig_macd/_sig_sto/_sig_bb/_sig_rsi_divergence/
+// _sig_weekly_trend/_sig_candle_patterns(1797줄~)가 이 계산들을 서버 배치용으로
+// 동일 로직으로 복제해둔 상태 — 여기(MA/BB/RSI다이버전스/주봉리샘플/캔들패턴/MACD/
+// STO/RSI) 중 하나를 고치면 반대쪽도 같이 확인할 것.
 function _calcMA(closes, period) {
   return closes.map((_, i) => {
     if (i < period - 1) return null;

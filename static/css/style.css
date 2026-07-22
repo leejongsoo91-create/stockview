@@ -1175,20 +1175,6 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .investor-row span.up   { color: #3fb950; text-align: right; }
 .investor-row span.down { color: #f85149; text-align: right; }
 
-/* ── 차트 업종 배지 ──────────────────────────────────────────────────────────── */
-.info-sector-badge {
-  display: inline-block;
-  background: rgba(99,102,241,.15);
-  color: #a5b4fc;
-  border: 1px solid rgba(99,102,241,.3);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 11px;
-  line-height: 1.5;
-  max-width: 100%;
-  word-break: keep-all;
-}
-
 /* ── Heatmap 인덱스 탭 ──────────────────────────────────────────────────────── */
 .hm-index-bar {
   display: flex;
@@ -1816,6 +1802,19 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .info-row:last-child { border-bottom: none; }
 .info-row .info-label { color: var(--muted); }
 .info-row .info-val   { font-weight: 600; }
+/* 차트 업종 배지 */
+.info-sector-badge {
+  display: inline-block;
+  background: rgba(99,102,241,.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 100%;
+  word-break: keep-all;
+}
 .info-section-title {
   font-size: 11px;
   text-transform: uppercase;

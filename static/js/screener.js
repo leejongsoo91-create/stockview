@@ -333,7 +333,7 @@ function _calc52wPos(s) {
 }
 
 // ── 필터 + 정렬 적용 ────────────────────────────────────────────────────────
-function getFilteredStocks() {
+function _getFilteredStocks() {
   const sector   = document.getElementById('filter-sector').value;
   const industry = document.getElementById('filter-industry')?.value || 'all';
   const country  = document.getElementById('filter-country')?.value || 'all';
@@ -449,7 +449,7 @@ function _renderHead() {
 function renderScreener(resetPage = false) {
   if (resetPage) _scPage = 1;
   _renderHead();
-  const list  = getFilteredStocks();
+  const list  = _getFilteredStocks();
   const total = list.length;
   const start = (_scPage - 1) * _SC_PAGE_SIZE;
   const page  = list.slice(start, start + _SC_PAGE_SIZE);
@@ -500,7 +500,7 @@ function _renderPagination(total) {
 }
 
 function _goPage(p) {
-  const total = getFilteredStocks().length;
+  const total = _getFilteredStocks().length;
   const totalPages = Math.ceil(total / _SC_PAGE_SIZE);
   _scPage = Math.max(1, Math.min(p, totalPages));
   renderScreener();
@@ -804,7 +804,7 @@ function closeStockModal(e) {
 
 // ── CSV 내보내기 ──────────────────────────────────────────────────────────────
 function exportScreenerCSV() {
-  const list = getFilteredStocks();
+  const list = _getFilteredStocks();
   if (!list.length) return;
 
   const headers = ['No','Ticker','Name','Sector','Industry','Country',

@@ -1,8 +1,12 @@
+import hashlib
 import json
 import logging
 import os
-import threading
 import queue
+import random
+import re
+import threading
+from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -56,118 +60,6 @@ def _emit_worker():
             socketio.emit(event, data)
         except Exception as e:
             log.debug(f"emit 오류 ({event}): {e}")
-
-# ── 미국 주식 더미 데이터 (59개 종목) ─────────────────────────────────────────
-STOCKS = [
-    # Technology (14)
-    {"ticker":"AAPL",  "name":"Apple Inc.",               "name_ko":"애플",             "sector":"Technology",       "price": 175.50, "change":  1.25, "change_pct":  0.72, "volume": 52000000, "market_cap":2750, "pe": 28.5, "eps":  6.16, "week52_high":198.23, "week52_low":124.17},
-    {"ticker":"MSFT",  "name":"Microsoft Corp.",           "name_ko":"마이크로소프트",   "sector":"Technology",       "price": 415.20, "change": -2.30, "change_pct": -0.55, "volume": 18000000, "market_cap":3080, "pe": 35.2, "eps": 11.80, "week52_high":430.82, "week52_low":309.45},
-    {"ticker":"NVDA",  "name":"NVIDIA Corp.",              "name_ko":"엔비디아",         "sector":"Technology",       "price": 875.40, "change": 28.50, "change_pct":  3.37, "volume": 35000000, "market_cap":2160, "pe": 68.3, "eps": 12.81, "week52_high":974.00, "week52_low":373.18},
-    {"ticker":"GOOGL", "name":"Alphabet Inc.",             "name_ko":"알파벳",           "sector":"Technology",       "price": 168.90, "change":  0.75, "change_pct":  0.45, "volume": 22000000, "market_cap":2090, "pe": 25.8, "eps":  6.55, "week52_high":193.31, "week52_low":120.21},
-    {"ticker":"META",  "name":"Meta Platforms",            "name_ko":"메타",             "sector":"Technology",       "price": 515.30, "change": -8.20, "change_pct": -1.57, "volume": 14000000, "market_cap":1310, "pe": 26.4, "eps": 19.52, "week52_high":531.49, "week52_low":279.40},
-    {"ticker":"TSLA",  "name":"Tesla Inc.",                "name_ko":"테슬라",           "sector":"Technology",       "price": 182.60, "change":  5.30, "change_pct":  2.99, "volume": 98000000, "market_cap": 580, "pe": 42.1, "eps":  4.34, "week52_high":299.29, "week52_low":138.80},
-    {"ticker":"AMD",   "name":"Advanced Micro Devices",    "name_ko":"AMD",              "sector":"Technology",       "price": 162.30, "change":  4.10, "change_pct":  2.59, "volume": 45000000, "market_cap": 262, "pe":312.0, "eps":  0.52, "week52_high":227.30, "week52_low": 93.12},
-    {"ticker":"INTC",  "name":"Intel Corp.",               "name_ko":"인텔",             "sector":"Technology",       "price":  35.20, "change": -0.80, "change_pct": -2.22, "volume": 55000000, "market_cap": 148, "pe":  8.5, "eps":  4.14, "week52_high": 51.28, "week52_low": 18.51},
-    {"ticker":"AVGO",  "name":"Broadcom Inc.",             "name_ko":"브로드컴",         "sector":"Technology",       "price":1580.00, "change": 22.50, "change_pct":  1.44, "volume":  3500000, "market_cap": 736, "pe": 52.4, "eps": 30.15, "week52_high":1977.44,"week52_low":746.22},
-    {"ticker":"ORCL",  "name":"Oracle Corp.",              "name_ko":"오라클",           "sector":"Technology",       "price": 128.50, "change":  1.20, "change_pct":  0.94, "volume":  8000000, "market_cap": 350, "pe": 33.2, "eps":  3.87, "week52_high":164.71, "week52_low": 99.26},
-    {"ticker":"CRM",   "name":"Salesforce Inc.",           "name_ko":"세일즈포스",       "sector":"Technology",       "price": 265.40, "change":  3.80, "change_pct":  1.45, "volume":  5500000, "market_cap": 258, "pe": 45.8, "eps":  5.79, "week52_high":318.71, "week52_low":195.58},
-    {"ticker":"ADBE",  "name":"Adobe Inc.",                "name_ko":"어도비",           "sector":"Technology",       "price": 520.30, "change": -6.40, "change_pct": -1.22, "volume":  3200000, "market_cap": 238, "pe": 46.2, "eps": 11.26, "week52_high":638.25, "week52_low":433.95},
-    {"ticker":"QCOM",  "name":"Qualcomm Inc.",             "name_ko":"퀄컴",             "sector":"Technology",       "price": 168.40, "change":  2.30, "change_pct":  1.38, "volume": 10000000, "market_cap": 188, "pe": 23.5, "eps":  7.17, "week52_high":230.63, "week52_low":106.94},
-    {"ticker":"MU",    "name":"Micron Technology",         "name_ko":"마이크론",         "sector":"Technology",       "price": 130.20, "change":  4.50, "change_pct":  3.58, "volume": 20000000, "market_cap": 144, "pe": 36.8, "eps":  3.54, "week52_high":157.54, "week52_low": 53.40},
-    # Finance (10)
-    {"ticker":"JPM",   "name":"JPMorgan Chase",            "name_ko":"JP모건",           "sector":"Finance",          "price": 198.40, "change":  2.10, "change_pct":  1.07, "volume": 12000000, "market_cap": 572, "pe": 11.8, "eps": 16.82, "week52_high":220.82, "week52_low":135.19},
-    {"ticker":"BAC",   "name":"Bank of America",           "name_ko":"뱅크오브아메리카", "sector":"Finance",          "price":  38.50, "change":  0.45, "change_pct":  1.18, "volume": 42000000, "market_cap": 295, "pe": 12.5, "eps":  3.08, "week52_high": 44.44, "week52_low": 24.96},
-    {"ticker":"GS",    "name":"Goldman Sachs",             "name_ko":"골드만삭스",       "sector":"Finance",          "price": 485.20, "change": -3.80, "change_pct": -0.78, "volume":  2800000, "market_cap": 164, "pe": 16.2, "eps": 29.95, "week52_high":532.88, "week52_low":288.56},
-    {"ticker":"MS",    "name":"Morgan Stanley",            "name_ko":"모건스탠리",       "sector":"Finance",          "price": 102.30, "change":  1.20, "change_pct":  1.19, "volume": 11000000, "market_cap": 168, "pe": 18.4, "eps":  5.56, "week52_high":116.38, "week52_low": 69.54},
-    {"ticker":"V",     "name":"Visa Inc.",                 "name_ko":"비자",             "sector":"Finance",          "price": 282.50, "change":  1.85, "change_pct":  0.66, "volume":  6800000, "market_cap": 580, "pe": 31.5, "eps":  8.97, "week52_high":290.96, "week52_low":213.83},
-    {"ticker":"MA",    "name":"Mastercard Inc.",           "name_ko":"마스터카드",       "sector":"Finance",          "price": 482.30, "change":  3.20, "change_pct":  0.67, "volume":  3200000, "market_cap": 454, "pe": 36.8, "eps": 13.10, "week52_high":496.30, "week52_low":344.67},
-    {"ticker":"WFC",   "name":"Wells Fargo",               "name_ko":"웰스파고",         "sector":"Finance",          "price":  58.30, "change":  0.90, "change_pct":  1.57, "volume": 22000000, "market_cap": 208, "pe": 12.1, "eps":  4.82, "week52_high": 67.18, "week52_low": 38.38},
-    {"ticker":"BLK",   "name":"BlackRock Inc.",            "name_ko":"블랙록",           "sector":"Finance",          "price": 798.40, "change":  8.20, "change_pct":  1.04, "volume":  1100000, "market_cap": 119, "pe": 21.8, "eps": 36.62, "week52_high":845.69, "week52_low":632.35},
-    {"ticker":"C",     "name":"Citigroup Inc.",            "name_ko":"씨티그룹",         "sector":"Finance",          "price":  62.40, "change": -0.60, "change_pct": -0.95, "volume": 18000000, "market_cap": 119, "pe":  9.8, "eps":  6.37, "week52_high": 73.87, "week52_low": 38.18},
-    {"ticker":"AXP",   "name":"American Express",          "name_ko":"아메리칸익스프레스","sector":"Finance",         "price": 232.80, "change":  2.50, "change_pct":  1.09, "volume":  3500000, "market_cap": 168, "pe": 19.5, "eps": 11.94, "week52_high":242.51, "week52_low":142.06},
-    # Healthcare (8)
-    {"ticker":"JNJ",   "name":"Johnson & Johnson",         "name_ko":"존슨앤드존슨",     "sector":"Healthcare",       "price": 147.80, "change": -1.20, "change_pct": -0.81, "volume":  9500000, "market_cap": 356, "pe": 24.3, "eps":  6.08, "week52_high":175.97, "week52_low":143.13},
-    {"ticker":"UNH",   "name":"UnitedHealth Group",        "name_ko":"유나이티드헬스",   "sector":"Healthcare",       "price": 492.50, "change":  5.80, "change_pct":  1.19, "volume":  3100000, "market_cap": 453, "pe": 21.5, "eps": 22.91, "week52_high":558.47, "week52_low":419.45},
-    {"ticker":"PFE",   "name":"Pfizer Inc.",               "name_ko":"화이자",           "sector":"Healthcare",       "price":  28.30, "change": -0.40, "change_pct": -1.39, "volume": 35000000, "market_cap": 160, "pe": 45.6, "eps":  0.62, "week52_high": 43.01, "week52_low": 25.20},
-    {"ticker":"ABBV",  "name":"AbbVie Inc.",               "name_ko":"애브비",           "sector":"Healthcare",       "price": 172.40, "change":  1.90, "change_pct":  1.11, "volume":  7200000, "market_cap": 304, "pe": 52.3, "eps":  3.30, "week52_high":182.04, "week52_low":120.57},
-    {"ticker":"LLY",   "name":"Eli Lilly and Co.",         "name_ko":"일라이릴리",       "sector":"Healthcare",       "price": 820.50, "change": 15.30, "change_pct":  1.90, "volume":  3800000, "market_cap": 780, "pe":112.4, "eps":  7.30, "week52_high":862.64, "week52_low":423.82},
-    {"ticker":"MRK",   "name":"Merck & Co.",               "name_ko":"머크",             "sector":"Healthcare",       "price": 128.60, "change":  0.80, "change_pct":  0.63, "volume":  8900000, "market_cap": 326, "pe": 19.2, "eps":  6.70, "week52_high":134.63, "week52_low": 97.02},
-    {"ticker":"TMO",   "name":"Thermo Fisher Scientific",  "name_ko":"써모피셔",         "sector":"Healthcare",       "price": 565.30, "change": -4.20, "change_pct": -0.74, "volume":  1800000, "market_cap": 218, "pe": 31.5, "eps": 17.95, "week52_high":609.86, "week52_low":440.32},
-    {"ticker":"ABT",   "name":"Abbott Laboratories",       "name_ko":"애보트",           "sector":"Healthcare",       "price": 108.40, "change":  1.10, "change_pct":  1.02, "volume":  5500000, "market_cap": 188, "pe": 31.8, "eps":  3.41, "week52_high":118.36, "week52_low": 88.47},
-    # Energy (4)
-    {"ticker":"XOM",   "name":"Exxon Mobil Corp.",         "name_ko":"엑슨모빌",         "sector":"Energy",           "price": 112.30, "change": -0.90, "change_pct": -0.80, "volume": 18000000, "market_cap": 453, "pe": 13.8, "eps":  8.14, "week52_high":123.75, "week52_low": 95.77},
-    {"ticker":"CVX",   "name":"Chevron Corp.",             "name_ko":"셰브론",           "sector":"Energy",           "price": 155.20, "change":  1.40, "change_pct":  0.91, "volume": 11000000, "market_cap": 296, "pe": 15.2, "eps": 10.21, "week52_high":172.72, "week52_low":135.86},
-    {"ticker":"COP",   "name":"ConocoPhillips",            "name_ko":"코노코필립스",     "sector":"Energy",           "price": 118.50, "change":  2.10, "change_pct":  1.80, "volume":  7500000, "market_cap": 147, "pe": 14.5, "eps":  8.17, "week52_high":135.94, "week52_low": 95.43},
-    {"ticker":"SLB",   "name":"SLB (Schlumberger)",        "name_ko":"슐룸베르거",       "sector":"Energy",           "price":  48.20, "change": -0.50, "change_pct": -1.03, "volume": 14000000, "market_cap":  68, "pe": 15.8, "eps":  3.05, "week52_high": 59.32, "week52_low": 42.18},
-    # Consumer Disc. (6)
-    {"ticker":"AMZN",  "name":"Amazon.com Inc.",           "name_ko":"아마존",           "sector":"Consumer Disc.",   "price": 192.50, "change":  3.20, "change_pct":  1.69, "volume": 28000000, "market_cap":2020, "pe": 58.2, "eps":  3.31, "week52_high":201.20, "week52_low":101.26},
-    {"ticker":"HD",    "name":"Home Depot Inc.",           "name_ko":"홈디포",           "sector":"Consumer Disc.",   "price": 342.80, "change": -4.20, "change_pct": -1.21, "volume":  4200000, "market_cap": 340, "pe": 22.5, "eps": 15.23, "week52_high":396.52, "week52_low":274.97},
-    {"ticker":"COST",  "name":"Costco Wholesale",          "name_ko":"코스트코",         "sector":"Consumer Disc.",   "price": 858.30, "change":  8.50, "change_pct":  1.00, "volume":  2200000, "market_cap": 380, "pe": 52.8, "eps": 16.26, "week52_high":923.83, "week52_low":680.82},
-    {"ticker":"NKE",   "name":"Nike Inc.",                 "name_ko":"나이키",           "sector":"Consumer Disc.",   "price":  95.40, "change": -1.80, "change_pct": -1.85, "volume": 10000000, "market_cap": 144, "pe": 27.4, "eps":  3.48, "week52_high":123.21, "week52_low": 70.75},
-    {"ticker":"MCD",   "name":"McDonald's Corp.",          "name_ko":"맥도날드",         "sector":"Consumer Disc.",   "price": 285.60, "change":  1.20, "change_pct":  0.42, "volume":  4800000, "market_cap": 204, "pe": 24.8, "eps": 11.51, "week52_high":317.97, "week52_low":245.73},
-    {"ticker":"SBUX",  "name":"Starbucks Corp.",           "name_ko":"스타벅스",         "sector":"Consumer Disc.",   "price":  78.30, "change": -2.10, "change_pct": -2.61, "volume":  9500000, "market_cap":  88, "pe": 23.5, "eps":  3.33, "week52_high":115.48, "week52_low": 71.61},
-    # Consumer Staples (4)
-    {"ticker":"WMT",   "name":"Walmart Inc.",              "name_ko":"월마트",           "sector":"Consumer Staples", "price":  68.40, "change":  0.55, "change_pct":  0.81, "volume": 15000000, "market_cap": 548, "pe": 36.1, "eps":  1.89, "week52_high": 74.46, "week52_low": 47.19},
-    {"ticker":"PG",    "name":"Procter & Gamble",          "name_ko":"P&G",              "sector":"Consumer Staples", "price": 165.20, "change":  0.80, "change_pct":  0.49, "volume":  7200000, "market_cap": 391, "pe": 26.4, "eps":  6.26, "week52_high":173.31, "week52_low":131.96},
-    {"ticker":"KO",    "name":"Coca-Cola Co.",             "name_ko":"코카콜라",         "sector":"Consumer Staples", "price":  62.40, "change":  0.30, "change_pct":  0.48, "volume": 13000000, "market_cap": 269, "pe": 26.5, "eps":  2.36, "week52_high": 66.87, "week52_low": 51.55},
-    {"ticker":"PEP",   "name":"PepsiCo Inc.",              "name_ko":"펩시코",           "sector":"Consumer Staples", "price": 175.30, "change": -0.70, "change_pct": -0.40, "volume":  5800000, "market_cap": 240, "pe": 24.8, "eps":  7.07, "week52_high":196.88, "week52_low":155.83},
-    # Industrial (5)
-    {"ticker":"BA",    "name":"Boeing Co.",                "name_ko":"보잉",             "sector":"Industrial",       "price": 188.20, "change": -2.50, "change_pct": -1.31, "volume":  9800000, "market_cap": 115, "pe":   0.0,"eps":-19.45, "week52_high":267.54, "week52_low":159.70},
-    {"ticker":"CAT",   "name":"Caterpillar Inc.",          "name_ko":"캐터필러",         "sector":"Industrial",       "price": 352.40, "change":  4.20, "change_pct":  1.21, "volume":  3500000, "market_cap": 175, "pe": 17.2, "eps": 20.49, "week52_high":388.63, "week52_low":208.37},
-    {"ticker":"HON",   "name":"Honeywell Intl.",           "name_ko":"허니웰",           "sector":"Industrial",       "price": 196.30, "change":  1.80, "change_pct":  0.93, "volume":  4200000, "market_cap": 127, "pe": 23.4, "eps":  8.39, "week52_high":229.43, "week52_low":181.86},
-    {"ticker":"UPS",   "name":"United Parcel Service",     "name_ko":"UPS",              "sector":"Industrial",       "price": 148.20, "change": -3.40, "change_pct": -2.24, "volume":  6800000, "market_cap": 126, "pe": 20.1, "eps":  7.37, "week52_high":193.02, "week52_low":130.66},
-    {"ticker":"RTX",   "name":"RTX Corp.",                 "name_ko":"RTX",              "sector":"Industrial",       "price": 105.30, "change":  0.90, "change_pct":  0.86, "volume":  7200000, "market_cap": 140, "pe": 40.5, "eps":  2.60, "week52_high":106.48, "week52_low": 63.76},
-    # Communication (3)
-    {"ticker":"NFLX",  "name":"Netflix Inc.",              "name_ko":"넷플릭스",         "sector":"Communication",    "price": 628.50, "change": 12.30, "change_pct":  1.99, "volume":  4200000, "market_cap": 271, "pe": 48.2, "eps": 13.04, "week52_high":700.64, "week52_low":344.73},
-    {"ticker":"DIS",   "name":"Walt Disney Co.",           "name_ko":"월트디즈니",       "sector":"Communication",    "price": 112.40, "change": -1.60, "change_pct": -1.40, "volume": 12000000, "market_cap": 205, "pe": 72.8, "eps":  1.54, "week52_high":123.74, "week52_low": 78.73},
-    {"ticker":"T",     "name":"AT&T Inc.",                 "name_ko":"AT&T",             "sector":"Communication",    "price":  18.20, "change":  0.10, "change_pct":  0.55, "volume": 55000000, "market_cap": 130, "pe": 12.5, "eps":  1.46, "week52_high": 20.77, "week52_low": 14.46},
-    # Real Estate (2)
-    {"ticker":"AMT",   "name":"American Tower Corp.",      "name_ko":"아메리칸타워",     "sector":"Real Estate",      "price": 198.40, "change":  2.80, "change_pct":  1.43, "volume":  2400000, "market_cap":  93, "pe": 48.7, "eps":  4.07, "week52_high":242.72, "week52_low":154.58},
-    {"ticker":"PLD",   "name":"Prologis Inc.",             "name_ko":"프로로지스",       "sector":"Real Estate",      "price": 128.30, "change": -1.10, "change_pct": -0.85, "volume":  5800000, "market_cap": 119, "pe": 37.2, "eps":  3.45, "week52_high":140.44, "week52_low":100.59},
-    # Materials (2)
-    {"ticker":"LIN",   "name":"Linde plc",                 "name_ko":"린데",             "sector":"Materials",        "price": 458.20, "change":  3.50, "change_pct":  0.77, "volume":  1800000, "market_cap": 218, "pe": 33.8, "eps": 13.56, "week52_high":479.24, "week52_low":352.72},
-    {"ticker":"APD",   "name":"Air Products & Chemicals",  "name_ko":"에어프로덕츠",     "sector":"Materials",        "price": 265.40, "change": -2.20, "change_pct": -0.82, "volume":  1500000, "market_cap":  59, "pe": 23.6, "eps": 11.25, "week52_high":336.86, "week52_low":233.56},
-    # Utilities (2)
-    {"ticker":"NEE",   "name":"NextEra Energy",            "name_ko":"넥스트에라에너지", "sector":"Utilities",        "price":  68.30, "change":  0.40, "change_pct":  0.59, "volume":  9500000, "market_cap": 139, "pe": 21.4, "eps":  3.19, "week52_high": 85.76, "week52_low": 44.67},
-    {"ticker":"DUK",   "name":"Duke Energy Corp.",         "name_ko":"듀크에너지",       "sector":"Utilities",        "price": 102.40, "change":  0.60, "change_pct":  0.59, "volume":  4200000, "market_cap":  66, "pe": 20.8, "eps":  4.92, "week52_high":108.38, "week52_low": 87.65},
-]
-
-# ── 지수 더미 데이터 ────────────────────────────────────────────────────────────
-INDICES = [
-    {"name":"S&P 500",      "value":  5248.32, "change":   18.54, "change_pct":  0.35},
-    {"name":"NASDAQ",       "value": 16428.82, "change":  -45.23, "change_pct": -0.27},
-    {"name":"Dow Jones",    "value": 39387.76, "change":  125.08, "change_pct":  0.32},
-    {"name":"Russell 2000", "value":  2082.47, "change":    8.34, "change_pct":  0.40},
-    {"name":"KOSPI",        "value":  2700.00, "change":   15.00, "change_pct":  0.56},
-    {"name":"KOSDAQ",       "value":   870.00, "change":    3.50, "change_pct":  0.40},
-    {"name":"US500",        "value":  5230.00, "change":   18.00, "change_pct":  0.34},
-    {"name":"US30",         "value": 38950.00, "change":  120.00, "change_pct":  0.31},
-    {"name":"US Tech 100",  "value": 18350.00, "change":  -55.00, "change_pct": -0.30},
-    {"name":"WTI Crude",    "value":    82.45, "change":    0.87, "change_pct":  1.07},
-    {"name":"Gold",         "value":  2325.80, "change":  -12.30, "change_pct": -0.53},
-    {"name":"Bitcoin",      "value": 67500.00, "change":  850.00, "change_pct":  1.28},
-    {"name":"10Y Yield",    "value":     4.42, "change":    0.03, "change_pct":  0.68},
-    {"name":"DXY",          "value":   104.52, "change":   -0.18, "change_pct": -0.17},
-    {"name":"EUR/USD",      "value":    1.082, "change":  -0.001, "change_pct": -0.11},
-    {"name":"VIX",          "value":    13.52, "change":   -0.48, "change_pct": -3.43},
-]
-
-# ── 뉴스 더미 데이터 ────────────────────────────────────────────────────────────
-NEWS = [
-    {"id": 1, "title":"NVIDIA Surges After Reporting Record Q1 Revenue, Beats Estimates by Wide Margin",   "source":"Bloomberg",       "time":"10m ago",  "ticker":"NVDA", "sentiment":"positive"},
-    {"id": 2, "title":"Fed Holds Rates Steady, Signals Just One Cut Possible This Year",                    "source":"Reuters",         "time":"35m ago",  "ticker":None,   "sentiment":"neutral"},
-    {"id": 3, "title":"Apple Set to Unveil AI-Powered Features Across iPhone Lineup at WWDC",              "source":"WSJ",             "time":"1h ago",   "ticker":"AAPL", "sentiment":"positive"},
-    {"id": 4, "title":"Tesla Faces Expanded Recall on Cybertruck Over Safety Concerns",                     "source":"CNBC",            "time":"2h ago",   "ticker":"TSLA", "sentiment":"negative"},
-    {"id": 5, "title":"Eli Lilly's Obesity Drug Zepbound Shows Strong Demand, Raises Full-Year Outlook",   "source":"Financial Times", "time":"3h ago",   "ticker":"LLY",  "sentiment":"positive"},
-    {"id": 6, "title":"Meta Confirms 2025 Launch Date for AR Glasses, Shares Jump 3%",                     "source":"TechCrunch",      "time":"4h ago",   "ticker":"META", "sentiment":"positive"},
-    {"id": 7, "title":"JPMorgan Raises S&P 500 Year-End Target to 5,500 Amid Earnings Optimism",           "source":"Bloomberg",       "time":"5h ago",   "ticker":"JPM",  "sentiment":"positive"},
-    {"id": 8, "title":"Starbucks CEO Steps Down Amid Slowing Sales and Customer Traffic Decline",           "source":"Reuters",         "time":"6h ago",   "ticker":"SBUX", "sentiment":"negative"},
-    {"id": 9, "title":"US CPI Comes in Slightly Above Expectations, Weighing on Rate Cut Bets",             "source":"AP",              "time":"7h ago",   "ticker":None,   "sentiment":"negative"},
-    {"id":10, "title":"Netflix Adds 9.3M Subscribers in Q1, Surpassing Wall Street Forecasts",             "source":"CNBC",            "time":"8h ago",   "ticker":"NFLX", "sentiment":"positive"},
-    {"id":11, "title":"Intel Announces $8.5B in Federal Grants to Boost US Chip Manufacturing",            "source":"WSJ",             "time":"9h ago",   "ticker":"INTC", "sentiment":"positive"},
-    {"id":12, "title":"Boeing Faces New FAA Investigation Over Quality Control at 737 MAX Plant",           "source":"Financial Times", "time":"10h ago",  "ticker":"BA",   "sentiment":"negative"},
-]
-
 
 # ── 백그라운드 갱신 함수 ─────────────────────────────────────────────────────
 
@@ -319,7 +211,6 @@ def refresh_reports():
 
 def refresh_earnings():
     """이번 주 + 다음 주 어닝스 캘린더 수집 (1시간 캐시)."""
-    from datetime import date, timedelta
     try:
         today = date.today()
         # 이번 주 월~금
@@ -612,8 +503,7 @@ def kr_stocks():
 @app.route("/api/kr-investor/<code>")
 def kr_investor(code: str):
     """국내주식 수급 동향: 외국인·기관·개인 최근 5일 (Naver, 1시간 lazy 캐시)"""
-    import re as _re
-    code = _re.sub(r"[^0-9]", "", code)[:6]
+    code = re.sub(r"[^0-9]", "", code)[:6]
     if not code:
         return jsonify([])
     key = f"kr_investor_{code}"
@@ -640,7 +530,6 @@ def kr_disclosures():
 @app.route("/api/kr-news/<code>")
 def kr_news(code: str):
     """국내주식 종목별 뉴스 (Naver Finance, 30분 lazy 캐시)"""
-    import re
     code = re.sub(r"[^0-9]", "", code)[:6]
     if not code:
         return jsonify([])
@@ -673,7 +562,6 @@ def reports():
 
 @app.route("/api/earnings")
 def earnings():
-    from datetime import date, timedelta
     period = request.args.get("period", "week")  # today | week | next_week
     all_items = cache.get("earnings") or []
 
@@ -990,10 +878,6 @@ def cache_status():
 
 
 # ── 더미 OHLCV 폴백 ──────────────────────────────────────────────────────────
-import random, hashlib
-from datetime import datetime, timedelta
-
-
 def _generate_ohlcv_dummy(ticker: str, days: int = 180) -> list[dict]:
     stock = next((s for s in STOCKS if s["ticker"] == ticker), None)
     base_price = stock["price"] if stock else 100.0
@@ -1002,16 +886,128 @@ def _generate_ohlcv_dummy(ticker: str, days: int = 180) -> list[dict]:
     price = base_price * 0.82
     data  = []
     for i in range(days, 0, -1):
-        date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+        d_str = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
         op   = price
         cl   = round(op * (1 + rng.gauss(0.0005, 0.018)), 2)
         hi   = round(max(op, cl) * (1 + rng.uniform(0, 0.012)), 2)
         lo   = round(min(op, cl) * (1 - rng.uniform(0, 0.012)), 2)
         vol  = int((stock["volume"] if stock else 1000000) * rng.uniform(0.5, 1.5))
-        data.append({"time": date, "open": round(op, 2), "high": hi, "low": lo,
+        data.append({"time": d_str, "open": round(op, 2), "high": hi, "low": lo,
                      "close": cl, "volume": vol})
         price = cl
     return data
+
+
+# ── 미국 주식 더미 데이터 (59개 종목) ─────────────────────────────────────────
+STOCKS = [
+    # Technology (14)
+    {"ticker":"AAPL",  "name":"Apple Inc.",               "sector":"Technology",       "price": 175.50, "change":  1.25, "change_pct":  0.72, "volume": 52000000, "market_cap":2750, "pe": 28.5, "eps":  6.16, "week52_high":198.23, "week52_low":124.17},
+    {"ticker":"MSFT",  "name":"Microsoft Corp.",           "sector":"Technology",       "price": 415.20, "change": -2.30, "change_pct": -0.55, "volume": 18000000, "market_cap":3080, "pe": 35.2, "eps": 11.80, "week52_high":430.82, "week52_low":309.45},
+    {"ticker":"NVDA",  "name":"NVIDIA Corp.",              "sector":"Technology",       "price": 875.40, "change": 28.50, "change_pct":  3.37, "volume": 35000000, "market_cap":2160, "pe": 68.3, "eps": 12.81, "week52_high":974.00, "week52_low":373.18},
+    {"ticker":"GOOGL", "name":"Alphabet Inc.",             "sector":"Technology",       "price": 168.90, "change":  0.75, "change_pct":  0.45, "volume": 22000000, "market_cap":2090, "pe": 25.8, "eps":  6.55, "week52_high":193.31, "week52_low":120.21},
+    {"ticker":"META",  "name":"Meta Platforms",            "sector":"Technology",       "price": 515.30, "change": -8.20, "change_pct": -1.57, "volume": 14000000, "market_cap":1310, "pe": 26.4, "eps": 19.52, "week52_high":531.49, "week52_low":279.40},
+    {"ticker":"TSLA",  "name":"Tesla Inc.",                "sector":"Technology",       "price": 182.60, "change":  5.30, "change_pct":  2.99, "volume": 98000000, "market_cap": 580, "pe": 42.1, "eps":  4.34, "week52_high":299.29, "week52_low":138.80},
+    {"ticker":"AMD",   "name":"Advanced Micro Devices",    "sector":"Technology",       "price": 162.30, "change":  4.10, "change_pct":  2.59, "volume": 45000000, "market_cap": 262, "pe":312.0, "eps":  0.52, "week52_high":227.30, "week52_low": 93.12},
+    {"ticker":"INTC",  "name":"Intel Corp.",               "sector":"Technology",       "price":  35.20, "change": -0.80, "change_pct": -2.22, "volume": 55000000, "market_cap": 148, "pe":  8.5, "eps":  4.14, "week52_high": 51.28, "week52_low": 18.51},
+    {"ticker":"AVGO",  "name":"Broadcom Inc.",             "sector":"Technology",       "price":1580.00, "change": 22.50, "change_pct":  1.44, "volume":  3500000, "market_cap": 736, "pe": 52.4, "eps": 30.15, "week52_high":1977.44,"week52_low":746.22},
+    {"ticker":"ORCL",  "name":"Oracle Corp.",              "sector":"Technology",       "price": 128.50, "change":  1.20, "change_pct":  0.94, "volume":  8000000, "market_cap": 350, "pe": 33.2, "eps":  3.87, "week52_high":164.71, "week52_low": 99.26},
+    {"ticker":"CRM",   "name":"Salesforce Inc.",           "sector":"Technology",       "price": 265.40, "change":  3.80, "change_pct":  1.45, "volume":  5500000, "market_cap": 258, "pe": 45.8, "eps":  5.79, "week52_high":318.71, "week52_low":195.58},
+    {"ticker":"ADBE",  "name":"Adobe Inc.",                "sector":"Technology",       "price": 520.30, "change": -6.40, "change_pct": -1.22, "volume":  3200000, "market_cap": 238, "pe": 46.2, "eps": 11.26, "week52_high":638.25, "week52_low":433.95},
+    {"ticker":"QCOM",  "name":"Qualcomm Inc.",             "sector":"Technology",       "price": 168.40, "change":  2.30, "change_pct":  1.38, "volume": 10000000, "market_cap": 188, "pe": 23.5, "eps":  7.17, "week52_high":230.63, "week52_low":106.94},
+    {"ticker":"MU",    "name":"Micron Technology",         "sector":"Technology",       "price": 130.20, "change":  4.50, "change_pct":  3.58, "volume": 20000000, "market_cap": 144, "pe": 36.8, "eps":  3.54, "week52_high":157.54, "week52_low": 53.40},
+    # Finance (10)
+    {"ticker":"JPM",   "name":"JPMorgan Chase",            "sector":"Finance",          "price": 198.40, "change":  2.10, "change_pct":  1.07, "volume": 12000000, "market_cap": 572, "pe": 11.8, "eps": 16.82, "week52_high":220.82, "week52_low":135.19},
+    {"ticker":"BAC",   "name":"Bank of America",           "sector":"Finance",          "price":  38.50, "change":  0.45, "change_pct":  1.18, "volume": 42000000, "market_cap": 295, "pe": 12.5, "eps":  3.08, "week52_high": 44.44, "week52_low": 24.96},
+    {"ticker":"GS",    "name":"Goldman Sachs",             "sector":"Finance",          "price": 485.20, "change": -3.80, "change_pct": -0.78, "volume":  2800000, "market_cap": 164, "pe": 16.2, "eps": 29.95, "week52_high":532.88, "week52_low":288.56},
+    {"ticker":"MS",    "name":"Morgan Stanley",            "sector":"Finance",          "price": 102.30, "change":  1.20, "change_pct":  1.19, "volume": 11000000, "market_cap": 168, "pe": 18.4, "eps":  5.56, "week52_high":116.38, "week52_low": 69.54},
+    {"ticker":"V",     "name":"Visa Inc.",                 "sector":"Finance",          "price": 282.50, "change":  1.85, "change_pct":  0.66, "volume":  6800000, "market_cap": 580, "pe": 31.5, "eps":  8.97, "week52_high":290.96, "week52_low":213.83},
+    {"ticker":"MA",    "name":"Mastercard Inc.",           "sector":"Finance",          "price": 482.30, "change":  3.20, "change_pct":  0.67, "volume":  3200000, "market_cap": 454, "pe": 36.8, "eps": 13.10, "week52_high":496.30, "week52_low":344.67},
+    {"ticker":"WFC",   "name":"Wells Fargo",               "sector":"Finance",          "price":  58.30, "change":  0.90, "change_pct":  1.57, "volume": 22000000, "market_cap": 208, "pe": 12.1, "eps":  4.82, "week52_high": 67.18, "week52_low": 38.38},
+    {"ticker":"BLK",   "name":"BlackRock Inc.",            "sector":"Finance",          "price": 798.40, "change":  8.20, "change_pct":  1.04, "volume":  1100000, "market_cap": 119, "pe": 21.8, "eps": 36.62, "week52_high":845.69, "week52_low":632.35},
+    {"ticker":"C",     "name":"Citigroup Inc.",            "sector":"Finance",          "price":  62.40, "change": -0.60, "change_pct": -0.95, "volume": 18000000, "market_cap": 119, "pe":  9.8, "eps":  6.37, "week52_high": 73.87, "week52_low": 38.18},
+    {"ticker":"AXP",   "name":"American Express",          "sector":"Finance",         "price": 232.80, "change":  2.50, "change_pct":  1.09, "volume":  3500000, "market_cap": 168, "pe": 19.5, "eps": 11.94, "week52_high":242.51, "week52_low":142.06},
+    # Healthcare (8)
+    {"ticker":"JNJ",   "name":"Johnson & Johnson",         "sector":"Healthcare",       "price": 147.80, "change": -1.20, "change_pct": -0.81, "volume":  9500000, "market_cap": 356, "pe": 24.3, "eps":  6.08, "week52_high":175.97, "week52_low":143.13},
+    {"ticker":"UNH",   "name":"UnitedHealth Group",        "sector":"Healthcare",       "price": 492.50, "change":  5.80, "change_pct":  1.19, "volume":  3100000, "market_cap": 453, "pe": 21.5, "eps": 22.91, "week52_high":558.47, "week52_low":419.45},
+    {"ticker":"PFE",   "name":"Pfizer Inc.",               "sector":"Healthcare",       "price":  28.30, "change": -0.40, "change_pct": -1.39, "volume": 35000000, "market_cap": 160, "pe": 45.6, "eps":  0.62, "week52_high": 43.01, "week52_low": 25.20},
+    {"ticker":"ABBV",  "name":"AbbVie Inc.",               "sector":"Healthcare",       "price": 172.40, "change":  1.90, "change_pct":  1.11, "volume":  7200000, "market_cap": 304, "pe": 52.3, "eps":  3.30, "week52_high":182.04, "week52_low":120.57},
+    {"ticker":"LLY",   "name":"Eli Lilly and Co.",         "sector":"Healthcare",       "price": 820.50, "change": 15.30, "change_pct":  1.90, "volume":  3800000, "market_cap": 780, "pe":112.4, "eps":  7.30, "week52_high":862.64, "week52_low":423.82},
+    {"ticker":"MRK",   "name":"Merck & Co.",               "sector":"Healthcare",       "price": 128.60, "change":  0.80, "change_pct":  0.63, "volume":  8900000, "market_cap": 326, "pe": 19.2, "eps":  6.70, "week52_high":134.63, "week52_low": 97.02},
+    {"ticker":"TMO",   "name":"Thermo Fisher Scientific",  "sector":"Healthcare",       "price": 565.30, "change": -4.20, "change_pct": -0.74, "volume":  1800000, "market_cap": 218, "pe": 31.5, "eps": 17.95, "week52_high":609.86, "week52_low":440.32},
+    {"ticker":"ABT",   "name":"Abbott Laboratories",       "sector":"Healthcare",       "price": 108.40, "change":  1.10, "change_pct":  1.02, "volume":  5500000, "market_cap": 188, "pe": 31.8, "eps":  3.41, "week52_high":118.36, "week52_low": 88.47},
+    # Energy (4)
+    {"ticker":"XOM",   "name":"Exxon Mobil Corp.",         "sector":"Energy",           "price": 112.30, "change": -0.90, "change_pct": -0.80, "volume": 18000000, "market_cap": 453, "pe": 13.8, "eps":  8.14, "week52_high":123.75, "week52_low": 95.77},
+    {"ticker":"CVX",   "name":"Chevron Corp.",             "sector":"Energy",           "price": 155.20, "change":  1.40, "change_pct":  0.91, "volume": 11000000, "market_cap": 296, "pe": 15.2, "eps": 10.21, "week52_high":172.72, "week52_low":135.86},
+    {"ticker":"COP",   "name":"ConocoPhillips",            "sector":"Energy",           "price": 118.50, "change":  2.10, "change_pct":  1.80, "volume":  7500000, "market_cap": 147, "pe": 14.5, "eps":  8.17, "week52_high":135.94, "week52_low": 95.43},
+    {"ticker":"SLB",   "name":"SLB (Schlumberger)",        "sector":"Energy",           "price":  48.20, "change": -0.50, "change_pct": -1.03, "volume": 14000000, "market_cap":  68, "pe": 15.8, "eps":  3.05, "week52_high": 59.32, "week52_low": 42.18},
+    # Consumer Disc. (6)
+    {"ticker":"AMZN",  "name":"Amazon.com Inc.",           "sector":"Consumer Disc.",   "price": 192.50, "change":  3.20, "change_pct":  1.69, "volume": 28000000, "market_cap":2020, "pe": 58.2, "eps":  3.31, "week52_high":201.20, "week52_low":101.26},
+    {"ticker":"HD",    "name":"Home Depot Inc.",           "sector":"Consumer Disc.",   "price": 342.80, "change": -4.20, "change_pct": -1.21, "volume":  4200000, "market_cap": 340, "pe": 22.5, "eps": 15.23, "week52_high":396.52, "week52_low":274.97},
+    {"ticker":"COST",  "name":"Costco Wholesale",          "sector":"Consumer Disc.",   "price": 858.30, "change":  8.50, "change_pct":  1.00, "volume":  2200000, "market_cap": 380, "pe": 52.8, "eps": 16.26, "week52_high":923.83, "week52_low":680.82},
+    {"ticker":"NKE",   "name":"Nike Inc.",                 "sector":"Consumer Disc.",   "price":  95.40, "change": -1.80, "change_pct": -1.85, "volume": 10000000, "market_cap": 144, "pe": 27.4, "eps":  3.48, "week52_high":123.21, "week52_low": 70.75},
+    {"ticker":"MCD",   "name":"McDonald's Corp.",          "sector":"Consumer Disc.",   "price": 285.60, "change":  1.20, "change_pct":  0.42, "volume":  4800000, "market_cap": 204, "pe": 24.8, "eps": 11.51, "week52_high":317.97, "week52_low":245.73},
+    {"ticker":"SBUX",  "name":"Starbucks Corp.",           "sector":"Consumer Disc.",   "price":  78.30, "change": -2.10, "change_pct": -2.61, "volume":  9500000, "market_cap":  88, "pe": 23.5, "eps":  3.33, "week52_high":115.48, "week52_low": 71.61},
+    # Consumer Staples (4)
+    {"ticker":"WMT",   "name":"Walmart Inc.",              "sector":"Consumer Staples", "price":  68.40, "change":  0.55, "change_pct":  0.81, "volume": 15000000, "market_cap": 548, "pe": 36.1, "eps":  1.89, "week52_high": 74.46, "week52_low": 47.19},
+    {"ticker":"PG",    "name":"Procter & Gamble",          "sector":"Consumer Staples", "price": 165.20, "change":  0.80, "change_pct":  0.49, "volume":  7200000, "market_cap": 391, "pe": 26.4, "eps":  6.26, "week52_high":173.31, "week52_low":131.96},
+    {"ticker":"KO",    "name":"Coca-Cola Co.",             "sector":"Consumer Staples", "price":  62.40, "change":  0.30, "change_pct":  0.48, "volume": 13000000, "market_cap": 269, "pe": 26.5, "eps":  2.36, "week52_high": 66.87, "week52_low": 51.55},
+    {"ticker":"PEP",   "name":"PepsiCo Inc.",              "sector":"Consumer Staples", "price": 175.30, "change": -0.70, "change_pct": -0.40, "volume":  5800000, "market_cap": 240, "pe": 24.8, "eps":  7.07, "week52_high":196.88, "week52_low":155.83},
+    # Industrial (5)
+    {"ticker":"BA",    "name":"Boeing Co.",                "sector":"Industrial",       "price": 188.20, "change": -2.50, "change_pct": -1.31, "volume":  9800000, "market_cap": 115, "pe":   0.0,"eps":-19.45, "week52_high":267.54, "week52_low":159.70},
+    {"ticker":"CAT",   "name":"Caterpillar Inc.",          "sector":"Industrial",       "price": 352.40, "change":  4.20, "change_pct":  1.21, "volume":  3500000, "market_cap": 175, "pe": 17.2, "eps": 20.49, "week52_high":388.63, "week52_low":208.37},
+    {"ticker":"HON",   "name":"Honeywell Intl.",           "sector":"Industrial",       "price": 196.30, "change":  1.80, "change_pct":  0.93, "volume":  4200000, "market_cap": 127, "pe": 23.4, "eps":  8.39, "week52_high":229.43, "week52_low":181.86},
+    {"ticker":"UPS",   "name":"United Parcel Service",     "sector":"Industrial",       "price": 148.20, "change": -3.40, "change_pct": -2.24, "volume":  6800000, "market_cap": 126, "pe": 20.1, "eps":  7.37, "week52_high":193.02, "week52_low":130.66},
+    {"ticker":"RTX",   "name":"RTX Corp.",                 "sector":"Industrial",       "price": 105.30, "change":  0.90, "change_pct":  0.86, "volume":  7200000, "market_cap": 140, "pe": 40.5, "eps":  2.60, "week52_high":106.48, "week52_low": 63.76},
+    # Communication (3)
+    {"ticker":"NFLX",  "name":"Netflix Inc.",              "sector":"Communication",    "price": 628.50, "change": 12.30, "change_pct":  1.99, "volume":  4200000, "market_cap": 271, "pe": 48.2, "eps": 13.04, "week52_high":700.64, "week52_low":344.73},
+    {"ticker":"DIS",   "name":"Walt Disney Co.",           "sector":"Communication",    "price": 112.40, "change": -1.60, "change_pct": -1.40, "volume": 12000000, "market_cap": 205, "pe": 72.8, "eps":  1.54, "week52_high":123.74, "week52_low": 78.73},
+    {"ticker":"T",     "name":"AT&T Inc.",                 "sector":"Communication",    "price":  18.20, "change":  0.10, "change_pct":  0.55, "volume": 55000000, "market_cap": 130, "pe": 12.5, "eps":  1.46, "week52_high": 20.77, "week52_low": 14.46},
+    # Real Estate (2)
+    {"ticker":"AMT",   "name":"American Tower Corp.",      "sector":"Real Estate",      "price": 198.40, "change":  2.80, "change_pct":  1.43, "volume":  2400000, "market_cap":  93, "pe": 48.7, "eps":  4.07, "week52_high":242.72, "week52_low":154.58},
+    {"ticker":"PLD",   "name":"Prologis Inc.",             "sector":"Real Estate",      "price": 128.30, "change": -1.10, "change_pct": -0.85, "volume":  5800000, "market_cap": 119, "pe": 37.2, "eps":  3.45, "week52_high":140.44, "week52_low":100.59},
+    # Materials (2)
+    {"ticker":"LIN",   "name":"Linde plc",                 "sector":"Materials",        "price": 458.20, "change":  3.50, "change_pct":  0.77, "volume":  1800000, "market_cap": 218, "pe": 33.8, "eps": 13.56, "week52_high":479.24, "week52_low":352.72},
+    {"ticker":"APD",   "name":"Air Products & Chemicals",  "sector":"Materials",        "price": 265.40, "change": -2.20, "change_pct": -0.82, "volume":  1500000, "market_cap":  59, "pe": 23.6, "eps": 11.25, "week52_high":336.86, "week52_low":233.56},
+    # Utilities (2)
+    {"ticker":"NEE",   "name":"NextEra Energy",            "sector":"Utilities",        "price":  68.30, "change":  0.40, "change_pct":  0.59, "volume":  9500000, "market_cap": 139, "pe": 21.4, "eps":  3.19, "week52_high": 85.76, "week52_low": 44.67},
+    {"ticker":"DUK",   "name":"Duke Energy Corp.",         "sector":"Utilities",        "price": 102.40, "change":  0.60, "change_pct":  0.59, "volume":  4200000, "market_cap":  66, "pe": 20.8, "eps":  4.92, "week52_high":108.38, "week52_low": 87.65},
+]
+
+# ── 지수 더미 데이터 ────────────────────────────────────────────────────────────
+INDICES = [
+    {"name":"S&P 500",      "value":  5248.32, "change":   18.54, "change_pct":  0.35},
+    {"name":"NASDAQ",       "value": 16428.82, "change":  -45.23, "change_pct": -0.27},
+    {"name":"Dow Jones",    "value": 39387.76, "change":  125.08, "change_pct":  0.32},
+    {"name":"Russell 2000", "value":  2082.47, "change":    8.34, "change_pct":  0.40},
+    {"name":"KOSPI",        "value":  2700.00, "change":   15.00, "change_pct":  0.56},
+    {"name":"KOSDAQ",       "value":   870.00, "change":    3.50, "change_pct":  0.40},
+    {"name":"US500",        "value":  5230.00, "change":   18.00, "change_pct":  0.34},
+    {"name":"US30",         "value": 38950.00, "change":  120.00, "change_pct":  0.31},
+    {"name":"US Tech 100",  "value": 18350.00, "change":  -55.00, "change_pct": -0.30},
+    {"name":"WTI Crude",    "value":    82.45, "change":    0.87, "change_pct":  1.07},
+    {"name":"Gold",         "value":  2325.80, "change":  -12.30, "change_pct": -0.53},
+    {"name":"Bitcoin",      "value": 67500.00, "change":  850.00, "change_pct":  1.28},
+    {"name":"10Y Yield",    "value":     4.42, "change":    0.03, "change_pct":  0.68},
+    {"name":"DXY",          "value":   104.52, "change":   -0.18, "change_pct": -0.17},
+    {"name":"EUR/USD",      "value":    1.082, "change":  -0.001, "change_pct": -0.11},
+    {"name":"VIX",          "value":    13.52, "change":   -0.48, "change_pct": -3.43},
+]
+
+# ── 뉴스 더미 데이터 ────────────────────────────────────────────────────────────
+NEWS = [
+    {"id": 1, "title":"NVIDIA Surges After Reporting Record Q1 Revenue, Beats Estimates by Wide Margin",   "source":"Bloomberg",       "time":"10m ago",  "ticker":"NVDA", "sentiment":"positive"},
+    {"id": 2, "title":"Fed Holds Rates Steady, Signals Just One Cut Possible This Year",                    "source":"Reuters",         "time":"35m ago",  "ticker":None,   "sentiment":"neutral"},
+    {"id": 3, "title":"Apple Set to Unveil AI-Powered Features Across iPhone Lineup at WWDC",              "source":"WSJ",             "time":"1h ago",   "ticker":"AAPL", "sentiment":"positive"},
+    {"id": 4, "title":"Tesla Faces Expanded Recall on Cybertruck Over Safety Concerns",                     "source":"CNBC",            "time":"2h ago",   "ticker":"TSLA", "sentiment":"negative"},
+    {"id": 5, "title":"Eli Lilly's Obesity Drug Zepbound Shows Strong Demand, Raises Full-Year Outlook",   "source":"Financial Times", "time":"3h ago",   "ticker":"LLY",  "sentiment":"positive"},
+    {"id": 6, "title":"Meta Confirms 2025 Launch Date for AR Glasses, Shares Jump 3%",                     "source":"TechCrunch",      "time":"4h ago",   "ticker":"META", "sentiment":"positive"},
+    {"id": 7, "title":"JPMorgan Raises S&P 500 Year-End Target to 5,500 Amid Earnings Optimism",           "source":"Bloomberg",       "time":"5h ago",   "ticker":"JPM",  "sentiment":"positive"},
+    {"id": 8, "title":"Starbucks CEO Steps Down Amid Slowing Sales and Customer Traffic Decline",           "source":"Reuters",         "time":"6h ago",   "ticker":"SBUX", "sentiment":"negative"},
+    {"id": 9, "title":"US CPI Comes in Slightly Above Expectations, Weighing on Rate Cut Bets",             "source":"AP",              "time":"7h ago",   "ticker":None,   "sentiment":"negative"},
+    {"id":10, "title":"Netflix Adds 9.3M Subscribers in Q1, Surpassing Wall Street Forecasts",             "source":"CNBC",            "time":"8h ago",   "ticker":"NFLX", "sentiment":"positive"},
+    {"id":11, "title":"Intel Announces $8.5B in Federal Grants to Boost US Chip Manufacturing",            "source":"WSJ",             "time":"9h ago",   "ticker":"INTC", "sentiment":"positive"},
+    {"id":12, "title":"Boeing Faces New FAA Investigation Over Quality Control at 737 MAX Plant",           "source":"Financial Times", "time":"10h ago",  "ticker":"BA",   "sentiment":"negative"},
+]
 
 
 if __name__ == "__main__":

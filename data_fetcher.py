@@ -376,6 +376,157 @@ class _WikiTableParser(HTMLParser):
             self._cur_cell += data
 
 
+# ── fetch_nasdaq_stocks() 전용 매핑 테이블 (함수 밖으로 분리 — 실제 파싱 로직은 아래 함수 참고) ──
+# Nasdaq 섹터명 → 앱 섹터명 매핑
+_NASDAQ_SECTOR: dict[str, str] = {
+    "Technology":              "Technology",
+    "Finance":                 "Finance",
+    "Health Care":             "Healthcare",
+    "Consumer Discretionary":  "Consumer Disc.",
+    "Consumer Staples":        "Consumer Staples",
+    "Industrials":             "Industrial",
+    "Communication Services":  "Communication",
+    "Energy":                  "Energy",
+    "Real Estate":             "Real Estate",
+    "Materials":               "Materials",
+    "Utilities":               "Utilities",
+    "Basic Industries":        "Materials",
+    "Capital Goods":           "Industrial",
+    "Consumer Non-Durables":   "Consumer Staples",
+    "Consumer Durables":       "Consumer Disc.",
+    "Consumer Services":       "Consumer Disc.",
+    "Transportation":          "Industrial",
+    "Public Utilities":        "Utilities",
+    "Miscellaneous":           "Industrial",
+}
+
+# 업종명 단축 매핑 (Nasdaq API 실제 반환값 기준)
+_INDUSTRY_SHORT: dict[str, str] = {
+    # Technology
+    "Semiconductors":                                                    "Semiconductors",
+    "Computer Software: Prepackaged Software":                           "Software",
+    "Computer Software: Programming Data Processing":                    "Software",
+    "EDP Services":                                                      "IT Services",
+    "Business Services":                                                 "Business Services",
+    "Computer Manufacturing":                                            "Hardware",
+    "Computer Communications Equipment":                                 "Comm Equipment",
+    "Telecommunications Equipment":                                      "Telecom Equip.",
+    "Radio And Television Broadcasting And Communications Equipment":     "Comm Equipment",
+    "Electronic Components":                                             "Electronics",
+    "Electrical Products":                                               "Electrical",
+    "Military/Government/Technical":                                     "Defense Tech",
+    "Industrial Specialties":                                            "Spec. Industrial",
+    # Healthcare
+    "Biotechnology: Pharmaceutical Preparations":                        "Biotech/Pharma",
+    "Biotechnology: Biological Products (No Diagnostic Substances)":     "Biotech",
+    "Biotechnology: Laboratory Analytical Instruments":                  "Lab Instruments",
+    "Biotechnology: Electromedical & Electrotherapeutic Apparatus":      "Electro Medical",
+    "Medical/Dental Instruments":                                        "Med Devices",
+    "Medical Specialities":                                              "Medical Spec.",
+    "Medical/Nursing Services":                                          "Health Services",
+    "Hospital/Nursing Management":                                       "Hospitals",
+    # Finance
+    "Major Banks":                                                       "Banks",
+    "Banks":                                                             "Banks",
+    "Savings Institutions":                                              "Savings Banks",
+    "Investment Managers":                                               "Asset Mgmt",
+    "Investment Bankers/Brokers/Service":                                "Investment Banking",
+    "Finance: Consumer Services":                                        "Consumer Finance",
+    "Finance Companies":                                                 "Finance",
+    "Finance/Investors Services":                                        "Finance Services",
+    "Property-Casualty Insurers":                                        "P&C Insurance",
+    "Life Insurance":                                                    "Life Insurance",
+    "Specialty Insurers":                                                "Specialty Insurance",
+    "Trusts Except Educational Religious and Charitable":                "Trusts",
+    # Real Estate
+    "Real Estate Investment Trusts":                                     "REITs",
+    "Real Estate":                                                       "Real Estate",
+    # Energy
+    "Oil & Gas Production":                                              "Oil & Gas",
+    "Integrated oil Companies":                                          "Integrated Oil",
+    "Oilfield Services/Equipment":                                       "Oil Services",
+    "Oil and Gas Field Machinery":                                       "Oil Machinery",
+    "Oil/Gas Transmission":                                              "Gas Pipeline",
+    "Coal Mining":                                                       "Coal",
+    # Consumer Disc.
+    "Restaurants":                                                       "Restaurants",
+    "Hotels/Resorts":                                                    "Hotels",
+    "Department/Specialty Retail Stores":                                "Retail",
+    "Other Specialty Stores":                                            "Specialty Retail",
+    "Clothing/Shoe/Accessory Stores":                                    "Apparel Retail",
+    "Retail-Auto Dealers and Gas Stations":                              "Auto Dealers",
+    "RETAIL: Building Materials":                                        "Home Improvement",
+    "Other Consumer Services":                                           "Consumer Svcs",
+    "Services-Misc. Amusement & Recreation":                             "Entertainment",
+    "Homebuilding":                                                      "Homebuilding",
+    "Home Furnishings":                                                  "Home Furnishings",
+    "Catalog/Specialty Distribution":                                    "E-Commerce",
+    "Auto Parts:O.E.M.":                                                 "Auto Parts",
+    "Apparel":                                                           "Apparel",
+    # Consumer Staples
+    "Packaged Foods":                                                    "Packaged Foods",
+    "Food Chains":                                                       "Grocery",
+    "Farming/Seeds/Milling":                                             "Food/Farming",
+    "Beverages (Production/Distribution)":                               "Beverages",
+    "Package Goods/Cosmetics":                                           "Cosmetics",
+    # Industrial
+    "Industrial Machinery/Components":                                   "Industrial Mach.",
+    "Aerospace":                                                         "Aerospace",
+    "Construction/Ag Equipment/Trucks":                                  "Heavy Equipment",
+    "Metal Fabrications":                                                "Metal Fab.",
+    "Containers/Packaging":                                              "Packaging",
+    "Trucking Freight/Courier Services":                                 "Trucking",
+    "Air Freight/Delivery Services":                                     "Air Freight",
+    "Marine Transportation":                                             "Marine",
+    "Transportation Services":                                           "Transportation",
+    "Engineering & Construction":                                        "Engineering",
+    "Professional Services":                                             "Prof. Services",
+    "Diversified Commercial Services":                                   "Comm. Services",
+    "Staffing":                                                          "Staffing",
+    # Communication
+    "Broadcasting":                                                      "Broadcasting",
+    "Cable & Other Pay Television Services":                             "Cable/Media",
+    # Utilities
+    "Electric Utilities: Central":                                       "Electric Util.",
+    "Natural Gas Distribution":                                          "Natural Gas",
+    "Power Generation":                                                  "Power Gen.",
+    "Water Supply":                                                      "Water",
+    # Materials
+    "Major Chemicals":                                                   "Chemicals",
+    "Steel/Iron Ore":                                                    "Steel",
+    "Metal Mining":                                                      "Mining",
+    "Mining & Quarrying of Nonmetallic Minerals (No Fuels)":             "Mining",
+}
+
+def _clean_industry(raw: str) -> str:
+    if not raw:
+        return ""
+    return _INDUSTRY_SHORT.get(raw.strip(), raw.strip())
+
+# Nasdaq API 오분류 종목 수동 오버라이드 (sector, industry)
+_TICKER_OVERRIDE: dict[str, tuple[str, str]] = {
+    # Technology → Industrial (Nasdaq이 잘못 분류)
+    "GE":   ("Industrial",  "Aerospace"),
+    "EMR":  ("Industrial",  "Industrial Mach."),
+    "OTIS": ("Industrial",  "Industrial Mach."),
+    "ROK":  ("Industrial",  "Industrial Mach."),
+    "ETN":  ("Industrial",  "Electrical"),
+    # Healthcare → Industrial (3M)
+    "MMM":  ("Industrial",  "Industrial Mach."),
+    # Technology → Utilities (NextEra Energy)
+    "NEE":  ("Utilities",   "Electric Util."),
+    "AEP":  ("Utilities",   "Electric Util."),
+    "DUK":  ("Utilities",   "Electric Util."),
+    "SO":   ("Utilities",   "Electric Util."),
+    # 업종 정밀 수정 (섹터는 Technology가 맞음)
+    "QCOM": ("Technology",  "Semiconductors"),
+    "PANW": ("Technology",  "Cybersecurity"),
+    "FTNT": ("Technology",  "Cybersecurity"),
+    "CRWD": ("Technology",  "Cybersecurity"),
+    "ZS":   ("Technology",  "Cybersecurity"),
+    "SNYK": ("Technology",  "Cybersecurity"),
+}
+
 def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
     """
     Nasdaq 스크리너 API로 미국 상장 전체 종목 조회 (단 1회 요청).
@@ -399,156 +550,6 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
     except Exception as e:
         log.warning(f"fetch_nasdaq_stocks 실패: {e}")
         return []
-
-    # Nasdaq 섹터명 → 앱 섹터명 매핑
-    _NASDAQ_SECTOR: dict[str, str] = {
-        "Technology":              "Technology",
-        "Finance":                 "Finance",
-        "Health Care":             "Healthcare",
-        "Consumer Discretionary":  "Consumer Disc.",
-        "Consumer Staples":        "Consumer Staples",
-        "Industrials":             "Industrial",
-        "Communication Services":  "Communication",
-        "Energy":                  "Energy",
-        "Real Estate":             "Real Estate",
-        "Materials":               "Materials",
-        "Utilities":               "Utilities",
-        "Basic Industries":        "Materials",
-        "Capital Goods":           "Industrial",
-        "Consumer Non-Durables":   "Consumer Staples",
-        "Consumer Durables":       "Consumer Disc.",
-        "Consumer Services":       "Consumer Disc.",
-        "Transportation":          "Industrial",
-        "Public Utilities":        "Utilities",
-        "Miscellaneous":           "Industrial",
-    }
-
-    # 업종명 단축 매핑 (Nasdaq API 실제 반환값 기준)
-    _INDUSTRY_SHORT: dict[str, str] = {
-        # Technology
-        "Semiconductors":                                                    "Semiconductors",
-        "Computer Software: Prepackaged Software":                           "Software",
-        "Computer Software: Programming Data Processing":                    "Software",
-        "EDP Services":                                                      "IT Services",
-        "Business Services":                                                 "Business Services",
-        "Computer Manufacturing":                                            "Hardware",
-        "Computer Communications Equipment":                                 "Comm Equipment",
-        "Telecommunications Equipment":                                      "Telecom Equip.",
-        "Radio And Television Broadcasting And Communications Equipment":     "Comm Equipment",
-        "Electronic Components":                                             "Electronics",
-        "Electrical Products":                                               "Electrical",
-        "Military/Government/Technical":                                     "Defense Tech",
-        "Industrial Specialties":                                            "Spec. Industrial",
-        # Healthcare
-        "Biotechnology: Pharmaceutical Preparations":                        "Biotech/Pharma",
-        "Biotechnology: Biological Products (No Diagnostic Substances)":     "Biotech",
-        "Biotechnology: Laboratory Analytical Instruments":                  "Lab Instruments",
-        "Biotechnology: Electromedical & Electrotherapeutic Apparatus":      "Electro Medical",
-        "Medical/Dental Instruments":                                        "Med Devices",
-        "Medical Specialities":                                              "Medical Spec.",
-        "Medical/Nursing Services":                                          "Health Services",
-        "Hospital/Nursing Management":                                       "Hospitals",
-        # Finance
-        "Major Banks":                                                       "Banks",
-        "Banks":                                                             "Banks",
-        "Savings Institutions":                                              "Savings Banks",
-        "Investment Managers":                                               "Asset Mgmt",
-        "Investment Bankers/Brokers/Service":                                "Investment Banking",
-        "Finance: Consumer Services":                                        "Consumer Finance",
-        "Finance Companies":                                                 "Finance",
-        "Finance/Investors Services":                                        "Finance Services",
-        "Property-Casualty Insurers":                                        "P&C Insurance",
-        "Life Insurance":                                                    "Life Insurance",
-        "Specialty Insurers":                                                "Specialty Insurance",
-        "Trusts Except Educational Religious and Charitable":                "Trusts",
-        # Real Estate
-        "Real Estate Investment Trusts":                                     "REITs",
-        "Real Estate":                                                       "Real Estate",
-        # Energy
-        "Oil & Gas Production":                                              "Oil & Gas",
-        "Integrated oil Companies":                                          "Integrated Oil",
-        "Oilfield Services/Equipment":                                       "Oil Services",
-        "Oil and Gas Field Machinery":                                       "Oil Machinery",
-        "Oil/Gas Transmission":                                              "Gas Pipeline",
-        "Coal Mining":                                                       "Coal",
-        # Consumer Disc.
-        "Restaurants":                                                       "Restaurants",
-        "Hotels/Resorts":                                                    "Hotels",
-        "Department/Specialty Retail Stores":                                "Retail",
-        "Other Specialty Stores":                                            "Specialty Retail",
-        "Clothing/Shoe/Accessory Stores":                                    "Apparel Retail",
-        "Retail-Auto Dealers and Gas Stations":                              "Auto Dealers",
-        "RETAIL: Building Materials":                                        "Home Improvement",
-        "Other Consumer Services":                                           "Consumer Svcs",
-        "Services-Misc. Amusement & Recreation":                             "Entertainment",
-        "Homebuilding":                                                      "Homebuilding",
-        "Home Furnishings":                                                  "Home Furnishings",
-        "Catalog/Specialty Distribution":                                    "E-Commerce",
-        "Auto Parts:O.E.M.":                                                 "Auto Parts",
-        "Apparel":                                                           "Apparel",
-        # Consumer Staples
-        "Packaged Foods":                                                    "Packaged Foods",
-        "Food Chains":                                                       "Grocery",
-        "Farming/Seeds/Milling":                                             "Food/Farming",
-        "Beverages (Production/Distribution)":                               "Beverages",
-        "Package Goods/Cosmetics":                                           "Cosmetics",
-        # Industrial
-        "Industrial Machinery/Components":                                   "Industrial Mach.",
-        "Aerospace":                                                         "Aerospace",
-        "Construction/Ag Equipment/Trucks":                                  "Heavy Equipment",
-        "Metal Fabrications":                                                "Metal Fab.",
-        "Containers/Packaging":                                              "Packaging",
-        "Trucking Freight/Courier Services":                                 "Trucking",
-        "Air Freight/Delivery Services":                                     "Air Freight",
-        "Marine Transportation":                                             "Marine",
-        "Transportation Services":                                           "Transportation",
-        "Engineering & Construction":                                        "Engineering",
-        "Professional Services":                                             "Prof. Services",
-        "Diversified Commercial Services":                                   "Comm. Services",
-        "Staffing":                                                          "Staffing",
-        # Communication
-        "Broadcasting":                                                      "Broadcasting",
-        "Cable & Other Pay Television Services":                             "Cable/Media",
-        # Utilities
-        "Electric Utilities: Central":                                       "Electric Util.",
-        "Natural Gas Distribution":                                          "Natural Gas",
-        "Power Generation":                                                  "Power Gen.",
-        "Water Supply":                                                      "Water",
-        # Materials
-        "Major Chemicals":                                                   "Chemicals",
-        "Steel/Iron Ore":                                                    "Steel",
-        "Metal Mining":                                                      "Mining",
-        "Mining & Quarrying of Nonmetallic Minerals (No Fuels)":             "Mining",
-    }
-
-    def _clean_industry(raw: str) -> str:
-        if not raw:
-            return ""
-        return _INDUSTRY_SHORT.get(raw.strip(), raw.strip())
-
-    # Nasdaq API 오분류 종목 수동 오버라이드 (sector, industry)
-    _TICKER_OVERRIDE: dict[str, tuple[str, str]] = {
-        # Technology → Industrial (Nasdaq이 잘못 분류)
-        "GE":   ("Industrial",  "Aerospace"),
-        "EMR":  ("Industrial",  "Industrial Mach."),
-        "OTIS": ("Industrial",  "Industrial Mach."),
-        "ROK":  ("Industrial",  "Industrial Mach."),
-        "ETN":  ("Industrial",  "Electrical"),
-        # Healthcare → Industrial (3M)
-        "MMM":  ("Industrial",  "Industrial Mach."),
-        # Technology → Utilities (NextEra Energy)
-        "NEE":  ("Utilities",   "Electric Util."),
-        "AEP":  ("Utilities",   "Electric Util."),
-        "DUK":  ("Utilities",   "Electric Util."),
-        "SO":   ("Utilities",   "Electric Util."),
-        # 업종 정밀 수정 (섹터는 Technology가 맞음)
-        "QCOM": ("Technology",  "Semiconductors"),
-        "PANW": ("Technology",  "Cybersecurity"),
-        "FTNT": ("Technology",  "Cybersecurity"),
-        "CRWD": ("Technology",  "Cybersecurity"),
-        "ZS":   ("Technology",  "Cybersecurity"),
-        "SNYK": ("Technology",  "Cybersecurity"),
-    }
 
     result = []
     for s in rows:
@@ -1789,8 +1790,11 @@ def fetch_reports() -> list[dict]:
 
 
 # ── 매일 매수/매도 신호 추천 (Brief) ───────────────────────────────────────────
-# static/js/chart.js의 _calcSignals()와 동일한 로직(MACD+RSI+STO+MA50+주봉추세+
+# static/js/chart.js의 _calcSignals()(1400줄~)와 동일한 로직(MACD+RSI+STO+MA50+주봉추세+
 # BB%B+RSI다이버전스+KR전략B)을 서버에서 종목 일괄 계산용으로 포팅.
+# 아래 _sig_* 함수들은 chart.js의 _calcMA/_calcBB/_calcRSIDivergence/_resampleWeekly/
+# _calcCandlePatterns/_calcMACD/_calcStochastic/_calcRSI(1044줄~)와 1:1 대응 — 한쪽을
+# 고치면 반대쪽도 같이 확인할 것.
 # 단일 파일 유지 원칙(CLAUDE.md)에 따라 별도 모듈로 분리하지 않음.
 
 def _sig_ema(arr: list, period: int) -> list:

@@ -210,7 +210,9 @@ python collect_pe_eps.py
 변수&리셋 → 티커테이프 → 헤더 → 레이아웃
 → HOME → FEAR&GREED → 공통 → SCREENER
 → HEATMAP → CHART → NEWS → WATCHLIST → PORTFOLIO
+→ EARNINGS → BRIEF
 ```
+(EARNINGS·BRIEF는 탭 등장 순서상 NEWS 다음이 맞지만, 실제 파일엔 파일 끝에 추가되어 있음 — 이 목록은 탭 순서가 아니라 실제 파일 순서를 기록한 것)
 
 새 섹션 구분자 형식: `/* ── 섹션명 ── */`
 
