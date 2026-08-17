@@ -1013,4 +1013,4 @@ NEWS = [
 if __name__ == "__main__":
     initial_load()
     _scheduler.start()
-    socketio.run(app, debug=False, port=5001, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=False, host="100.112.30.32", port=5001, allow_unsafe_werkzeug=True)
