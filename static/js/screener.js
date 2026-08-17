@@ -18,6 +18,7 @@ const _SC_PAGE_SIZE = 100;
 let _scMarket       = 'us';        // 'us' | 'kr'
 let _krMarket       = 'all';       // 'all' | 'KOSPI' | 'KOSDAQ'
 let _scSignalMap    = {};          // 오늘의 신호 맵 (main.js loadDailySignalMap 재사용)
+let _scSelected      = new Set();  // 체크박스로 선택한 티커 (일괄 워치리스트 추가용)
 
 // ── 뷰별 컬럼 정의 (fixed: true = 항상 표시, 숨김 불가) ─────────────────────
 const _VIEWS = {
@@ -183,6 +184,55 @@ function deleteScPreset() {
 // 숨김 컬럼이면 빈 문자열, 아니면 content 반환
 function _hd(key, content) {
   return _hiddenCols[_scView].has(key) ? '' : content;
+}
+
+// ── 일괄 선택 체크박스 (8번: 스크리너 다중선택 → 워치리스트 일괄추가) ──────────
+function _scCheckboxHtml(ticker) {
+  const checked = _scSelected.has(ticker) ? ' checked' : '';
+  return `<input type="checkbox" class="sc-row-check" data-ticker="${ticker}"${checked}
+    onclick="event.stopPropagation(); _scToggleSelect('${ticker}', this.checked)">`;
+}
+
+function _scToggleSelect(ticker, checked) {
+  if (checked) _scSelected.add(ticker); else _scSelected.delete(ticker);
+  _scUpdateBulkBar();
+}
+
+function _scToggleSelectAllPage() {
+  const boxes = document.querySelectorAll('#screener-body .sc-row-check');
+  const allChecked = [...boxes].every(b => b.checked);
+  boxes.forEach(b => {
+    b.checked = !allChecked;
+    if (!allChecked) _scSelected.add(b.dataset.ticker); else _scSelected.delete(b.dataset.ticker);
+  });
+  _scUpdateBulkBar();
+}
+
+function _scUpdateBulkBar() {
+  const bar = document.getElementById('sc-bulk-bar');
+  if (!bar) return;
+  const n = _scSelected.size;
+  bar.style.display = n > 0 ? '' : 'none';
+  const label = document.getElementById('sc-bulk-count');
+  if (label) label.textContent = `${n}개 선택됨`;
+}
+
+function _scClearSelection() {
+  _scSelected.clear();
+  document.querySelectorAll('.sc-row-check').forEach(b => b.checked = false);
+  _scUpdateBulkBar();
+}
+
+function _scBulkAddToWatchlist() {
+  if (_scSelected.size === 0) return;
+  let added = 0;
+  _scSelected.forEach(ticker => {
+    if (!WL.has(ticker)) { WL.add(ticker); added++; }
+  });
+  alert(`${added}개 종목을 관심종목에 추가했습니다.${_scSelected.size - added > 0 ? ` (이미 있던 ${_scSelected.size - added}개 제외)` : ''}`);
+  updateWLCount();
+  _scClearSelection();
+  renderScreener();
 }
 
 // ── 데이터 로드 ──────────────────────────────────────────────────────────────
@@ -419,7 +469,7 @@ function _renderHead() {
   const cols = _VIEWS[_scView].filter(c => c.fixed || !c.key || !_hiddenCols[_scView].has(c.key));
   const thead = document.getElementById('screener-head');
   thead.innerHTML = '<tr>' + cols.map(c => {
-    if (!c.key) return `<th></th>`;
+    if (!c.key) return `<th class="sc-check-cell" title="현재 페이지 전체 선택/해제"><input type="checkbox" onclick="_scToggleSelectAllPage()"></th>`;
     let active = c.key === _sortCol ? ' sort-active ' + (_sortDir === 1 ? 'asc' : 'desc') : '';
     if (c.key === _sortCol2) active += ' sort-active-2 ' + (_sortDir2 === 1 ? 'asc' : 'desc');
     const skip = ['_no'].includes(c.key) ? '' : ` data-col="${c.key}"`;
@@ -522,7 +572,7 @@ function _rowOverview(s, no) {
     : '—';
 
   return `<tr onclick="openStockModal('${s.ticker}')">
-    <td onclick="event.stopPropagation()">${starBtn(s.ticker)}</td>
+    <td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
@@ -547,7 +597,7 @@ function _rowFundamental(s, no) {
     : '—';
 
   return `<tr onclick="openStockModal('${s.ticker}')">
-    <td onclick="event.stopPropagation()">${starBtn(s.ticker)}</td>
+    <td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
@@ -574,7 +624,7 @@ function _rowPerformance(s, no) {
     : '—';
 
   return `<tr onclick="openStockModal('${s.ticker}')">
-    <td onclick="event.stopPropagation()">${starBtn(s.ticker)}</td>
+    <td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
@@ -1066,7 +1116,7 @@ function renderKrScreener() {
   const cols = colSets[_scView] || colSets.overview;
 
   head.innerHTML = '<tr>' + cols.map(c => {
-    if (!c.key) return '<th style="width:28px"></th>';
+    if (!c.key) return `<th class="sc-check-cell" title="현재 페이지 전체 선택/해제"><input type="checkbox" onclick="_scToggleSelectAllPage()"></th>`;
     const active  = _sortCol === c.key;
     const active2 = _sortCol2 === c.key;
     const arrow   = active ? (_sortDir === -1 ? ' ▼' : ' ▲') : active2 ? (_sortDir2 === -1 ? ' ▽' : ' △') : '';
@@ -1094,7 +1144,7 @@ function renderKrScreener() {
     const cls  = (s.change_pct || 0) > 0 ? 'pos' : (s.change_pct || 0) < 0 ? 'neg' : '';
     const pos52 = _calc52wPosKr(s);
     const cells = cols.map(c => {
-      if (!c.key) return `<td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>`;
+      if (!c.key) return `<td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>`;
       switch (c.key) {
         case '_no':        return `<td class="sc-no">${no}</td>`;
         case 'code':       return `<td class="td-ticker">${s.code}</td>`;

@@ -259,11 +259,19 @@ async function renderWatchlist() {
   if (!groups.includes(_wlGroupFilter) && _wlGroupFilter !== '전체' && _wlGroupFilter !== '미분류') {
     _wlGroupFilter = '전체'; // 필터로 선택된 그룹이 더 이상 존재하지 않으면 초기화
   }
+  const _wlGroupStocks = g => g === '전체' ? stocks
+    : g === '미분류' ? stocks.filter(s => !WLG.get(s.ticker))
+    : stocks.filter(s => WLG.get(s.ticker) === g);
+
   const tabsHtml = ['전체', ...groups, '미분류'].map(g => {
-    const cnt = g === '전체' ? stocks.length
-      : g === '미분류' ? stocks.filter(s => !WLG.get(s.ticker)).length
-      : stocks.filter(s => WLG.get(s.ticker) === g).length;
-    return `<button class="report-tag${g === _wlGroupFilter ? ' active' : ''}" onclick="_wlSelectGroupFilter('${g}')">${g} <span class="wl-group-count">${cnt}</span></button>`;
+    const list = _wlGroupStocks(g);
+    const cnt  = list.length;
+    const pcts = list.map(s => s.change_pct).filter(v => v != null);
+    const avg  = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+    const avgHtml = avg != null
+      ? `<span class="wl-group-avg ${avg >= 0 ? 'up' : 'down'}">${avg >= 0 ? '+' : ''}${avg.toFixed(2)}%</span>`
+      : '';
+    return `<button class="report-tag${g === _wlGroupFilter ? ' active' : ''}" onclick="_wlSelectGroupFilter('${g}')">${g} <span class="wl-group-count">${cnt}</span>${avgHtml}</button>`;
   }).join('') + `<button class="wl-group-add-btn" onclick="_wlAddGroupPrompt()" title="새 그룹 추가">+ 그룹</button>`;
 
   // 그룹 필터 적용
@@ -285,6 +293,12 @@ async function renderWatchlist() {
                onchange="if(this.files[0]) importWatchlistCSV(this.files[0]); this.value='';">
       </label>
       <button class="wl-clear-btn" onclick="clearWatchlist()">전체 삭제</button>
+      <button class="wl-csv-btn no-print" onclick="window.print()" title="인쇄용 리포트 보기">🖨 인쇄</button>
+    </div>
+    <div id="wl-cmp-bar" class="sc-bulk-bar no-print" style="display:${_cmpSel.wl.size > 0 ? '' : 'none'}">
+      <span id="wl-cmp-count" class="sc-bulk-count">${_cmpSel.wl.size}개 선택됨 (2~5개)</span>
+      <button class="sc-bulk-add-btn" onclick="_cmpOpenFromScope('wl')">📊 비교차트 보기</button>
+      <button class="sc-bulk-clear-btn" onclick="_cmpClear('wl')">선택 해제</button>
     </div>
     <div class="news-filter-bar wl-group-tabs">${tabsHtml}</div>
     <div class="table-wrap">
@@ -319,8 +333,8 @@ async function renderWatchlist() {
             const lo    = s.week52_low  ? fmt$(s.week52_low)  : '—';
             return `
               <tr onclick="navigateToChart('${s.ticker}')">
-                <td onclick="event.stopPropagation()">
-                  ${starBtn(s.ticker)}
+                <td onclick="event.stopPropagation()" class="sc-check-cell">
+                  ${_cmpCheckboxHtml('wl', s.ticker)}${starBtn(s.ticker)}
                 </td>
                 <td class="td-ticker">${s.ticker}</td>
                 <td class="td-name">

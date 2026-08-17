@@ -834,14 +834,14 @@ function _chartSearchPreview(q) {
     results = krStocks.filter(s =>
       (s.code || '').toLowerCase().includes(qLower) ||
       (s.name || '').toLowerCase().includes(qLower)
-    ).slice(0, 8).map(s => ({ ...s, _isKr: true }));
+    ).sort(_gsTickerRank(qLower, s => s.code)).slice(0, 8).map(s => ({ ...s, _isKr: true }));
   } else {
     const usStocks = window._scStocks || [];
     results = usStocks.filter(s =>
       s.ticker.toLowerCase().includes(qLower) ||
       (s.name_ko && s.name_ko.includes(q)) ||
       (s.name || '').toLowerCase().includes(qLower)
-    ).slice(0, 8).map(s => ({ ...s, _isKr: false }));
+    ).sort(_gsTickerRank(qLower, s => s.ticker)).slice(0, 8).map(s => ({ ...s, _isKr: false }));
   }
 
   if (!results.length) {

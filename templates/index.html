@@ -280,6 +280,12 @@
         </div>
       </div>
 
+      <div id="sc-bulk-bar" class="sc-bulk-bar" style="display:none">
+        <span id="sc-bulk-count" class="sc-bulk-count">0개 선택됨</span>
+        <button class="sc-bulk-add-btn" onclick="_scBulkAddToWatchlist()">⭐ 관심종목에 추가</button>
+        <button class="sc-bulk-clear-btn" onclick="_scClearSelection()">선택 해제</button>
+      </div>
+
       <div class="table-wrap">
         <table id="screener-table">
           <thead id="screener-head"><tr></tr></thead>
@@ -836,6 +842,7 @@
                  onchange="if(this.files[0]) importPortfolioCSV(this.files[0]); this.value='';">
         </label>
         <button class="pt-add-btn" onclick="openPtModal()">+ 종목 추가</button>
+        <button class="pt-csv-btn no-print" onclick="window.print()" title="인쇄용 리포트 보기">🖨 인쇄</button>
       </div>
       <div id="pt-content"></div>
     </div>
@@ -855,6 +862,17 @@
         <div class="pt-modal-footer">
           <button class="pt-modal-cancel" onclick="closePtModal()">취소</button>
           <button class="pt-modal-save"   onclick="savePtModal()">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── 다중종목 비교차트 모달 (6번, Watchlist/Portfolio 공용) ─────────── -->
+    <div id="compare-modal" class="pt-modal-overlay" style="display:none" onclick="if(event.target===this)closeCompareChart()">
+      <div class="pt-modal-box cmp-modal-box">
+        <div class="pt-modal-title">종목 비교차트 <span class="pt-approx-badge" title="선택한 종목들의 시작일 종가 대비 % 변동률을 겹쳐 표시">정규화 % 수익률</span></div>
+        <div id="cmp-chart-area" class="cmp-chart-area"></div>
+        <div class="pt-modal-footer">
+          <button class="pt-modal-cancel" onclick="closeCompareChart()">닫기</button>
         </div>
       </div>
     </div>

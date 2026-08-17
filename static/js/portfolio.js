@@ -224,7 +224,28 @@ function _renderCharts(rows, totalValue) {
 
   _drawDonut('pt-sector-donut',  'pt-sector-legend',  sectorSlices,  totalValue);
   _drawDonut('pt-holding-donut', 'pt-holding-legend', holdingSlices, totalValue);
+  _drawIndexSectorDonut();
   _drawReturnChart(rows);
+}
+
+// 10번: 지수(US 전종목 시총가중 근사) 섹터 비중 — 실제 S&P500 공식 가중치 소스가 없어
+// 보유 유니버스 시가총액 합으로 근사한다(Russell 2000과 동일한 제약, [[project-remote-access]] 무관).
+function _drawIndexSectorDonut() {
+  const universe = window._scStocks || [];
+  if (!universe.length) return;
+  const capMap = {};
+  let totalCap = 0;
+  universe.forEach(s => {
+    if (typeof _isAbnormalListing === 'function' && _isAbnormalListing(s)) return;
+    if (!s.market_cap) return;
+    const sec = s.sector || 'Other';
+    capMap[sec] = (capMap[sec] || 0) + s.market_cap;
+    totalCap += s.market_cap;
+  });
+  const slices = Object.entries(capMap)
+    .map(([label, value]) => ({ label, value, color: _SECTOR_COLORS[label] || _SECTOR_COLORS['Other'] }))
+    .sort((a, b) => b.value - a.value);
+  _drawDonut('pt-index-sector-donut', 'pt-index-sector-legend', slices, totalCap);
 }
 
 function _drawReturnChart(rows) {
@@ -293,6 +314,50 @@ function _drawHistoryChart() {
     el.innerHTML = '<span class="pt-history-empty">데이터가 쌓이면 차트가 표시됩니다 (방문할 때마다 기록됩니다)</span>';
     return;
   }
+  _renderHistorySvg(history, null);
+  _loadBenchmarkSeries(history).then(bench => {
+    if (bench) _renderHistorySvg(history, bench);
+  });
+}
+
+// 4번: S&P500 벤치마크 — 실제 지수 % 변동률을 포트폴리오 시작값 기준 달러로 환산해
+// 같은 y축에 겹쳐 그린다("이 돈을 S&P500에 넣었으면" 비교). 10분 캐시로 재조회 최소화.
+let _ptBenchCache = { ts: 0, closes: null };
+
+async function _loadBenchmarkSeries(history) {
+  try {
+    if (!_ptBenchCache.closes || Date.now() - _ptBenchCache.ts > 10 * 60 * 1000) {
+      // /api/chart/<ticker>는 [{time:'YYYY-MM-DD', open, high, low, close, volume}, ...] 배열 반환
+      const rows = await api(`/api/chart/${encodeURIComponent('^GSPC')}?interval=1d&period=2y`);
+      const closes = (Array.isArray(rows) ? rows : [])
+        .map(r => ({ ts: new Date(r.time).getTime(), close: r.close }))
+        .filter(x => x.close != null && !isNaN(x.ts));
+      _ptBenchCache = { ts: Date.now(), closes };
+    }
+    const closes = _ptBenchCache.closes;
+    if (!closes || closes.length < 2) return null;
+
+    // 각 스냅샷 시각에 가장 가까운 지수 종가 찾기
+    const closeAt = ts => {
+      let best = closes[0];
+      for (const c of closes) {
+        if (c.ts > ts) break;
+        best = c;
+      }
+      return best.close;
+    };
+    const baseClose = closeAt(history[0].ts);
+    if (!baseClose) return null;
+    return history.map(d => history[0].v * (closeAt(d.ts) / baseClose));
+  } catch (e) {
+    console.warn('benchmark series load failed', e);
+    return null;
+  }
+}
+
+function _renderHistorySvg(history, bench) {
+  const el = document.getElementById('pt-history-chart');
+  if (!el) return;
 
   const W = el.clientWidth || 600;
   const H = 140;
@@ -300,7 +365,7 @@ function _drawHistoryChart() {
   const iW = W - PAD.l - PAD.r;
   const iH = H - PAD.t - PAD.b;
 
-  const vals = history.map(d => d.v);
+  const vals = history.map(d => d.v).concat(bench || []);
   const minV = Math.min(...vals);
   const maxV = Math.max(...vals);
   const vRange = maxV - minV || 1;
@@ -325,6 +390,23 @@ function _drawHistoryChart() {
   // X축 레이블 (첫/마지막 날짜)
   const fmtDate = ts => new Date(ts).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
 
+  const benchSvg = bench ? (() => {
+    const benchPoints = bench.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' ');
+    const benchCur = bench[bench.length - 1];
+    const benchUp = benchCur >= bench[0];
+    return `
+    <polyline points="${benchPoints}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="${lastX + 4}" y="${yScale(benchCur) + 4}" font-size="10" fill="var(--muted)" font-weight="600">S&amp;P500 ${benchUp ? '+' : ''}${((benchCur/bench[0]-1)*100).toFixed(1)}%</text>`;
+  })() : '';
+
+  const legend = bench ? `
+    <g font-size="10">
+      <rect x="${PAD.l}" y="0" width="10" height="2.5" fill="${lineColor}"/>
+      <text x="${PAD.l + 14}" y="4" fill="var(--muted)">포트폴리오</text>
+      <rect x="${PAD.l + 70}" y="0" width="10" height="2.5" fill="var(--muted)"/>
+      <text x="${PAD.l + 84}" y="4" fill="var(--muted)">S&amp;P500 (동일 원금 가정)</text>
+    </g>` : '';
+
   el.innerHTML = `<svg width="${W}" height="${H}" style="overflow:visible">
     <defs>
       <linearGradient id="pt-hist-grad" x1="0" y1="0" x2="0" y2="1">
@@ -332,7 +414,9 @@ function _drawHistoryChart() {
         <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
       </linearGradient>
     </defs>
+    ${legend}
     <path d="${areaPath}" fill="url(#pt-hist-grad)"/>
+    ${benchSvg}
     <polyline points="${points}" fill="none" stroke="${lineColor}" stroke-width="1.5"/>
     <circle cx="${lastX}" cy="${lastY}" r="3" fill="${lineColor}"/>
     <text x="${PAD.l - 4}" y="${PAD.t + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmt(maxV)}</text>
@@ -574,7 +658,7 @@ async function renderPortfolio() {
             const nameKo = r.stock.name_ko || '';
             return `
               <tr onclick="navigateToChart('${r.ticker}')">
-                <td onclick="event.stopPropagation()">${starBtn(r.ticker)}</td>
+                <td onclick="event.stopPropagation()" class="sc-check-cell">${_cmpCheckboxHtml('pt', r.ticker)}${starBtn(r.ticker)}</td>
                 <td class="td-ticker">${r.ticker}</td>
                 <td class="td-name">${name}
                   ${nameKo ? `<span class="td-name-ko">(${nameKo})</span>` : ''}
@@ -623,6 +707,13 @@ async function renderPortfolio() {
         </div>
       </div>
       <div class="pt-chart-card">
+        <div class="pt-chart-title">지수 대비 섹터 비중 <span class="pt-approx-badge" title="공식 지수 가중치가 아닌, US 전종목 시가총액 가중 근사치입니다">근사치</span></div>
+        <div class="pt-chart-inner">
+          <div id="pt-index-sector-donut"></div>
+          <div class="pt-legend" id="pt-index-sector-legend"></div>
+        </div>
+      </div>
+      <div class="pt-chart-card">
         <div class="pt-chart-title">종목별 비중</div>
         <div class="pt-chart-inner">
           <div id="pt-holding-donut"></div>
@@ -648,6 +739,11 @@ async function renderPortfolio() {
     </div>
     ${summaryHtml}
     ${chartsHtml}
+    <div id="pt-cmp-bar" class="sc-bulk-bar no-print" style="display:${_cmpSel.pt.size > 0 ? '' : 'none'}">
+      <span id="pt-cmp-count" class="sc-bulk-count">${_cmpSel.pt.size}개 선택됨 (2~5개)</span>
+      <button class="sc-bulk-add-btn" onclick="_cmpOpenFromScope('pt')">📊 비교차트 보기</button>
+      <button class="sc-bulk-clear-btn" onclick="_cmpClear('pt')">선택 해제</button>
+    </div>
     <div class="news-filter-bar wl-group-tabs">${groupTabsHtml}</div>
     ${tableHtml}`;
 

@@ -16,6 +16,139 @@ async function api(path) {
   return r.json();
 }
 
+// ── 다중종목 비교차트 (6번, Watchlist/Portfolio 공용) ───────────────────────────
+const _cmpSel = { wl: new Set(), pt: new Set() };
+
+function _cmpCheckboxHtml(scope, ticker) {
+  const checked = _cmpSel[scope].has(ticker) ? ' checked' : '';
+  return `<input type="checkbox" class="cmp-check" title="비교차트에 추가"${checked}
+    onclick="event.stopPropagation(); _cmpToggle('${scope}','${ticker}',this)">`;
+}
+
+function _cmpToggle(scope, ticker, checkbox) {
+  const set = _cmpSel[scope];
+  if (checkbox.checked) {
+    if (set.size >= 5) {
+      alert('비교차트는 최대 5개 종목까지 선택할 수 있습니다.');
+      checkbox.checked = false;
+      return;
+    }
+    set.add(ticker);
+  } else {
+    set.delete(ticker);
+  }
+  _cmpUpdateBar(scope);
+}
+
+function _cmpUpdateBar(scope) {
+  const bar = document.getElementById(`${scope}-cmp-bar`);
+  if (!bar) return;
+  const n = _cmpSel[scope].size;
+  bar.style.display = n > 0 ? '' : 'none';
+  const label = document.getElementById(`${scope}-cmp-count`);
+  if (label) label.textContent = `${n}개 선택됨 (2~5개)`;
+}
+
+function _cmpClear(scope) {
+  _cmpSel[scope].clear();
+  const viewId = scope === 'wl' ? 'view-watchlist' : 'view-portfolio';
+  document.querySelectorAll(`#${viewId} .cmp-check`).forEach(b => b.checked = false);
+  _cmpUpdateBar(scope);
+}
+
+function _cmpOpenFromScope(scope) {
+  const tickers = [..._cmpSel[scope]];
+  if (tickers.length < 2) { alert('비교하려면 2개 이상 선택하세요.'); return; }
+  openCompareChart(tickers);
+}
+
+const _CMP_COLORS = ['#58a6ff', '#3fb950', '#ff7b72', '#d2a522', '#bc8cff'];
+
+async function openCompareChart(tickers) {
+  const modal = document.getElementById('compare-modal');
+  const area  = document.getElementById('cmp-chart-area');
+  if (!modal || !area) return;
+  modal.style.display = 'flex';
+  area.innerHTML = '<div class="wl-loading">차트 불러오는 중...</div>';
+
+  try {
+    const seriesList = await Promise.all(tickers.map(t =>
+      api(`/api/chart/${encodeURIComponent(t)}?interval=1d&period=6mo`)
+        .then(rows => ({ ticker: t, rows: Array.isArray(rows) ? rows : [] }))
+        .catch(() => ({ ticker: t, rows: [] }))
+    ));
+    const valid = seriesList.filter(s => s.rows.length >= 2);
+    if (valid.length < 2) {
+      area.innerHTML = '<div class="wl-loading">비교할 데이터가 부족합니다.</div>';
+      return;
+    }
+    // 종목마다 거래일(휴장일)이 달라 공통 날짜만 교집합으로 정렬 비교
+    const dateSets = valid.map(s => new Set(s.rows.map(r => r.time)));
+    const commonDates = valid[0].rows.map(r => r.time)
+      .filter(d => dateSets.every(set => set.has(d)))
+      .sort();
+    if (commonDates.length < 2) {
+      area.innerHTML = '<div class="wl-loading">겹치는 거래일이 부족합니다(US·KR 혼합 비교 시 발생 가능).</div>';
+      return;
+    }
+    const norm = valid.map(s => {
+      const closeMap = {};
+      s.rows.forEach(r => { closeMap[r.time] = r.close; });
+      const base = closeMap[commonDates[0]];
+      return commonDates.map(d => (closeMap[d] / base - 1) * 100);
+    });
+    _renderCompareSvg(valid.map(s => s.ticker), commonDates, norm);
+  } catch (e) {
+    area.innerHTML = '<div class="wl-loading">데이터 로드 실패. 잠시 후 다시 시도하세요.</div>';
+  }
+}
+
+function closeCompareChart() {
+  const modal = document.getElementById('compare-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _renderCompareSvg(tickers, dates, norm) {
+  const area = document.getElementById('cmp-chart-area');
+  if (!area) return;
+  const W = area.clientWidth || 640;
+  const H = 320;
+  const PAD = { t: 20, r: 90, b: 30, l: 46 };
+  const iW = W - PAD.l - PAD.r;
+  const iH = H - PAD.t - PAD.b;
+
+  const allVals = norm.flat().concat([0]);
+  const minV = Math.min(...allVals);
+  const maxV = Math.max(...allVals);
+  const vRange = (maxV - minV) || 1;
+
+  const xScale = i => PAD.l + (dates.length > 1 ? (i / (dates.length - 1)) * iW : 0);
+  const yScale = v => PAD.t + iH - ((v - minV) / vRange) * iH;
+  const zeroY  = yScale(0);
+
+  const lines = tickers.map((t, ti) => {
+    const color  = _CMP_COLORS[ti % _CMP_COLORS.length];
+    const series = norm[ti];
+    const pts    = series.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' ');
+    const lastV  = series[series.length - 1];
+    return `
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/>
+      <text x="${xScale(dates.length - 1) + 4}" y="${yScale(lastV) + 4}" font-size="11" fill="${color}" font-weight="600">${t} ${lastV >= 0 ? '+' : ''}${lastV.toFixed(1)}%</text>`;
+  }).join('');
+
+  const fmtDate = d => new Date(d).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+
+  area.innerHTML = `<svg width="${W}" height="${H}" style="overflow:visible">
+    <line x1="${PAD.l}" y1="${zeroY}" x2="${PAD.l + iW}" y2="${zeroY}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="${PAD.l - 4}" y="${zeroY + 4}" text-anchor="end" font-size="10" fill="var(--muted)">0%</text>
+    ${lines}
+    <text x="${PAD.l}" y="${H - 6}" text-anchor="start" font-size="10" fill="var(--muted)">${fmtDate(dates[0])}</text>
+    <text x="${PAD.l + iW}" y="${H - 6}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtDate(dates[dates.length - 1])}</text>
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${PAD.t + iH}" stroke="var(--border)" stroke-width="1"/>
+    <line x1="${PAD.l}" y1="${PAD.t + iH}" x2="${PAD.l + iW}" y2="${PAD.t + iH}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
 // ── 오늘의 신호 맵 (Watchlist/Portfolio 공용) ──────────────────────────────────
 // { ticker: {direction:'buy'|'sell', score, term} } — 하루에 1회, 날짜 바뀌면 재조회
 let _dailySignalMap = null;
@@ -724,6 +857,12 @@ function loadDisclosures(force = false) {
   });
 }
 
+// 공시 회사명 → 종목 매칭 (5번: 정확히 일치하는 이름만 링크, 동명이인 오매칭 방지)
+function _matchDisclosureStock(company) {
+  const krStocks = window._krStocks || [];
+  return krStocks.find(s => s.name === company) || null;
+}
+
 function renderDisclosures(items, dcat = 'all') {
   const el = document.getElementById('disclosures-list');
   const list = dcat === 'all' ? items : (items || []).filter(d => d.category === dcat);
@@ -731,13 +870,20 @@ function renderDisclosures(items, dcat = 'all') {
     el.innerHTML = '<div style="color:var(--muted);padding:20px 0">해당하는 공시가 없습니다.</div>';
     return;
   }
-  el.innerHTML = list.map(d => `
+  el.innerHTML = list.map(d => {
+    const matched = _matchDisclosureStock(d.company);
+    const companyHtml = matched
+      ? `<span class="disclosure-company disclosure-company-link" title="차트에서 ${d.company} 보기"
+          onclick="event.stopPropagation(); navigateToChart('${matched.ticker}')">${d.company}</span>`
+      : `<span class="disclosure-company">${d.company}</span>`;
+    return `
     <div class="disclosure-card" onclick="window.open('${d.link}','_blank')">
       <span class="disclosure-time">${d.time}</span>
-      <span class="disclosure-company">${d.company}</span>
+      ${companyHtml}
       <span class="disclosure-title">${d.title}</span>
       <span class="disclosure-type">${d.type}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function loadReports() {
@@ -1063,6 +1209,16 @@ async function _preloadGlobalSearchData() {
   } catch (e) { console.warn('global search KR preload failed', e); }
 }
 
+// 검색 결과 정렬: 정확 일치 > 시작 일치 > 부분 일치(이름 등) 순 — 짧은 티커가
+// 다른 회사명에 우연히 포함돼(예: "BE" ⊂ "Alphabet") 시총 정렬에 밀려 안 보이는 문제 방지
+function _gsRankOf(q, code) {
+  const c = (code || '').toLowerCase();
+  return c === q ? 0 : c.startsWith(q) ? 1 : 2;
+}
+function _gsTickerRank(q, getCode) {
+  return (a, b) => _gsRankOf(q, getCode(a)) - _gsRankOf(q, getCode(b));
+}
+
 function _gsSearch(q) {
   const drop    = document.getElementById('global-search-dropdown');
   const usStocks = window._scStocks || [];
@@ -1072,12 +1228,12 @@ function _gsSearch(q) {
     s.ticker.toLowerCase().startsWith(q) ||
     s.ticker.toLowerCase().includes(q)   ||
     (s.name || '').toLowerCase().includes(q)
-  ).slice(0, 4).map(s => ({ ...s, _isKr: false }));
+  ).sort(_gsTickerRank(q, s => s.ticker)).slice(0, 4).map(s => ({ ...s, _isKr: false }));
 
   const matchKr = krStocks.filter(s =>
     s.code.toLowerCase().includes(q) ||
     s.name.toLowerCase().includes(q)
-  ).slice(0, 3).map(s => ({ ...s, ticker: s.ticker, name: s.name, _isKr: true }));
+  ).sort(_gsTickerRank(q, s => s.code)).slice(0, 3).map(s => ({ ...s, ticker: s.ticker, name: s.name, _isKr: true }));
 
   const results = [...matchUs, ...matchKr].slice(0, 6);
 
