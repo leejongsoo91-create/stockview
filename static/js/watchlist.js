@@ -205,8 +205,24 @@ function updateWLCount() {
 }
 
 // ── 워치리스트 탭 초기화 ─────────────────────────────────────────────────────
+let _wlRefreshTimer = null;
+
 function initWatchlist() {
   renderWatchlist();
+  // WebSocket으로 갱신하므로 polling 불필요 (WebSocket 미연결 시 폴백)
+  if (typeof io === 'undefined') _startWlRefresh();
+}
+
+function stopWatchlistRefresh() {
+  if (_wlRefreshTimer) { clearInterval(_wlRefreshTimer); _wlRefreshTimer = null; }
+}
+
+function _startWlRefresh() {
+  stopWatchlistRefresh();
+  _wlRefreshTimer = setInterval(() => {
+    const view = document.getElementById('view-watchlist');
+    if (view && view.classList.contains('active')) renderWatchlist();
+  }, 30_000);
 }
 
 // ── 워치리스트 탭 렌더링 ─────────────────────────────────────────────────────

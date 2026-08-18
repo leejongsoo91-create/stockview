@@ -124,7 +124,7 @@ header {
 .global-search-input {
   width: 180px; height: 30px;
   padding: 0 10px;
-  background: var(--card);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text); font-size: 13px;
@@ -134,7 +134,7 @@ header {
 .global-search-dropdown {
   display: none;
   position: absolute; top: 34px; left: 0; right: 0;
-  background: var(--card); border: 1px solid var(--border);
+  background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 6px; z-index: 500;
   box-shadow: 0 4px 16px rgba(0,0,0,.4);
   min-width: 260px;
@@ -266,7 +266,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 }
 .ov-row:last-child { border-bottom: none; }
 .ov-row:hover { background: var(--bg-input); }
-.ov-name  { font-size: 11.5px; color: var(--fg); flex: 1; white-space: nowrap; }
+.ov-name  { font-size: 11.5px; color: var(--text); flex: 1; white-space: nowrap; }
 .ov-value { font-size: 12.5px; font-weight: 700; letter-spacing: -.3px; white-space: nowrap; }
 .ov-chg   { font-size: 10.5px; font-weight: 600; text-align: right; white-space: nowrap; min-width: 80px; }
 
@@ -996,7 +996,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .sc-page-btns { display: flex; gap: 4px; }
 .sc-page-btn {
   min-width: 30px; height: 28px; padding: 0 6px;
-  background: var(--card); border: 1px solid var(--border);
+  background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 4px; color: var(--muted);
   font-size: 12px; cursor: pointer; transition: all .15s;
 }
@@ -1024,7 +1024,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .sc-bulk-bar {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; margin-bottom: 6px;
-  background: var(--card); border: 1px solid var(--accent);
+  background: var(--bg-card); border: 1px solid var(--accent);
   border-radius: 6px; font-size: 13px;
 }
 .sc-bulk-count { color: var(--text); font-weight: 600; }
@@ -1051,7 +1051,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 }
 .stock-modal-box {
   position: relative;
-  background: var(--card);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
   width: 100%; max-width: 560px;
@@ -2597,30 +2597,30 @@ mark.kw-hl {
 .earn-period-btn {
   padding: 5px 14px;
   border-radius: 16px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--border);
   background: transparent;
-  color: #8b949e;
+  color: var(--muted);
   font-size: 13px;
   cursor: pointer;
   transition: all .15s;
 }
 .earn-period-btn.active, .earn-period-btn:hover {
-  background: #1f6feb;
-  border-color: #1f6feb;
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 .earn-date-group { margin-bottom: 24px; }
 .earn-date-header {
   font-size: 14px;
   font-weight: 700;
-  color: #58a6ff;
+  color: var(--accent);
   padding: 6px 0 8px;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
 }
 .earn-date-count {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--muted);
   font-weight: 400;
   margin-left: 6px;
 }
@@ -2633,28 +2633,28 @@ mark.kw-hl {
 .earn-table th {
   text-align: left;
   padding: 6px 10px;
-  color: #8b949e;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 .earn-table th.num, .earn-table td.num { text-align: right; }
 .earn-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid #161b22;
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
-.earn-table tr:hover td { background: #161b22; }
+.earn-table tr:hover td { background: var(--bg-card); }
 .earn-ticker {
-  color: #58a6ff;
+  color: var(--accent);
   font-weight: 700;
   cursor: pointer;
 }
 .earn-ticker:hover { text-decoration: underline; }
 .earn-name {
-  color: #c9d1d9;
+  color: var(--text);
   max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2664,12 +2664,13 @@ mark.kw-hl {
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
-  background: #21262d;
-  color: #8b949e;
+  background: var(--bg-input);
+  color: var(--muted);
 }
-.earn-time-before { background: #1a3a4f; color: #79c0ff; }
-.earn-time-after  { background: #2d1f42; color: #d2a8ff; }
-.earn-quarter { color: #8b949e; font-size: 12px; }
+.earn-time-before { background: rgba(88,166,255,.15); color: var(--accent); }
+.earn-time-after  { background: rgba(210,168,255,.15); color: #d2a8ff; }
+.earn-quarter { color: var(--muted); font-size: 12px; }
+.loading-msg { text-align: center; padding: 60px; color: var(--muted); }
 
 /* ══════════════════════════════════════════════════════════
    BRIEF TAB

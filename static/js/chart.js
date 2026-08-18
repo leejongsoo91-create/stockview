@@ -2382,7 +2382,10 @@ async function _loadStockNews(ticker) {
   section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
     <div style="color:#8b949e;font-size:11px;padding:4px 0">Loading…</div>`;
   try {
-    const news = await api(`/api/stock-news/${encodeURIComponent(ticker)}`);
+    const url = _isKrStock(ticker)
+      ? `/api/kr-news/${encodeURIComponent(ticker)}`
+      : `/api/stock-news/${encodeURIComponent(ticker)}`;
+    const news = await api(url);
     if (!news || !news.length) {
       section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
         <div style="color:#8b949e;font-size:11px;padding:4px 0">No recent news</div>`;

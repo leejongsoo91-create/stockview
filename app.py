@@ -103,6 +103,7 @@ def refresh_kr_stocks():
     updated = df.fetch_kr_prices(base)
     if updated:
         cache.set("kr_stocks", updated, ttl=300)
+        _emit_queue.put(("kr_stocks_update", {"count": len(updated)}))
         log.info(f"국내주식 가격 갱신: {len(updated)}개")
 
 

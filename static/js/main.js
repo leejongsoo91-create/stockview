@@ -1030,16 +1030,37 @@ function initSocketIO() {
         renderVolumeLeaders(stocks);
         renderMarketStatBar(stocks);
       }
-      // 스크리너가 열려있으면 데이터 갱신
-      if (_currentView === 'screener' && typeof loadScreenerData === 'function') {
+      // 스크리너가 US 시장으로 열려있으면 데이터 갱신 (KR 보는 중이면 건드리지 않음)
+      if (_currentView === 'screener' && typeof _scMarket !== 'undefined' && _scMarket !== 'kr'
+          && typeof loadScreenerData === 'function') {
         loadScreenerData(false);
       }
       // 포트폴리오가 열려있으면 갱신
       if (_currentView === 'portfolio' && typeof renderPortfolio === 'function') {
         renderPortfolio();
       }
+      // 워치리스트가 열려있으면 갱신
+      if (_currentView === 'watchlist' && typeof renderWatchlist === 'function') {
+        renderWatchlist();
+      }
       // 가격 알림 확인 — 차트 탭을 안 보고 있어도(다른 탭이거나 다른 티커여도) 동작
       if (typeof _checkAllAlerts === 'function') _checkAllAlerts(stocks);
+      updateTimestamp();
+    } catch {}
+  });
+
+  // 국내주식 가격 갱신 Push
+  socket.on('kr_stocks_update', async () => {
+    try {
+      const krStocks = await api('/api/kr-stocks');
+      if (_currentView === 'screener' && typeof _scMarket !== 'undefined' && _scMarket === 'kr'
+          && typeof loadKrScreener === 'function') {
+        loadKrScreener(false);
+      }
+      if (_currentView === 'watchlist' && typeof renderWatchlist === 'function') {
+        renderWatchlist();
+      }
+      if (typeof _checkAllAlerts === 'function') _checkAllAlerts(krStocks);
       updateTimestamp();
     } catch {}
   });

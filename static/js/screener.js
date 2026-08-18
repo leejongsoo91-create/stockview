@@ -340,7 +340,9 @@ function _startScAutoRefresh() {
   stopScreenerRefresh();
   _scRefreshTimer = setInterval(() => {
     const view = document.getElementById('view-screener');
-    if (view && view.classList.contains('active')) loadScreenerData(false);
+    if (!view || !view.classList.contains('active')) return;
+    if (_scMarket === 'kr') loadKrScreener(false);
+    else loadScreenerData(false);
   }, 30_000);
 }
 
@@ -725,9 +727,11 @@ function bindScreenerEvents() {
     else renderScreener(true);
   });
 
-  // 새로고침 버튼
+  // 새로고침 버튼 — 현재 시장에 맞는 함수 호출
   const btn = document.getElementById('sc-refresh-btn');
-  if (btn) btn.addEventListener('click', () => loadScreenerData(false));
+  if (btn) btn.addEventListener('click', () => {
+    (_scMarket === 'kr' ? loadKrScreener : loadScreenerData)(false);
+  });
 
   // CSV 내보내기 버튼 — 현재 시장에 맞는 함수 1개만 호출(단일 리스너로 통합, 중복 다운로드 방지)
   const exportBtn = document.getElementById('sc-export-btn');
