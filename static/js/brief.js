@@ -33,6 +33,7 @@ function initBrief() {
   });
   loadBrief();
   loadBriefFearGreed();
+  loadEconomicCalendar('brief-eco-cal-body');
   loadDailySignals();
   load52wMovers();
   loadEarningsSignals();
@@ -157,7 +158,61 @@ async function loadDailySignals() {
     _lastDailySignals.kr = data.kr;
     renderDailySignals('us', data.us);
     renderDailySignals('kr', data.kr);
+    _renderHeldTop();
+    const inv = data.kr_investor_leaders || {};
+    _renderInvestorList('brief-investor-buy',  inv.buy,  15);
+    _renderInvestorList('brief-investor-sell', inv.sell, 15);
   } catch {}
+}
+
+// 11번: 국내 외국인 수급 상위 (foreign_net 단위: 주)
+function _fmtForeignNet(n) {
+  const v = n || 0;
+  const abs = Math.abs(v);
+  const label = abs >= 1e6 ? (abs / 1e6).toFixed(1) + 'M주' : abs >= 1e3 ? (abs / 1e3).toFixed(0) + 'K주' : abs + '주';
+  return (v >= 0 ? '+' : '-') + label;
+}
+
+function _renderInvestorList(elId, items, limit = 15) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="brief-empty">데이터가 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = items.slice(0, limit).map(s => `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-ticker">${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-pct ${s.foreign_net >= 0 ? 'up' : 'down'}">${_fmtForeignNet(s.foreign_net)}</span>
+      ${_fmtSignalPct(s.change_pct)}
+    </div>`).join('');
+}
+
+function _renderHeldTop() {
+  const el = document.getElementById('brief-held-top');
+  if (!el) return;
+  const tag = (arr, flag, dir) => (arr || []).map(s => ({ ...s, _flag: flag, _dir: dir }));
+  const all = [
+    ...tag((_lastDailySignals.us || {}).buy,  '🇺🇸', 'buy'),
+    ...tag((_lastDailySignals.us || {}).sell, '🇺🇸', 'sell'),
+    ...tag((_lastDailySignals.kr || {}).buy,  '🇰🇷', 'buy'),
+    ...tag((_lastDailySignals.kr || {}).sell, '🇰🇷', 'sell'),
+  ].filter(s => s.held_days != null && !s.is_new);
+  all.sort((a, b) => b.held_days - a.held_days);
+  const top = all.slice(0, 10);
+  if (!top.length) {
+    el.innerHTML = '<div class="brief-empty">연속 유지 중인 신호가 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = top.map(s => `
+    <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
+      <span class="brief-signal-term term-${s.term}">${s.term}</span>
+      <span class="brief-signal-ticker">${s._flag} ${s.ticker}</span>
+      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-dir ${s._dir}">${s._dir === 'buy' ? '▲매수' : '▼매도'}</span>
+      <span class="brief-held-badge">${s.held_days}일째</span>
+    </div>`).join('');
 }
 
 function _fmtSignalPct(pct, isKr) {

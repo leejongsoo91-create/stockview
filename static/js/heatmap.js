@@ -167,10 +167,22 @@ function renderHeatmap() {
   const W = container.clientWidth || window.innerWidth - 40;
   const H = Math.max(window.innerHeight - 240, 480);
 
-  // 1) 인덱스 필터
+  // 1) 인덱스 필터 (8번: watchlist/portfolio는 정적 멤버십이 아니라 매 렌더 시 최신 상태로 조회)
   const pool = _hmIndex === 'all'
     ? _hmStocks
-    : _hmStocks.filter(s => (_hmMembers[_hmIndex] || new Set()).has(s.ticker));
+    : _hmIndex === 'watchlist'
+      ? _hmStocks.filter(s => WL.has(s.ticker))
+      : _hmIndex === 'portfolio'
+        ? _hmStocks.filter(s => PT.tickers().includes(s.ticker))
+        : _hmStocks.filter(s => (_hmMembers[_hmIndex] || new Set()).has(s.ticker));
+
+  if ((_hmIndex === 'watchlist' || _hmIndex === 'portfolio') && pool.length === 0) {
+    const msg = _hmIndex === 'watchlist' ? '관심종목이 비어있습니다.' : '포트폴리오에 보유 종목이 없습니다.';
+    container.innerHTML = `<div style="text-align:center;padding:80px;color:var(--muted)">${msg}</div>`;
+    const countEl0 = document.getElementById('hm-count-label');
+    if (countEl0) countEl0.textContent = '0개 종목';
+    return;
+  }
 
   // 2) 중복 클래스 주식 제거 (우선주·중복 클래스는 GOOGL/주요 클래스로 대표)
   const _HM_EXCLUDE = new Set(['GOOG', 'GOOGM', 'GOOGN', 'BRK.A', 'BF.A', 'BF.B', 'NWS', 'FOXA']);
@@ -565,8 +577,20 @@ function renderKrHeatmap() {
       .filter(s => s.market === 'KOSDAQ')
       .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
       .slice(0, 150);
+  } else if (_krHmFilter === 'watchlist') {
+    stocks = allStocks.filter(s => WL.has(s.ticker));
+  } else if (_krHmFilter === 'portfolio') {
+    stocks = allStocks.filter(s => PT.tickers().includes(s.ticker));
   } else {
     stocks = allStocks;
+  }
+
+  if ((_krHmFilter === 'watchlist' || _krHmFilter === 'portfolio') && stocks.length === 0) {
+    const msg = _krHmFilter === 'watchlist' ? '관심종목이 비어있습니다.' : '포트폴리오에 보유 종목이 없습니다.';
+    container.innerHTML = `<div style="text-align:center;padding:80px;color:var(--muted)">${msg}</div>`;
+    const countEl0 = document.getElementById('hm-kr-count-label');
+    if (countEl0) countEl0.textContent = '0개 종목';
+    return;
   }
 
   // 기간별 등락률 오버레이 (1W/1M 선택 시 perf_pct로 교체)
@@ -588,6 +612,10 @@ function renderKrHeatmap() {
       countEl.textContent = `KOSPI 200 (시총 상위 ${stocks.length}개)`;
     } else if (_krHmFilter === 'kosdaq150') {
       countEl.textContent = `KOSDAQ 150 (시총 상위 ${stocks.length}개)`;
+    } else if (_krHmFilter === 'watchlist') {
+      countEl.textContent = `내 워치리스트 ${stocks.length}개`;
+    } else if (_krHmFilter === 'portfolio') {
+      countEl.textContent = `내 포트폴리오 ${stocks.length}개`;
     } else {
       const kospi  = stocks.filter(s => s.market === 'KOSPI').length;
       const kosdaq = stocks.filter(s => s.market === 'KOSDAQ').length;

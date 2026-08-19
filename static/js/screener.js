@@ -235,6 +235,14 @@ function _scBulkAddToWatchlist() {
   renderScreener();
 }
 
+// 5번: 스크리너 다중선택 → 비교차트 (Watchlist/Portfolio의 openCompareChart 재사용)
+function _scOpenCompareChart() {
+  const tickers = [..._scSelected];
+  if (tickers.length < 2) { alert('비교하려면 2개 이상 선택하세요.'); return; }
+  if (tickers.length > 5) { alert('비교차트는 최대 5개 종목까지 선택할 수 있습니다.'); return; }
+  openCompareChart(tickers);
+}
+
 // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 async function loadScreenerData(showSpinner = false) {
   if (_scLoading) return;

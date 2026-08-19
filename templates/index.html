@@ -283,6 +283,7 @@
       <div id="sc-bulk-bar" class="sc-bulk-bar" style="display:none">
         <span id="sc-bulk-count" class="sc-bulk-count">0개 선택됨</span>
         <button class="sc-bulk-add-btn" onclick="_scBulkAddToWatchlist()">⭐ 관심종목에 추가</button>
+        <button class="sc-bulk-add-btn" onclick="_scOpenCompareChart()">📊 비교차트 보기</button>
         <button class="sc-bulk-clear-btn" onclick="_scClearSelection()">선택 해제</button>
       </div>
 
@@ -309,6 +310,8 @@
         <button class="hm-idx-btn" data-index="nasdaq100">Nasdaq 100</button>
         <button class="hm-idx-btn" data-index="dow30">Dow 30</button>
         <button class="hm-idx-btn" data-index="russell2000">Russell 2000</button>
+        <button class="hm-idx-btn" data-index="watchlist">⭐ 내 워치리스트</button>
+        <button class="hm-idx-btn" data-index="portfolio">💼 내 포트폴리오</button>
         <span id="hm-count-label" class="hm-count-label"></span>
       </div>
       <!-- 인덱스 탭 (KR 전용) -->
@@ -318,6 +321,8 @@
         <button class="hm-kr-idx-btn" data-krindex="kosdaq">KOSDAQ</button>
         <button class="hm-kr-idx-btn" data-krindex="kospi200">KOSPI 200</button>
         <button class="hm-kr-idx-btn" data-krindex="kosdaq150">KOSDAQ 150</button>
+        <button class="hm-kr-idx-btn" data-krindex="watchlist">⭐ 내 워치리스트</button>
+        <button class="hm-kr-idx-btn" data-krindex="portfolio">💼 내 포트폴리오</button>
         <span id="hm-kr-count-label" class="hm-count-label"></span>
         <span class="heatmap-filter-group hm-kr-period-group">
           <span class="quick-label">기간:</span>
@@ -563,6 +568,7 @@
           <button class="report-tag" data-dcat="earnings">📊 실적발표</button>
           <button class="report-tag" data-dcat="company">🏢 기업공시</button>
           <button class="report-tag" data-dcat="market">👁 시장감시</button>
+          <button id="disclosures-bookmark-toggle" class="news-tag" onclick="_toggleDisclosuresBookmarkFilter()">🔖 북마크</button>
           <span style="color:var(--muted);font-size:11px;margin-left:8px">최대 100건 · 자동 30분 갱신</span>
           <button id="disclosures-refresh-btn" style="margin-left:auto;background:var(--border);border:none;color:var(--text);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px">새로고침</button>
         </div>
@@ -589,6 +595,17 @@
       </div>
 
       <div id="brief-overview-panel" class="brief-grid">
+        <!-- 경제 지표 캘린더 (9번: Home과 동일 API/렌더 함수 재사용) -->
+        <div class="brief-card eco-cal-wrap brief-eco-cal-card">
+          <div class="eco-cal-header">
+            <span class="eco-cal-title">📅 Economic Calendar</span>
+            <span class="eco-cal-sub">Upcoming key US economic events</span>
+          </div>
+          <div id="brief-eco-cal-body" class="eco-cal-body">
+            <span style="color:var(--muted);font-size:13px">Loading…</span>
+          </div>
+        </div>
+
         <!-- 감성 게이지 -->
         <div class="brief-card brief-mood-card">
           <div class="brief-card-title">📊 Market Mood</div>
@@ -714,6 +731,21 @@
           </div>
         </div>
 
+        <!-- 국내 수급(외국인 순매수) 상위 (11번) -->
+        <div class="brief-card brief-signals-card">
+          <div class="brief-card-title">🇰🇷 외국인 수급 상위 <span class="brief-signals-note">(전일 순매수 · KR 시총 상위 500종목 대상 · 참고용)</span></div>
+          <div class="brief-signals-grid">
+            <div class="brief-signals-col">
+              <div class="brief-signals-col-title buy">▲ 순매수 상위</div>
+              <div id="brief-investor-buy" class="brief-signals-list"></div>
+            </div>
+            <div class="brief-signals-col">
+              <div class="brief-signals-col-title sell">▼ 순매도 상위</div>
+              <div id="brief-investor-sell" class="brief-signals-list"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- 캔들 패턴 스캐너 (US) -->
         <div class="brief-card brief-signals-card">
           <div class="brief-card-title">🕯️ US 캔들 패턴 스캐너 <span class="brief-signals-note">(오늘 봉 기준 · 참고용)</span></div>
@@ -759,6 +791,10 @@
 
       <!-- 🎯 신호 전용 뷰: 신규(NEW)/N일째 유지 배지, 20개까지 표시 -->
       <div id="brief-signal-panel" class="brief-grid" style="display:none">
+        <div class="brief-card brief-signals-card">
+          <div class="brief-card-title">🏆 신호 유지일수 TOP 10 <span class="brief-signals-note">(US+KR 통합 · 연속 유지일수 기준 · 참고용)</span></div>
+          <div id="brief-held-top" class="brief-signals-list"></div>
+        </div>
         <div class="brief-card brief-signals-card">
           <div class="brief-card-title">🇺🇸 US 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
           <div class="brief-signals-grid">

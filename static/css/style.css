@@ -467,8 +467,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   color: var(--muted);
 }
 
-/* Brief 탭 F&G 카드 */
-.brief-fg-card { text-align: center; }
+/* F&G 풀 게이지 상세 텍스트 (공통 — Brief 탭 fg-full, Home fg-mini 양쪽에서 사이즈 오버라이드로 재사용) */
 .fg-score-big {
   font-size: 42px; font-weight: 800;
   letter-spacing: -1px; margin: 8px 0 2px;
@@ -492,7 +491,6 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .fg-hist-label  { color: var(--muted); flex: 1; text-align: left; }
 .fg-hist-val    { font-weight: 700; width: 36px; text-align: right; }
 .fg-hist-rating { color: var(--muted); font-size: 11px; width: 90px; text-align: right; }
-
 
 .panel-title {
   font-size: 12.5px;
@@ -577,10 +575,10 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   transition: background .12s;
 }
 .eco-row:hover { background: var(--bg-input); }
-.eco-today  { background: rgba(248,81,73,.08);  border-left: 2px solid #f85149; }
+.eco-today  { background: rgba(248,81,73,.08);  border-left: 2px solid var(--red); }
 .eco-tomorrow { background: rgba(210,153,34,.07); border-left: 2px solid #e3b341; }
 .eco-day  { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.eco-today .eco-day   { color: #f85149; font-weight: 600; }
+.eco-today .eco-day   { color: var(--red); font-weight: 600; }
 .eco-tomorrow .eco-day{ color: #e3b341; font-weight: 600; }
 .eco-dot-wrap { display: flex; align-items: center; justify-content: center; }
 .eco-dot {
@@ -588,9 +586,9 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   border-radius: 50%;
   display: inline-block;
 }
-.eco-high { background: #f85149; }
+.eco-high { background: var(--red); }
 .eco-med  { background: #e3b341; }
-.eco-low  { background: #3fb950; }
+.eco-low  { background: var(--green); }
 .eco-icon { font-size: 14px; text-align: center; }
 .eco-event { color: var(--text); font-weight: 500; }
 .eco-cat {
@@ -932,8 +930,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   font-weight: 500;
   white-space: nowrap;
 }
-.sc-sec-tech   { background: rgba(88,166,255,.12); color: #58a6ff; }
-.sc-sec-fin    { background: rgba(63,185,80,.12);  color: #3fb950; }
+.sc-sec-tech   { background: rgba(88,166,255,.12); color: var(--accent); }
+.sc-sec-fin    { background: rgba(63,185,80,.12);  color: var(--green); }
 .sc-sec-health { background: rgba(255,123,114,.12);color: #ff7b72; }
 .sc-sec-energy { background: rgba(210,153,34,.15); color: #d2a522; }
 .sc-sec-consd  { background: rgba(188,140,255,.12);color: #bc8cff; }
@@ -947,7 +945,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 
 /* P/E 색상 코딩 */
 .sc-pe       { font-weight: 600; }
-.sc-pe-low   { color: #3fb950; }
+.sc-pe-low   { color: var(--green); }
 .sc-pe-mid   { color: #d2a522; }
 .sc-pe-high  { color: #ff7b72; }
 
@@ -1223,8 +1221,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .investor-row   { display: grid; grid-template-columns: 54px 1fr 1fr 1fr; gap: 2px; padding: 2px 0; border-bottom: 1px solid var(--border); }
 .investor-header { color: var(--muted); font-weight: 600; font-size: 9px; }
 .investor-date  { color: var(--muted); }
-.investor-row span.up   { color: #3fb950; text-align: right; }
-.investor-row span.down { color: #f85149; text-align: right; }
+.investor-row span.up   { color: var(--green); text-align: right; }
+.investor-row span.down { color: var(--red); text-align: right; }
 
 /* ── Heatmap 인덱스 탭 ──────────────────────────────────────────────────────── */
 .hm-index-bar {
@@ -1391,9 +1389,9 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 }
 .ind-btn:hover { opacity: .85; }
 .ind-ma5.active  { border-color: #f0c040; color: #f0c040; background: rgba(240,192,64,.12); }
-.ind-ma20.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,.12); }
+.ind-ma20.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,.12); }
 .ind-ma60.active { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,.12); }
-.ind-ma120.active { border-color: #3fb950; color: #3fb950; background: rgba(63,185,80,.12); }
+.ind-ma120.active { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.12); }
 .ind-ma240.active { border-color: #f778ba; color: #f778ba; background: rgba(247,120,186,.12); }
 .ind-bb.active   { border-color: #bc8cff; color: #bc8cff; background: rgba(188,140,255,.12); }
 .ind-rsi.active   { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.12); }
@@ -1481,7 +1479,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .chart-alert-badge {
   position: absolute;
   top: -4px; right: -4px;
-  background: #f85149;
+  background: var(--red);
   color: #fff;
   font-size: 9px;
   font-weight: 700;
@@ -1568,7 +1566,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   padding: 2px 6px;
   border-radius: 4px;
 }
-.alert-del-btn:hover { color: #f85149; }
+.alert-del-btn:hover { color: var(--red); }
 .alert-empty { font-size: 12px; color: var(--muted); padding: 4px 0; }
 
 /* RSI / MACD / STO 패널 */
@@ -1704,7 +1702,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   cursor: pointer;
   transition: border-color .15s, color .15s;
 }
-.chart-cmp-clear:hover { border-color: #f85149; color: #f85149; }
+.chart-cmp-clear:hover { border-color: var(--red); color: var(--red); }
 
 /* 비교 범례 */
 .cmp-legend {
@@ -1759,8 +1757,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   top: 0;
   bottom: 0;
   background: rgba(88,166,255,.15);
-  border-left: 1px dashed #58a6ff;
-  border-right: 1px dashed #58a6ff;
+  border-left: 1px dashed var(--accent);
+  border-right: 1px dashed var(--accent);
   pointer-events: none;
   display: none;
   z-index: 3;
@@ -1904,8 +1902,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .analysis-item-body { flex: 1; min-width: 0; }
 .analysis-item-label { font-size: 12px; font-weight: 600; color: var(--text); }
 .analysis-item-verdict { font-size: 10px; font-weight: 700; margin-left: 4px; }
-.analysis-item-verdict.verdict-buy     { color: #3fb950; }
-.analysis-item-verdict.verdict-sell    { color: #f85149; }
+.analysis-item-verdict.verdict-buy     { color: var(--green); }
+.analysis-item-verdict.verdict-sell    { color: var(--red); }
 .analysis-item-verdict.verdict-neutral,
 .analysis-item-verdict.verdict-unknown { color: var(--muted); }
 .analysis-item-detail { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
@@ -2133,7 +2131,7 @@ mark.kw-hl {
 #disclosures-list { display: flex; flex-direction: column; }
 .disclosure-card {
   display: grid;
-  grid-template-columns: 44px 100px 1fr 80px;
+  grid-template-columns: 44px 100px 1fr 80px 24px;
   gap: 8px;
   align-items: center;
   padding: 9px 12px;
@@ -2193,10 +2191,23 @@ mark.kw-hl {
   border-radius: 5px;
   white-space: nowrap;
 }
-.sig-badge.buy  { background: rgba(63,185,80,.14);  color: #3fb950; }
-.sig-badge.sell { background: rgba(248,81,73,.14);  color: #f85149; }
+.sig-badge.buy  { background: rgba(63,185,80,.14);  color: var(--green); }
+.sig-badge.sell { background: rgba(248,81,73,.14);  color: var(--red); }
 .sig-badge-term { font-size: 9px; font-weight: 600; opacity: .75; }
 .sig-badge-none { color: var(--muted); font-size: 12px; }
+
+/* 주봉 추세 배지 (7번: sig-badge 옆에 붙는 보조 배지) */
+.wk-trend-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 3px;
+  white-space: nowrap;
+}
+.wk-trend-badge.up   { background: rgba(63,185,80,.14);  color: var(--green); }
+.wk-trend-badge.down { background: rgba(248,81,73,.14);  color: var(--red); }
 
 /* 워치리스트 헤더 */
 .wl-header-row {
@@ -2301,7 +2312,7 @@ mark.kw-hl {
 
 /* ── PORTFOLIO ─────────────────────────────────────────────────────────────── */
 .pt-nav-btn { color: #7ee787 !important; }
-.pt-nav-btn.active { color: #3fb950 !important; }
+.pt-nav-btn.active { color: var(--green) !important; }
 
 .pt-header-bar {
   display: flex;
@@ -2675,6 +2686,9 @@ mark.kw-hl {
 /* ══════════════════════════════════════════════════════════
    BRIEF TAB
    ══════════════════════════════════════════════════════════ */
+/* Brief 탭 F&G 카드 (풀사이즈 래퍼 — 실제 게이지 스타일은 FEAR&GREED 공통 섹션 참고) */
+.brief-fg-card { text-align: center; }
+
 .brief-header {
   display: flex;
   align-items: center;
@@ -2715,6 +2729,7 @@ mark.kw-hl {
 .brief-stories-card { grid-column: 1 / -1; }
 .brief-reports-card { grid-column: 1 / -1; }
 .brief-signals-card { grid-column: 1 / -1; }
+.brief-eco-cal-card { grid-column: 1 / -1; }
 
 .brief-card {
   background: var(--bg-card);
@@ -2827,8 +2842,8 @@ mark.kw-hl {
   align-items: center;
   justify-content: space-between;
 }
-.brief-signals-col-title.buy  { color: #3fb950; }
-.brief-signals-col-title.sell { color: #f85149; }
+.brief-signals-col-title.buy  { color: var(--green); }
+.brief-signals-col-title.sell { color: var(--red); }
 .brief-signals-col-title.neutral { color: var(--text); }
 .brief-weak-filter {
   font-size: 10.5px;
@@ -2861,7 +2876,7 @@ mark.kw-hl {
   text-align: center;
 }
 .brief-signal-term.term-단기 { background: rgba(139,148,158,.15); color: #8b949e; }
-.brief-signal-term.term-중기 { background: rgba(88,166,255,.15);  color: #58a6ff; }
+.brief-signal-term.term-중기 { background: rgba(88,166,255,.15);  color: var(--accent); }
 .brief-signal-term.term-장기 { background: rgba(227,179,65,.18);  color: #e3b341; }
 .brief-signal-term.term-52w  { background: rgba(139,148,158,.15); color: var(--text); width: 40px; }
 .brief-signal-term.term-vol  { background: rgba(255,140,60,.18);  color: #ff8c3c; width: 40px; }
@@ -2880,8 +2895,8 @@ mark.kw-hl {
   white-space: nowrap;
 }
 .brief-signal-dir { font-size: 12px; font-weight: 700; width: 34px; flex-shrink: 0; }
-.brief-signal-dir.buy  { color: #3fb950; }
-.brief-signal-dir.sell { color: #f85149; }
+.brief-signal-dir.buy  { color: var(--green); }
+.brief-signal-dir.sell { color: var(--red); }
 .brief-signal-ticker { font-size: 12.5px; font-weight: 700; width: 56px; flex-shrink: 0; }
 .brief-signal-name {
   font-size: 12px;
@@ -2893,8 +2908,8 @@ mark.kw-hl {
   white-space: nowrap;
 }
 .brief-signal-pct { font-size: 12px; font-weight: 600; flex-shrink: 0; }
-.brief-signal-pct.up   { color: #3fb950; }
-.brief-signal-pct.down { color: #f85149; }
+.brief-signal-pct.up   { color: var(--green); }
+.brief-signal-pct.down { color: var(--red); }
 .brief-held-badge {
   font-size: 10px;
   font-weight: 700;
@@ -2905,7 +2920,7 @@ mark.kw-hl {
   color: var(--muted);
   white-space: nowrap;
 }
-.brief-held-badge.new { background: rgba(63,185,80,.18); color: #3fb950; }
+.brief-held-badge.new { background: rgba(63,185,80,.18); color: var(--green); }
 
 .brief-subtab-bar { margin-bottom: 16px; }
 

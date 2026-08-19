@@ -957,6 +957,43 @@ def fetch_kr_investor(code: str) -> list[dict]:
         return []
 
 
+def get_kr_investor_leaders(pool: list[dict], limit: int = 15, max_workers: int = 10) -> dict:
+    """11번: KR 시총 상위 풀(pool)에서 외국인 순매수/순매도 상위 종목 스캔.
+    종목당 네이버 페이지 1회 조회 — 배치 규모라 워커 수를 보수적으로 제한."""
+    def _one(stock: dict) -> dict | None:
+        code = re.sub(r"[^0-9]", "", stock["ticker"])[:6]
+        if not code:
+            return None
+        rows = fetch_kr_investor(code)
+        if not rows:
+            return None
+        foreign = rows[0].get("foreign", 0)
+        if not foreign:
+            return None
+        return {
+            "ticker":      stock["ticker"],
+            "name":        stock.get("name_ko") or stock.get("name") or stock["ticker"],
+            "sector":      stock.get("sector"),
+            "price":       stock.get("price"),
+            "change_pct":  stock.get("change_pct"),
+            "market_cap":  stock.get("market_cap") or 0,
+            "foreign_net": foreign,
+        }
+
+    results: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_one, s) for s in pool]
+        for fut in as_completed(futures):
+            r = fut.result()
+            if r:
+                results.append(r)
+
+    buy  = sorted((r for r in results if r["foreign_net"] > 0), key=lambda r: -r["foreign_net"])[:limit]
+    sell = sorted((r for r in results if r["foreign_net"] < 0), key=lambda r: r["foreign_net"])[:limit]
+    log.info(f"get_kr_investor_leaders: {len(results)}/{len(pool)}개 수급 데이터 확보")
+    return {"buy": buy, "sell": sell}
+
+
 # ── 국내주식 종목별 뉴스 ──────────────────────────────────────────────────────
 def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
     """네이버 금융 종목 뉴스 (감성분석 없음 — VADER는 한글 미지원)."""
@@ -2086,6 +2123,7 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
             pattern   = _candle_pattern_today(ohlcv)
             if not score and (vol_ratio is None or vol_ratio < _VOLUME_POOL_RATIO) and not pattern:
                 return None
+            wtrend = _sig_weekly_trend(ohlcv)
             return {
                 "ticker":       ticker,
                 "name":         stock.get("name_ko") or stock.get("name") or ticker,
@@ -2098,6 +2136,7 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
                 "volume_ratio": vol_ratio,
                 "pattern":      pattern[0] if pattern else None,
                 "pattern_dir":  pattern[1] if pattern else 0,
+                "weekly_trend": wtrend[-1] if wtrend else 0,
             }
         except Exception:
             return None
@@ -2194,10 +2233,12 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
                               key=lambda s: -(s.get("market_cap") or 0))[:15]
         bearish_pat = sorted((s for s in metrics if s["pattern_dir"] < 0),
                               key=lambda s: -(s.get("market_cap") or 0))[:15]
-        return {"buy": buy, "sell": sell}, surges, {"bullish": bullish_pat, "bearish": bearish_pat}
+        return {"buy": buy, "sell": sell}, surges, {"bullish": bullish_pat, "bearish": bearish_pat}, pool
 
-    us_sig, us_surges, us_patterns = _process(us_stocks, False, "us")
-    kr_sig, kr_surges, kr_patterns = _process(kr_stocks, True, "kr")
+    us_sig, us_surges, us_patterns, _us_pool = _process(us_stocks, False, "us")
+    kr_sig, kr_surges, kr_patterns, kr_pool  = _process(kr_stocks, True, "kr")
+
+    kr_investor_leaders = get_kr_investor_leaders(kr_pool)
 
     _save_signal_history(history)
 
@@ -2206,6 +2247,7 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
         "kr": kr_sig,
         "volume_surges":  {"us": us_surges,   "kr": kr_surges},
         "candle_patterns": {"us": us_patterns, "kr": kr_patterns},
+        "kr_investor_leaders": kr_investor_leaders,
         "generated_at": int(time.time()),
     }
 

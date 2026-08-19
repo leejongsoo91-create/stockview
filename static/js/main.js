@@ -178,12 +178,19 @@ function _heldBadgeHtml(s) {
   return `<span class="brief-held-badge">${s.held_days}일째</span>`;
 }
 
+// 주봉 추세 배지 — 13주 이동평균 대비 상승/하락(신호가 있는 종목만 값 존재)
+function _weeklyTrendBadgeHtml(s) {
+  if (s.weekly_trend == null || s.weekly_trend === 0) return '';
+  const up = s.weekly_trend > 0;
+  return `<span class="wk-trend-badge ${up ? 'up' : 'down'}" title="주봉 13주 이동평균 대비 ${up ? '상승' : '하락'}">주봉${up ? '↑' : '↓'}</span>`;
+}
+
 function signalBadgeHtml(ticker, map) {
   const s = map[ticker];
   if (!s) return '<span class="sig-badge-none">—</span>';
   const cls   = s.direction === 'buy' ? 'buy' : 'sell';
   const label = s.direction === 'buy' ? '▲매수' : '▼매도';
-  return `<span class="sig-badge ${cls}" title="${s.term} 신호 · 점수 ${s.score}">${label} <span class="sig-badge-term">${s.term}</span></span>${_heldBadgeHtml(s)}`;
+  return `<span class="sig-badge ${cls}" title="${s.term} 신호 · 점수 ${s.score}">${label} <span class="sig-badge-term">${s.term}</span></span>${_heldBadgeHtml(s)}${_weeklyTrendBadgeHtml(s)}`;
 }
 
 // ── 뷰 전환 ─────────────────────────────────────────────────────────────────
@@ -420,8 +427,8 @@ const _IMP_DOT = {
   low:    '<span class="eco-dot eco-low"   title="Low impact"></span>',
 };
 
-function renderEconomicCalendar(events) {
-  const el = document.getElementById('eco-cal-body');
+function renderEconomicCalendar(events, elId = 'eco-cal-body') {
+  const el = document.getElementById(elId);
   if (!el) return;
   if (!events || !events.length) {
     el.innerHTML = '<span style="color:var(--muted);font-size:13px">No upcoming events in the next 3 weeks.</span>';
@@ -459,12 +466,12 @@ function renderEconomicCalendar(events) {
   }).join('');
 }
 
-async function loadEconomicCalendar() {
+async function loadEconomicCalendar(elId = 'eco-cal-body') {
   try {
     const events = await api('/api/economic-calendar?days=21');
-    renderEconomicCalendar(events);
+    renderEconomicCalendar(events, elId);
   } catch {
-    const el = document.getElementById('eco-cal-body');
+    const el = document.getElementById(elId);
     if (el) el.innerHTML = '<span style="color:var(--muted);font-size:13px">Failed to load calendar.</span>';
   }
 }
@@ -836,12 +843,29 @@ function initNews() {
       document.querySelectorAll('#disclosures-panel .report-tag').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       renderDisclosures(_allDisclosures, btn.dataset.dcat);
+      _activeDcat = btn.dataset.dcat;
     });
   });
 }
 
 let _disclosuresLoaded = false;
 let _allDisclosures = [];
+let _activeDcat = 'all';
+let _showDisclosuresBookmarkedOnly = false;
+
+function _toggleDisclosuresBookmarkFilter() {
+  _showDisclosuresBookmarkedOnly = !_showDisclosuresBookmarkedOnly;
+  const btn = document.getElementById('disclosures-bookmark-toggle');
+  if (btn) btn.classList.toggle('active', _showDisclosuresBookmarkedOnly);
+  renderDisclosures(_allDisclosures, _activeDcat);
+}
+
+function _toggleDisclosureBookmark(link) {
+  const item = _allDisclosures.find(d => d.link === link) || NB.load()[link];
+  if (!item) return;
+  NB.toggle({ ...item, url: link, is_disclosure: true });
+  renderDisclosures(_allDisclosures, _activeDcat);
+}
 
 function loadDisclosures(force = false) {
   if (_disclosuresLoaded && !force) return;
@@ -865,9 +889,13 @@ function _matchDisclosureStock(company) {
 
 function renderDisclosures(items, dcat = 'all') {
   const el = document.getElementById('disclosures-list');
-  const list = dcat === 'all' ? items : (items || []).filter(d => d.category === dcat);
+  // 북마크는 News·Reports와 NB 저장소를 공유 — is_disclosure 필드로 다른 항목과 구분
+  let list = _showDisclosuresBookmarkedOnly
+    ? Object.values(NB.load()).filter(item => item.is_disclosure)
+    : (dcat === 'all' ? items : (items || []).filter(d => d.category === dcat));
   if (!list || !list.length) {
-    el.innerHTML = '<div style="color:var(--muted);padding:20px 0">해당하는 공시가 없습니다.</div>';
+    const emptyMsg = _showDisclosuresBookmarkedOnly ? '북마크한 공시가 없습니다.' : '해당하는 공시가 없습니다.';
+    el.innerHTML = `<div style="color:var(--muted);padding:20px 0">${emptyMsg}</div>`;
     return;
   }
   el.innerHTML = list.map(d => {
@@ -876,12 +904,16 @@ function renderDisclosures(items, dcat = 'all') {
       ? `<span class="disclosure-company disclosure-company-link" title="차트에서 ${d.company} 보기"
           onclick="event.stopPropagation(); navigateToChart('${matched.ticker}')">${d.company}</span>`
       : `<span class="disclosure-company">${d.company}</span>`;
+    const bookmarked = NB.has(d.link);
     return `
     <div class="disclosure-card" onclick="window.open('${d.link}','_blank')">
       <span class="disclosure-time">${d.time}</span>
       ${companyHtml}
       <span class="disclosure-title">${d.title}</span>
       <span class="disclosure-type">${d.type}</span>
+      <button class="news-bookmark-btn${bookmarked ? ' active' : ''}"
+              onclick="event.stopPropagation(); _toggleDisclosureBookmark('${d.link}')"
+              title="${bookmarked ? '북마크 해제' : '북마크'}">${bookmarked ? '★' : '☆'}</button>
     </div>`;
   }).join('');
 }
@@ -947,8 +979,8 @@ function renderReports(rtype) {
   }).join('');
 }
 function renderNews() {
-  // 북마크는 Reports와 NB 저장소를 공유 — report_type 필드로 리포트 항목은 제외
-  let list = _showBookmarkedOnly ? Object.values(NB.load()).filter(item => item.report_type == null)
+  // 북마크는 Reports·Disclosures와 NB 저장소를 공유 — report_type/is_disclosure 필드로 두 항목 모두 제외
+  let list = _showBookmarkedOnly ? Object.values(NB.load()).filter(item => item.report_type == null && !item.is_disclosure)
     : (_activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment));
   if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
   if (_activeKeyword) list = list.filter(n =>
@@ -1004,6 +1036,39 @@ function updateTimestamp() {
 }
 
 // ── WebSocket 연결 + 이벤트 핸들러 ──────────────────────────────────────────
+// 10번: 연결 끊김 시 Home/Screener(US)/Portfolio/Watchlist 갱신이 멈추지 않도록 폴백 폴링
+let _fallbackPollTimer = null;
+
+async function _refreshCurrentView() {
+  try {
+    const stocks = await api('/api/stocks');
+    if (_currentView === 'home') {
+      const indices = await api('/api/indices');
+      buildTickerTape(indices, stocks);
+      renderMovers(stocks);
+      renderSectorPerf(stocks);
+      renderVolumeLeaders(stocks);
+      renderMarketStatBar(stocks);
+    }
+    // 스크리너가 US 시장으로 열려있으면 데이터 갱신 (KR 보는 중이면 건드리지 않음)
+    if (_currentView === 'screener' && typeof _scMarket !== 'undefined' && _scMarket !== 'kr'
+        && typeof loadScreenerData === 'function') {
+      loadScreenerData(false);
+    }
+    // 포트폴리오가 열려있으면 갱신
+    if (_currentView === 'portfolio' && typeof renderPortfolio === 'function') {
+      renderPortfolio();
+    }
+    // 워치리스트가 열려있으면 갱신
+    if (_currentView === 'watchlist' && typeof renderWatchlist === 'function') {
+      renderWatchlist();
+    }
+    // 가격 알림 확인 — 차트 탭을 안 보고 있어도(다른 탭이거나 다른 티커여도) 동작
+    if (typeof _checkAllAlerts === 'function') _checkAllAlerts(stocks);
+    updateTimestamp();
+  } catch {}
+}
+
 function initSocketIO() {
   const socket = io({ transports: ['websocket', 'polling'] });
 
@@ -1011,43 +1076,17 @@ function initSocketIO() {
     const el = document.getElementById('last-updated');
     if (el) el.classList.remove('disconnected');
     updateTimestamp();
+    if (_fallbackPollTimer) { clearInterval(_fallbackPollTimer); _fallbackPollTimer = null; }
   });
 
   socket.on('disconnect', () => {
     const el = document.getElementById('last-updated');
     if (el) { el.textContent = '⚠ 연결 끊김'; el.classList.add('disconnected'); }
+    if (!_fallbackPollTimer) _fallbackPollTimer = setInterval(_refreshCurrentView, 30000);
   });
 
   // 종목 가격 갱신 Push
-  socket.on('stocks_update', async () => {
-    try {
-      const stocks = await api('/api/stocks');
-      if (_currentView === 'home') {
-        const indices = await api('/api/indices');
-        buildTickerTape(indices, stocks);
-        renderMovers(stocks);
-        renderSectorPerf(stocks);
-        renderVolumeLeaders(stocks);
-        renderMarketStatBar(stocks);
-      }
-      // 스크리너가 US 시장으로 열려있으면 데이터 갱신 (KR 보는 중이면 건드리지 않음)
-      if (_currentView === 'screener' && typeof _scMarket !== 'undefined' && _scMarket !== 'kr'
-          && typeof loadScreenerData === 'function') {
-        loadScreenerData(false);
-      }
-      // 포트폴리오가 열려있으면 갱신
-      if (_currentView === 'portfolio' && typeof renderPortfolio === 'function') {
-        renderPortfolio();
-      }
-      // 워치리스트가 열려있으면 갱신
-      if (_currentView === 'watchlist' && typeof renderWatchlist === 'function') {
-        renderWatchlist();
-      }
-      // 가격 알림 확인 — 차트 탭을 안 보고 있어도(다른 탭이거나 다른 티커여도) 동작
-      if (typeof _checkAllAlerts === 'function') _checkAllAlerts(stocks);
-      updateTimestamp();
-    } catch {}
-  });
+  socket.on('stocks_update', _refreshCurrentView);
 
   // 국내주식 가격 갱신 Push
   socket.on('kr_stocks_update', async () => {
