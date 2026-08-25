@@ -175,6 +175,18 @@ def refresh_news():
         log.warning(f"뉴스 갱신 실패: {e}")
 
 
+def refresh_kr_market_news():
+    """국내 경제/증시 RSS 뉴스 갱신 -- 10분 캐시 (해외 뉴스와 동일 주기)"""
+    log.info("국내 뉴스 갱신 시작...")
+    try:
+        kr_news_data = df.fetch_kr_market_news()
+        if kr_news_data:
+            cache.set("kr_market_news", kr_news_data, ttl=600)
+            log.info(f"국내 뉴스 갱신 완료: {len(kr_news_data)}건")
+    except Exception as e:
+        log.warning(f"국내 뉴스 갱신 실패: {e}")
+
+
 def refresh_av_news():
     """Alpha Vantage 뉴스 갱신 — 12시간 캐시 (하루 25회 한도 보호)"""
     log.info("AlphaVantage 뉴스 갱신 시작...")
@@ -372,6 +384,7 @@ def initial_load():
     # 백그라운드 갱신 스레드 시작
     threading.Thread(target=refresh_indices,        daemon=True).start()
     threading.Thread(target=refresh_news,           daemon=True).start()
+    threading.Thread(target=refresh_kr_market_news, daemon=True).start()
     threading.Thread(target=refresh_reports,        daemon=True).start()
     threading.Thread(target=refresh_earnings,       daemon=True).start()
     threading.Thread(target=refresh_av_news,        daemon=True).start()
@@ -417,6 +430,7 @@ _scheduler.add_job(refresh_stocks,          "interval", minutes=5,  id="stocks")
 _scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
+_scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")
 _scheduler.add_job(refresh_reports,         "interval", minutes=15, id="reports")
 _scheduler.add_job(refresh_earnings,        "interval", hours=1,    id="earnings")
 _scheduler.add_job(refresh_market_caps,     "interval", hours=6,    id="market_caps")
@@ -472,10 +486,13 @@ def news():
     rss_news     = cache.get("news") or NEWS
     av_news      = cache.get("av_news") or []
     finnhub_news = cache.get("finnhub_news") or []
+    kr_news      = cache.get("kr_market_news") or []
+    for n in av_news + finnhub_news:
+        n["market"] = "US"
     # 중복 제거: 제목 기준
     seen   = {n["title"] for n in rss_news}
     extras = []
-    for n in av_news + finnhub_news:
+    for n in av_news + finnhub_news + kr_news:
         if n["title"] not in seen:
             seen.add(n["title"])
             extras.append(n)
@@ -837,6 +854,28 @@ def stock_analysis(ticker):
     return jsonify(result)
 
 
+@app.route("/api/financials/<ticker>")
+def financials(ticker):
+    """재무제표 -- KR: 네이버 스크래핑 / US: SEC EDGAR API. 12시간 lazy 캐시."""
+    t = ticker.upper()
+    key = f"financials_{t}"
+    cached = cache.get(key)
+    if cached is not None:
+        return jsonify(cached)
+
+    if t.endswith((".KS", ".KQ")):
+        code = re.sub(r"[^0-9]", "", t)[:6]
+        result = df.fetch_kr_financials(code) if code else None
+    else:
+        result = df.fetch_us_financials(t)
+
+    if result is None:
+        return jsonify({"error": "Not found"}), 404
+
+    cache.set(key, result, ttl=43200)
+    return jsonify(result)
+
+
 @app.route("/api/fear-greed")
 def fear_greed_api():
     data = cache.get("fear_greed")
@@ -1014,4 +1053,4 @@ NEWS = [
 if __name__ == "__main__":
     initial_load()
     _scheduler.start()
-    socketio.run(app, debug=False, host="100.112.30.32", port=5001, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=False, port=5001, allow_unsafe_werkzeug=True)

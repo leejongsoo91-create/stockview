@@ -516,6 +516,7 @@
           </div>
           <div id="signal-card" style="display:none"></div>
           <div id="stock-analysis-card" style="display:none"></div>
+          <div id="financials-card" style="display:none"></div>
           <div id="stock-info-panel">
             <div class="info-placeholder">Select a ticker to view chart</div>
           </div>
@@ -539,6 +540,10 @@
           <button class="news-tag positive" data-sentiment="positive">Positive</button>
           <button class="news-tag negative" data-sentiment="negative">Negative</button>
           <button class="news-tag neutral"  data-sentiment="neutral">Neutral</button>
+          <span class="news-filter-sep"></span>
+          <button class="news-market-tag active" data-market="all">전체</button>
+          <button class="news-market-tag" data-market="US">🌐 해외</button>
+          <button class="news-market-tag" data-market="KR">🇰🇷 국내</button>
           <button id="news-bookmark-toggle" class="news-tag" onclick="_toggleBookmarkFilter()">🔖 북마크</button>
           <select id="news-src-filter">
             <option value="all">All Sources</option>

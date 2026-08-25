@@ -55,6 +55,18 @@ RSS_FEEDS = [
     {"url": "https://www.appeconomyinsights.com/feed",                            "source": "App Economy Insights"},
 ]
 
+# 국내 경제/증시 뉴스 -- 실제 접속 테스트로 살아있는 피드만 선정 (2026-08-25)
+KR_RSS_FEEDS = [
+    {"url": "https://www.yna.co.kr/rss/economy.xml",                              "source": "연합뉴스 경제"},
+    {"url": "http://rss.edaily.co.kr/stock_news.xml",                             "source": "이데일리 증권"},
+    {"url": "https://www.newsis.com/RSS/economy.xml",                             "source": "뉴시스 경제"},
+    {"url": "https://rss.donga.com/economy.xml",                                  "source": "동아일보 경제"},
+    {"url": "https://www.asiae.co.kr/rss/economy.htm",                            "source": "아시아경제"},
+    {"url": "https://www.sedaily.com/rss/finance",                                "source": "서울경제 금융"},
+    {"url": "https://kr.investing.com/rss/news.rss",                              "source": "Investing.com 한국"},
+    {"url": "https://www.infostockdaily.co.kr/rss/allArticle.xml",                "source": "인포스탁데일리"},
+]
+
 REPORT_FEEDS = [
     {"url": "https://www.globenewswire.com/RssFeed/subjectcode/19-Earnings%20Releases%20%26%20Operating%20Results",
      "source": "Globe Newswire", "report_type": "Earnings"},
@@ -1027,6 +1039,183 @@ def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
         return []
 
 
+# ── 재무제표 (KR: 네이버 '기업실적분석' 스크래핑 / US: SEC EDGAR companyfacts API) ──
+_SEC_HEADERS = {"User-Agent": "StockView Personal Research App admin@stockview-personal.app"}
+_sec_cik_map: dict[str, str] | None = None
+
+_KR_FIN_ROWS = [
+    ("매출액", "억원"), ("영업이익", "억원"), ("당기순이익", "억원"),
+    ("영업이익률", "%"), ("순이익률", "%"), ("ROE(지배주주)", "%"),
+    ("부채비율", "%"), ("유보율", "%"),
+    ("EPS(원)", "원"), ("PER(배)", "배"), ("BPS(원)", "원"), ("PBR(배)", "배"),
+    ("주당배당금(원)", "원"), ("시가배당률(%)", "%"), ("배당성향(%)", "%"),
+]
+
+_US_GAAP_TAGS = {
+    "revenue":         ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"],
+    "operating_income": ["OperatingIncomeLoss"],
+    "net_income":       ["NetIncomeLoss"],
+    "eps_diluted":      ["EarningsPerShareDiluted"],
+}
+
+
+def _load_sec_cik_map() -> dict[str, str]:
+    """SEC 공식 티커→CIK 매핑 (무료, 키 불필요). 프로세스 생애주기 동안 메모리 캐시."""
+    global _sec_cik_map
+    if _sec_cik_map is not None:
+        return _sec_cik_map
+    try:
+        r = requests.get("https://www.sec.gov/files/company_tickers.json",
+                          headers=_SEC_HEADERS, timeout=10)
+        data = r.json()
+        _sec_cik_map = {row["ticker"].upper(): str(row["cik_str"]).zfill(10) for row in data.values()}
+        log.info(f"SEC CIK 매핑 로드 완료: {len(_sec_cik_map)}개")
+    except Exception as e:
+        log.warning(f"SEC CIK 매핑 로드 실패: {e}")
+        _sec_cik_map = {}
+    return _sec_cik_map
+
+
+def _sec_pick_concept(gaap: dict, keys: list[str]) -> list[dict]:
+    """여러 대체 태그명(회사·연도별로 다른 태그를 쓰는 경우가 많음)의 항목을 전부 합쳐 반환."""
+    merged = []
+    for k in keys:
+        units = gaap.get(k, {}).get("units", {})
+        for unit_key in ("USD", "USD/shares"):
+            if unit_key in units:
+                merged.extend(units[unit_key])
+                break
+    return merged
+
+
+def fetch_us_financials(ticker: str) -> dict | None:
+    """SEC EDGAR companyfacts API로 미국 상장사 연간(10-K) 재무제표 조회. 무료, 키 불필요."""
+    cik = _load_sec_cik_map().get(ticker.upper())
+    if not cik:
+        return None
+    try:
+        r = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
+                          headers=_SEC_HEADERS, timeout=15)
+        if r.status_code != 200:
+            return None
+        gaap = r.json().get("facts", {}).get("us-gaap", {})
+    except Exception as e:
+        log.warning(f"SEC EDGAR 조회 실패 ({ticker}): {e}")
+        return None
+
+    def annual_series(keys: list[str]) -> dict[str, float]:
+        """10-K(연간) 항목만, 실제 회계기간 종료일(end)로 그룹핑 -- fy/fp 태그는 회사·개정판마다
+        일관성이 없어(예: NVDA 회계연도 라벨 밀림) end 날짜 기준이 훨씬 안정적."""
+        best: dict[str, dict] = {}
+        for e in _sec_pick_concept(gaap, keys):
+            if e.get("form") != "10-K":
+                continue
+            start, end = e.get("start"), e.get("end")
+            if not start or not end:
+                continue
+            try:
+                days = (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days
+            except ValueError:
+                continue
+            if not (350 <= days <= 380):  # 연간(약 1년) 구간만, 분기/누적 값 제외
+                continue
+            if end not in best or e["filed"] > best[end]["filed"]:
+                best[end] = e
+        return {end: e["val"] for end, e in best.items()}
+
+    rev, op, ni, eps = (annual_series(_US_GAAP_TAGS[k])
+                         for k in ("revenue", "operating_income", "net_income", "eps_diluted"))
+    end_dates = sorted(set(rev) | set(op) | set(ni))[-4:]
+    if not end_dates:
+        return None
+    years = [f"FY{d[:4]}" for d in end_dates]
+
+    def row(series: dict[str, float]) -> list[float | None]:
+        return [series.get(d) for d in end_dates]
+
+    revenue_row, op_row, ni_row, eps_row = row(rev), row(op), row(ni), row(eps)
+    op_margin  = [round(o / r * 100, 1) if (o is not None and r) else None for o, r in zip(op_row, revenue_row)]
+    net_margin = [round(n / r * 100, 1) if (n is not None and r) else None for n, r in zip(ni_row, revenue_row)]
+
+    return {
+        "market": "US",
+        "annual_periods": years,
+        "quarterly_periods": [],
+        "rows": [
+            {"label": "매출액",     "unit": "USD", "annual": revenue_row, "quarterly": []},
+            {"label": "영업이익",   "unit": "USD", "annual": op_row,      "quarterly": []},
+            {"label": "당기순이익", "unit": "USD", "annual": ni_row,      "quarterly": []},
+            {"label": "영업이익률", "unit": "%",   "annual": op_margin,   "quarterly": []},
+            {"label": "순이익률",   "unit": "%",   "annual": net_margin,  "quarterly": []},
+            {"label": "EPS(희석)",  "unit": "USD/주", "annual": eps_row,  "quarterly": []},
+        ],
+    }
+
+
+def fetch_kr_financials(code: str) -> dict | None:
+    """네이버 금융 '기업실적분석' 표 스크래핑 -- 연간 4개(최근3년+컨센서스)·분기 6개."""
+    import html as _html
+    try:
+        url = f"https://finance.naver.com/item/main.naver?code={code}"
+        resp = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://finance.naver.com",
+        }, timeout=8)
+        resp.encoding = "utf-8"  # main.naver는 UTF-8 (frgn.naver/news_news.naver와 달리 EUC-KR 아님)
+        html_text = resp.text
+
+        table_m = re.search(r'<table[^>]*class="tb_type1 tb_num tb_type1_ifrs"[^>]*>(.*?)</table>',
+                             html_text, re.DOTALL)
+        if not table_m:
+            return None
+        table = table_m.group(1)
+
+        thead_m = re.search(r'<thead>(.*?)</thead>', table, re.DOTALL)
+        period_ths = re.findall(r'<th scope="col"[^>]*>(.*?)</th>', thead_m.group(1), re.DOTALL) if thead_m else []
+        periods = []
+        for th in period_ths:
+            t = _html.unescape(re.sub(r"<[^>]+>", "", th)).strip()
+            t = re.sub(r"\s+", "", t)
+            if re.match(r"^\d{4}\.\d{2}", t):  # "최근 연간/분기 실적" 그룹헤더(scope=col) 제외, 날짜만
+                periods.append(t)
+        annual_periods, quarterly_periods = periods[:4], periods[4:10]
+
+        def clean_num(cell: str) -> float | None:
+            t = re.sub(r"<[^>]+>", "", cell).strip().replace(",", "").replace("\xa0", "")
+            if not t or t in ("-", "N/A"):
+                return None
+            try:
+                return float(t)
+            except ValueError:
+                return None
+
+        def row_values(label: str) -> tuple[list, list]:
+            m = re.search(rf'<strong>{re.escape(label)}</strong></th>(.*?)</tr>', table, re.DOTALL)
+            if not m:
+                return [None] * 4, [None] * 6
+            cells = re.findall(r'<td[^>]*>(.*?)</td>', m.group(1), re.DOTALL)
+            vals = [clean_num(c) for c in cells]
+            return vals[:4], vals[4:10]
+
+        rows = []
+        for label, unit in _KR_FIN_ROWS:
+            ann, qtr = row_values(label)
+            rows.append({"label": label, "unit": unit, "annual": ann, "quarterly": qtr})
+
+        if not annual_periods or all(v is None for r in rows for v in r["annual"]):
+            return None
+
+        return {
+            "market": "KR",
+            "annual_periods": annual_periods,
+            "quarterly_periods": quarterly_periods,
+            "rows": rows,
+        }
+    except Exception as e:
+        log.warning(f"KR 재무제표 조회 실패 {code}: {e}")
+        return None
+
+
 # ── 국내주식 공시 피드 (KRX KIND) ─────────────────────────────────────────────
 def fetch_kr_disclosures(page_size: int = 20) -> list[dict]:
     """
@@ -1643,9 +1832,48 @@ def fetch_news() -> list[dict]:
                     "sentiment": sentiment,
                     "score":     round(score, 4),
                     "url":       entry.get("link", ""),
+                    "market":    "US",
                 })
         except Exception as e:
             log.warning(f"RSS({feed_info['source']}): {e}")
+
+    return results[:100]
+
+
+def fetch_kr_market_news() -> list[dict]:
+    """국내 경제/증시 RSS 피드 -- VADER는 한글 미지원이라 감성분석 없이 반환(종목별 KR뉴스와 동일 정책)."""
+    seen: set[str] = set()
+    results: list[dict] = []
+
+    _HEADERS = {"User-Agent": "StockView/1.0 (finviz-clone; educational project)"}
+    _TIMEOUT = 8
+
+    for feed_info in KR_RSS_FEEDS:
+        try:
+            resp = requests.get(feed_info["url"], headers=_HEADERS, timeout=_TIMEOUT)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.text)
+
+            for entry in feed.entries[:10]:
+                title = entry.get("title", "").strip()
+                if not title or title in seen:
+                    continue
+                seen.add(title)
+
+                results.append({
+                    "id":        len(results) + 1,
+                    "title":     title,
+                    "source":    feed_info["source"],
+                    "time":      _time_ago(entry.get("published_parsed")),
+                    "timestamp": _to_timestamp(entry.get("published_parsed")),
+                    "ticker":    None,
+                    "sentiment": "neutral",
+                    "score":     0,
+                    "url":       entry.get("link", ""),
+                    "market":    "KR",
+                })
+        except Exception as e:
+            log.warning(f"KR RSS({feed_info['source']}): {e}")
 
     return results[:100]
 

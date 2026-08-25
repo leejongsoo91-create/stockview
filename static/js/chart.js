@@ -1014,8 +1014,10 @@ async function loadChart(ticker) {
     if (!_isIndex(ticker)) {
       _loadStockNews(ticker);
       renderStockAnalysis(ticker);
+      renderFinancials(ticker);
     } else {
       document.getElementById('stock-analysis-card').style.display = 'none';
+      document.getElementById('financials-card').style.display = 'none';
     }
 
     _startAutoRefresh();
@@ -2266,6 +2268,79 @@ async function renderStockAnalysis(ticker) {
     <div class="analysis-items">${itemsHtml}</div>
     ${infoHtml ? `<div class="analysis-info">${infoHtml}</div>` : ''}
   `;
+}
+
+// ── 재무제표 (KR: 네이버 금융 / US: SEC EDGAR) ────────────────────────────────
+function _fmtFinNum(v, unit) {
+  if (v == null) return '—';
+  const sign = v < 0 ? '-' : '';
+  const abs  = Math.abs(v);
+  if (unit === 'USD') {
+    if (abs >= 1e9) return sign + '$' + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(1) + 'M';
+    return sign + '$' + abs.toLocaleString('en-US');
+  }
+  if (unit === 'USD/주') return sign + '$' + abs.toFixed(2);
+  if (unit === '억원') {
+    if (abs >= 10000) return sign + (abs / 10000).toFixed(1) + '조원';
+    return sign + Math.round(abs).toLocaleString('ko-KR') + '억원';
+  }
+  if (unit === '원') return sign + Math.round(abs).toLocaleString('ko-KR') + '원';
+  if (unit === '%')  return sign + abs.toFixed(2) + '%';
+  if (unit === '배')  return sign + abs.toFixed(2) + '배';
+  return String(v);
+}
+
+function _renderFinancialsTable(card, data, mode) {
+  const periods = mode === 'quarterly' ? data.quarterly_periods : data.annual_periods;
+  const hasQuarterly = data.quarterly_periods && data.quarterly_periods.length > 0;
+
+  const toggleHtml = hasQuarterly ? `
+    <div class="fin-toggle">
+      <button class="fin-toggle-btn ${mode === 'annual' ? 'active' : ''}" data-mode="annual">연간</button>
+      <button class="fin-toggle-btn ${mode === 'quarterly' ? 'active' : ''}" data-mode="quarterly">분기</button>
+    </div>` : '';
+
+  const theadHtml = `<tr><th>항목</th>${periods.map(p => `<th>${p}</th>`).join('')}</tr>`;
+  const tbodyHtml = data.rows.map(r => {
+    const vals = mode === 'quarterly' ? r.quarterly : r.annual;
+    return `<tr><th class="fin-row-label">${r.label}</th>${vals.map(v => `<td>${_fmtFinNum(v, r.unit)}</td>`).join('')}</tr>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="info-section-title">📑 재무제표 <span class="analysis-disclaimer">(${data.market === 'KR' ? '네이버 금융' : 'SEC EDGAR'})</span></div>
+    ${toggleHtml}
+    <div class="fin-table-wrap"><table class="fin-table">
+      <thead>${theadHtml}</thead>
+      <tbody>${tbodyHtml}</tbody>
+    </table></div>
+  `;
+
+  if (hasQuarterly) {
+    card.querySelectorAll('.fin-toggle-btn').forEach(btn => {
+      btn.onclick = () => _renderFinancialsTable(card, data, btn.dataset.mode);
+    });
+  }
+}
+
+async function renderFinancials(ticker) {
+  const card = document.getElementById('financials-card');
+  if (!card) return;
+  card.style.display = '';
+  card.innerHTML = `<div class="info-section-title">📑 재무제표</div><div class="analysis-loading">불러오는 중…</div>`;
+
+  let data;
+  try {
+    data = await api(`/api/financials/${encodeURIComponent(ticker)}`);
+  } catch {
+    card.style.display = 'none';
+    return;
+  }
+  if (!data || data.error || !data.rows || !data.annual_periods || !data.annual_periods.length) {
+    card.style.display = 'none';
+    return;
+  }
+  _renderFinancialsTable(card, data, 'annual');
 }
 
 // ── 종목 정보 사이드바 ────────────────────────────────────────────────────────

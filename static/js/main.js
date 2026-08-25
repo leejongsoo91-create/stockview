@@ -739,6 +739,7 @@ let _allReports     = [];
 let _activeSubtab   = 'news';
 let _activeSentiment = 'all';
 let _activeSource    = 'all';
+let _activeMarket    = 'all';
 let _activeKeyword   = '';
 let _showBookmarkedOnly = false;
 
@@ -811,6 +812,14 @@ function initNews() {
   document.getElementById('news-src-filter')?.addEventListener('change', e => {
     _activeSource = e.target.value;
     renderNews();
+  });
+  document.querySelectorAll('.news-market-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.news-market-tag').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _activeMarket = btn.dataset.market;
+      renderNews();
+    });
   });
 
   // 키워드 검색 (debounce 300ms)
@@ -983,6 +992,7 @@ function renderNews() {
   let list = _showBookmarkedOnly ? Object.values(NB.load()).filter(item => item.report_type == null && !item.is_disclosure)
     : (_activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment));
   if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
+  if (_activeMarket !== 'all') list = list.filter(n => n.market === _activeMarket);
   if (_activeKeyword) list = list.filter(n =>
     n.title.toLowerCase().includes(_activeKeyword) ||
     (n.source || '').toLowerCase().includes(_activeKeyword)
@@ -1015,6 +1025,7 @@ function renderNews() {
         <div class="news-body">
           <div class="news-title">${titleHtml}</div>
           <div class="news-meta">
+            <span class="news-market-flag">${n.market === 'KR' ? '🇰🇷' : '🌐'}</span>
             <span class="news-source" data-src="${_escHtml(n.source)}">${_escHtml(n.source)}</span>
             <span>${_escHtml(n.time)}</span>
             ${tickerBadge}
