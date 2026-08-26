@@ -2752,6 +2752,87 @@ mark.kw-hl {
 
 .brief-updated { font-size: 12px; color: var(--muted); margin-left: auto; }
 
+/* ── AI 음성 브리핑 카드 ── */
+.voice-briefing-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.voice-briefing-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.vb-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.vb-play-btn {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vb-play-btn:hover { opacity: .9; }
+.vb-info { flex: 1; min-width: 200px; }
+.vb-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.vb-progress-wrap { display: flex; align-items: center; gap: 8px; }
+.vb-progress-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.vb-progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width .1s linear; }
+.vb-time { font-size: 11px; color: var(--muted); min-width: 34px; }
+.vb-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vb-speed-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.vb-speed-btn.active { border-color: var(--accent); color: var(--accent); }
+.vb-script-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vb-script-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vb-turn { display: flex; gap: 8px; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+.vb-turn.active { background: rgba(88,166,255,.12); }
+.vb-turn-speaker { flex-shrink: 0; width: 40px; font-weight: 700; color: var(--accent); }
+.vb-turn.analyst .vb-turn-speaker { color: #d2a8ff; }
+.vb-turn-text { color: var(--text); line-height: 1.5; }
+
 .brief-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;

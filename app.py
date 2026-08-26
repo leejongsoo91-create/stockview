@@ -7,7 +7,7 @@ import random
 import re
 import threading
 from datetime import date, datetime, timedelta
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -315,6 +315,78 @@ def refresh_daily_signals():
         log.error(f"refresh_daily_signals 실패: {e}")
 
 
+def _compute_market_mood(items: list[dict]) -> dict:
+    """뉴스/리포트 감성 분포 -> Market Mood (긍정/부정/중립 비율 + 라벨). /api/brief와 refresh_voice_briefing 공용."""
+    sentiments = [i.get("sentiment", "neutral") for i in items]
+    pos  = sentiments.count("positive")
+    neg  = sentiments.count("negative")
+    neut = sentiments.count("neutral")
+    total = len(sentiments) or 1
+    return {
+        "positive": round(pos  / total * 100),
+        "negative": round(neg  / total * 100),
+        "neutral":  round(neut / total * 100),
+        "label": "Bullish" if pos > neg * 1.5 else "Bearish" if neg > pos * 1.5 else "Mixed",
+    }
+
+
+def _dedup_stories(items: list[dict], max_per_source: int = 2, top_n: int = 5) -> list[dict]:
+    """중복 제거 + 소스 다양성 + 감성 강도/최신순 가중. /api/brief와 refresh_voice_briefing 공용."""
+    seen_words: list[set] = []
+    source_count: dict[str, int] = {}
+    result = []
+    sorted_items = sorted(
+        items,
+        key=lambda x: (abs(x.get("score", 0)), x.get("timestamp", 0)),
+        reverse=True,
+    )
+    for item in sorted_items:
+        if len(result) >= top_n:
+            break
+        src = item.get("source", "")
+        if source_count.get(src, 0) >= max_per_source:
+            continue
+        # 핵심 단어 기반 중복 체크 (4글자 이상 단어, 한글/영문 공용)
+        words = {w.lower() for w in item.get("title", "").split() if len(w) >= 4}
+        is_dup = any(len(words & prev) >= 3 for prev in seen_words)
+        if is_dup:
+            continue
+        seen_words.append(words)
+        source_count[src] = source_count.get(src, 0) + 1
+        result.append(item)
+    return result
+
+
+def refresh_voice_briefing():
+    """AI 음성 브리핑 갱신 — 1일 1회. Claude API 대본생성 + Google Cloud TTS 합성.
+    오늘 이미 생성된 게 디스크에 있으면 재사용(서버 재시작마다 재과금되는 것 방지)."""
+    cached = df.load_cached_voice_briefing()
+    if cached:
+        cache.set("voice_briefing", cached, ttl=90000)
+        log.info(f"음성 브리핑: 오늘 생성분 재사용 ({len(cached['turns'])}개 발화, API 재호출 없음)")
+        return
+
+    us_news = cache.get("news") or []
+    kr_news = cache.get("kr_market_news") or []
+    if len(us_news) < 5 and len(kr_news) < 5:
+        log.warning("refresh_voice_briefing 스킵: 뉴스 데이터 아직 로드 중")
+        return
+    try:
+        mood = _compute_market_mood(us_news)
+        fear_greed = cache.get("fear_greed")
+        # 헤드라인 선정: 캐시 순서 그대로 앞 3개가 아니라, 감성강도+최신순+소스다양성+중복제거 적용
+        us_top = _dedup_stories(us_news, max_per_source=1, top_n=3)
+        kr_top = _dedup_stories(kr_news, max_per_source=2, top_n=3)
+        result = df.build_voice_briefing(us_top, kr_top, mood, fear_greed)
+        if result:
+            cache.set("voice_briefing", result, ttl=90000)
+            log.info(f"음성 브리핑 갱신 완료: {len(result['turns'])}개 발화")
+        else:
+            log.warning("음성 브리핑 갱신 실패 — 기존 캐시 유지")
+    except Exception as e:
+        log.error(f"refresh_voice_briefing 실패: {e}")
+
+
 def _load_sp500_tickers_background():
     """Wikipedia에서 실제 S&P 500 구성 종목 티커 Set을 캐시에 저장 (24시간)."""
     sp500 = df.fetch_sp500_list()
@@ -414,6 +486,12 @@ def initial_load():
         refresh_daily_signals()
     threading.Thread(target=_delayed_daily_signals, daemon=True).start()
 
+    # AI 음성 브리핑: 뉴스 로드 후 270초 지연해서 시작 (daily_signals 등과 겹치지 않게)
+    def _delayed_voice_briefing():
+        import time as _t; _t.sleep(270)
+        refresh_voice_briefing()
+    threading.Thread(target=_delayed_voice_briefing, daemon=True).start()
+
     # 국내주식: 파일 기반 베이스 로드 후 백그라운드 가격 갱신
     kr_base = _load_kr_base()
     if kr_base:
@@ -441,6 +519,7 @@ _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")
 _scheduler.add_job(refresh_fear_greed,      "interval", minutes=30, id="fear_greed")
 _scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
+_scheduler.add_job(refresh_voice_briefing,  "interval", hours=24,   id="voice_briefing")
 
 
 # ── Flask 라우트 ─────────────────────────────────────────────────────────────
@@ -715,45 +794,9 @@ def brief():
     combined   = news_in + reports_in
 
     # ─ Market Mood (감성 분포)
-    sentiments   = [i.get("sentiment", "neutral") for i in combined]
-    pos  = sentiments.count("positive")
-    neg  = sentiments.count("negative")
-    neut = sentiments.count("neutral")
-    total = len(sentiments) or 1
-    mood = {
-        "positive": round(pos  / total * 100),
-        "negative": round(neg  / total * 100),
-        "neutral":  round(neut / total * 100),
-        "label": "Bullish" if pos > neg * 1.5 else "Bearish" if neg > pos * 1.5 else "Mixed",
-    }
+    mood = _compute_market_mood(combined)
 
     # ─ Top Stories: 중복 제거 + 소스 다양성 + 감성 강도 가중
-    def _dedup_stories(items: list[dict], max_per_source: int = 2, top_n: int = 5) -> list[dict]:
-        seen_words: list[set] = []
-        source_count: dict[str, int] = {}
-        result = []
-        # 감성 강도(abs(score)) + 최신순 정렬
-        sorted_items = sorted(
-            items,
-            key=lambda x: (abs(x.get("score", 0)), x.get("timestamp", 0)),
-            reverse=True,
-        )
-        for item in sorted_items:
-            if len(result) >= top_n:
-                break
-            src = item.get("source", "")
-            if source_count.get(src, 0) >= max_per_source:
-                continue
-            # 핵심 단어 기반 중복 체크 (4글자 이상 영단어)
-            words = {w.lower() for w in item.get("title", "").split() if len(w) >= 4}
-            is_dup = any(len(words & prev) >= 3 for prev in seen_words)
-            if is_dup:
-                continue
-            seen_words.append(words)
-            source_count[src] = source_count.get(src, 0) + 1
-            result.append(item)
-        return result
-
     top_stories = _dedup_stories(news_in)
 
     # ─ Most Mentioned Stocks
@@ -874,6 +917,20 @@ def financials(ticker):
 
     cache.set(key, result, ttl=43200)
     return jsonify(result)
+
+
+@app.route("/api/voice-briefing")
+def voice_briefing():
+    """오늘의 AI 음성 브리핑 대본+오디오파일 목록. 24시간 배치 캐시(daily_signals와 동일 패턴)."""
+    data = cache.get("voice_briefing")
+    if not data:
+        return jsonify({"turns": [], "generated_at": None})
+    return jsonify(data)
+
+
+@app.route("/api/voice-briefing/audio/<path:filename>")
+def voice_briefing_audio(filename):
+    return send_from_directory(df.BRIEFING_AUDIO_DIR, filename)
 
 
 @app.route("/api/fear-greed")

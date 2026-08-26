@@ -39,7 +39,142 @@ function initBrief() {
   loadEarningsSignals();
   loadVolumeSurges();
   loadCandlePatterns();
+  loadVoiceBriefing();
   _briefInited = true;
+}
+
+/* ── AI 음성 브리핑 (Claude API 대본생성 + Google Cloud TTS 합성) ────────── */
+
+let _vbTurns = [];
+let _vbIndex = 0;
+let _vbAudio = null;
+let _vbPlaying = false;
+let _vbSpeed = 1;
+let _vbDurations = [];   // 발화별 실제 길이(초), loadedmetadata로 채워짐
+let _vbAvgDuration = 6;  // 아직 안 채워진 발화의 근사치(초)
+
+async function loadVoiceBriefing() {
+  try {
+    const data = await api('/api/voice-briefing');
+    const card  = document.getElementById('voice-briefing-card');
+    const empty = document.getElementById('voice-briefing-empty');
+    if (!data.turns || !data.turns.length) {
+      card.style.display = 'none';
+      empty.style.display = '';
+      return;
+    }
+    _vbTurns = data.turns;
+    _vbDurations = new Array(_vbTurns.length).fill(null);
+    card.style.display = '';
+    empty.style.display = 'none';
+    _renderVbScript();
+    _initVbControls();
+    _vbPreloadDurations();
+  } catch {}
+}
+
+function _vbPreloadDurations() {
+  _vbTurns.forEach((t, i) => {
+    const probe = new Audio();
+    probe.preload = 'metadata';
+    probe.src = `/api/voice-briefing/audio/${t.audio_file}`;
+    probe.addEventListener('loadedmetadata', () => {
+      _vbDurations[i] = probe.duration;
+      const known = _vbDurations.filter(d => d != null);
+      if (known.length) _vbAvgDuration = known.reduce((a, b) => a + b, 0) / known.length;
+    });
+  });
+}
+
+function _vbElapsedBefore(idx) {
+  let sec = 0;
+  for (let i = 0; i < idx; i++) sec += _vbDurations[i] != null ? _vbDurations[i] : _vbAvgDuration;
+  return sec;
+}
+
+function _vbTotalDuration() {
+  return _vbDurations.reduce((sum, d) => sum + (d != null ? d : _vbAvgDuration), 0);
+}
+
+function _initVbControls() {
+  if (_vbControlsInited) return;
+  _vbControlsInited = true;
+
+  document.getElementById('vb-play-btn').addEventListener('click', _toggleVbPlay);
+
+  document.querySelectorAll('.vb-speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.vb-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _vbSpeed = parseFloat(btn.dataset.speed);
+      if (_vbAudio) _vbAudio.playbackRate = _vbSpeed;
+    });
+  });
+
+  document.getElementById('vb-script-toggle').addEventListener('click', () => {
+    const panel = document.getElementById('vb-script-panel');
+    const open = panel.style.display === 'none';
+    panel.style.display = open ? '' : 'none';
+    document.getElementById('vb-script-toggle').textContent = open ? '대본 숨기기 ▴' : '대본 보기 ▾';
+  });
+}
+let _vbControlsInited = false;
+
+function _renderVbScript() {
+  const panel = document.getElementById('vb-script-panel');
+  panel.innerHTML = _vbTurns.map((t, i) => `
+    <div class="vb-turn ${t.speaker}" data-idx="${i}">
+      <span class="vb-turn-speaker">${t.speaker === 'host' ? '수아' : '재윤'}</span>
+      <span class="vb-turn-text">${_escHtml(t.text)}</span>
+    </div>`).join('');
+}
+
+function _toggleVbPlay() {
+  if (_vbPlaying) {
+    _vbAudio?.pause();
+    _vbSetPlaying(false);
+  } else {
+    _vbPlayFrom(_vbIndex);
+  }
+}
+
+function _vbPlayFrom(idx) {
+  if (idx >= _vbTurns.length) {
+    _vbSetPlaying(false);
+    _vbIndex = 0;
+    document.getElementById('vb-progress-fill').style.width = '0%';
+    return;
+  }
+  _vbIndex = idx;
+  const turn = _vbTurns[idx];
+  _vbAudio = new Audio(`/api/voice-briefing/audio/${turn.audio_file}`);
+  _vbAudio.playbackRate = _vbSpeed;
+  _vbAudio.addEventListener('timeupdate', _vbUpdateProgress);
+  _vbAudio.addEventListener('ended', () => _vbPlayFrom(_vbIndex + 1));
+  _vbAudio.play();
+  _vbSetPlaying(true);
+  _vbHighlightTurn(idx);
+}
+
+function _vbSetPlaying(playing) {
+  _vbPlaying = playing;
+  document.getElementById('vb-play-btn').textContent = playing ? '⏸' : '▶';
+}
+
+function _vbUpdateProgress() {
+  if (!_vbAudio) return;
+  const elapsed = _vbElapsedBefore(_vbIndex) + _vbAudio.currentTime;
+  const total = _vbTotalDuration() || 1;
+  document.getElementById('vb-progress-fill').style.width = `${Math.min(100, elapsed / total * 100)}%`;
+  const totalSec = Math.round(elapsed);
+  const m = Math.floor(totalSec / 60), s = totalSec % 60;
+  document.getElementById('vb-time').textContent = `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function _vbHighlightTurn(idx) {
+  document.querySelectorAll('.vb-turn').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector(`.vb-turn[data-idx="${idx}"]`);
+  if (el) el.classList.add('active');
 }
 
 async function loadCandlePatterns() {

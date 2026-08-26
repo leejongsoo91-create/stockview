@@ -593,6 +593,28 @@
         <span id="brief-updated" class="brief-updated"></span>
       </div>
 
+      <!-- AI 음성 브리핑 -->
+      <div id="voice-briefing-card" class="voice-briefing-card" style="display:none">
+        <div class="vb-top">
+          <button id="vb-play-btn" class="vb-play-btn" title="재생">▶</button>
+          <div class="vb-info">
+            <div class="vb-title">🎙️ 오늘의 AI 음성 브리핑</div>
+            <div class="vb-progress-wrap">
+              <div class="vb-progress-bar"><div id="vb-progress-fill" class="vb-progress-fill"></div></div>
+              <span id="vb-time" class="vb-time">0:00</span>
+            </div>
+          </div>
+          <div class="vb-controls">
+            <button class="vb-speed-btn active" data-speed="1">1x</button>
+            <button class="vb-speed-btn" data-speed="1.25">1.25x</button>
+            <button class="vb-speed-btn" data-speed="1.5">1.5x</button>
+            <button id="vb-script-toggle" class="vb-script-toggle">대본 보기 ▾</button>
+          </div>
+        </div>
+        <div id="vb-script-panel" class="vb-script-panel" style="display:none"></div>
+      </div>
+      <div id="voice-briefing-empty" class="voice-briefing-empty">🎙️ 오늘의 AI 음성 브리핑을 준비 중입니다...</div>
+
       <!-- 서브탭: 개요 / 신호 -->
       <div class="news-subtab-bar brief-subtab-bar">
         <button class="news-subtab active" data-brief-subtab="overview">📊 개요</button>

@@ -6,6 +6,7 @@
   - 감성 분석: VADER
 """
 
+import base64
 import calendar
 import json
 import logging
@@ -1757,6 +1758,14 @@ def fetch_pe_eps_fmp(tickers: list[str], daily_limit: int = 500) -> dict[str, di
     return result
 
 
+def _clean_summary(raw: str, max_len: int = 280) -> str:
+    """RSS summary/description 필드의 HTML 태그 제거 + 길이 제한 (음성 브리핑 대본 재료용)."""
+    import html as _html
+    text = _html.unescape(re.sub(r"<[^>]+>", "", raw or "")).strip()
+    text = re.sub(r"\s+", " ", text)
+    return text[:max_len]
+
+
 def extract_ticker(title: str) -> str | None:
     for cand in re.findall(r'\b[A-Z]{1,5}\b', title):
         if cand in TICKER_SET:
@@ -1833,6 +1842,7 @@ def fetch_news() -> list[dict]:
                     "score":     round(score, 4),
                     "url":       entry.get("link", ""),
                     "market":    "US",
+                    "summary":   _clean_summary(entry.get("summary", "")),
                 })
         except Exception as e:
             log.warning(f"RSS({feed_info['source']}): {e}")
@@ -1871,6 +1881,7 @@ def fetch_kr_market_news() -> list[dict]:
                     "score":     0,
                     "url":       entry.get("link", ""),
                     "market":    "KR",
+                    "summary":   _clean_summary(entry.get("summary", "")),
                 })
         except Exception as e:
             log.warning(f"KR RSS({feed_info['source']}): {e}")
@@ -3028,3 +3039,201 @@ def fetch_economic_calendar(days_ahead: int = 21) -> list[dict]:
 
     result.sort(key=lambda x: x["date"])
     return result
+
+
+# ── AI 음성 브리핑 (Claude API 대본생성 + Google Cloud TTS 음성합성) ────────────
+
+ANTHROPIC_KEY_FILE   = os.path.join(os.path.dirname(__file__), "api", "anthropic-key.txt")
+GOOGLE_TTS_KEY_FILE  = os.path.join(os.path.dirname(__file__), "api", "google-tts-key.json")
+BRIEFING_AUDIO_DIR   = os.path.join(os.path.dirname(__file__), "data", "audio")
+BRIEFING_MANIFEST_FILE = os.path.join(os.path.dirname(__file__), "data", "voice_briefing.json")
+
+_BRIEFING_VOICES = {"host": "ko-KR-Chirp3-HD-Kore", "analyst": "ko-KR-Chirp3-HD-Charon"}
+
+_BRIEFING_SYSTEM_PROMPT = """너는 주식투자 팟캐스트 대본 작가야. 진행자 '수아'(host)와 애널리스트 '재윤'(analyst) 두 사람의 대화 대본을 써.
+
+반드시 지킬 구조:
+1. 오프닝 — 수아가 인사와 오늘 날짜를 소개하고, 재윤에게 오늘 시장 분위기를 물어봄. 재윤이 Fear&Greed 지수와 뉴스 감성 비율로 답변.
+2. 뉴스 파트 — 전달받은 해외 뉴스 3건, 국내 뉴스 3건을 순서대로 다룬다. 헤드라인 하나당 **3~5턴 사이**로 다뤄라(3턴 미만은 얕고, 6턴 이상은 늘어지니 이 범위를 지켜라): (1)수아가 헤드라인 사실을 던짐 (2)재윤이 1차 해석 (3)수아가 되묻거나 파고듦 (4)재윤이 추가 해석·주의사항. 가능하면 앞서 다룬 헤드라인과 연결지어 해석해라(예: 수요-공급 양쪽 뉴스가 같이 나온 경우 등). 단순히 헤드라인을 읽어주는 수준이 되지 않도록, 왜 중요한지·어떤 영향이 있을지를 설명해라. **전체 대본은 오프닝·클로징 포함 30턴을 넘기지 마라.**
+3. 클로징 — 수아가 마무리 인사, 재윤이 짧게 화답.
+
+구체성 원칙(매우 중요, 반드시 지켜라):
+- 헤드라인에 들어있는 고유명사·숫자·비율·티커·인물명·회사명은 절대 생략하거나 뭉뚱그리지 마라. 예를 들어 헤드라인에 "스탠리 드러켄밀러와 캐시 우드가 같은 종목을 매수했다"는 내용이 있고 그 종목명이 헤드라인에 명시돼 있다면, 대사에서도 반드시 그 종목명을 말해야 한다. "어떤 종목을 샀다더라"처럼 대상을 흐리는 표현은 금지.
+- "여러 요인으로", "다양한 이유로", "전반적으로", "이런저런 이슈가" 같은 채움말로 헤드라인에 있는 구체적 정보를 대체하지 마라. 구체적 사실이 있으면 반드시 그 사실을 말해라.
+- 단, 헤드라인 자체에 없는 정보(정확한 매수 수량, 구체적 원인 등)를 지어내서는 안 된다. 헤드라인에 없는 세부사항은 "정확한 규모는 아직 안 나왔지만" 처럼 모른다는 것을 명확히 밝히고 넘어가라 — 없는 걸 있는 것처럼 말하지 마라.
+- 헤드라인에 [티커: XXX]가 붙어있으면 대사 중 자연스러운 시점에 티커도 함께 언급해라(예: "OOO(티커: XXX)가...").
+
+말투: 실제 사람 둘이 편하게 대화하는 자연스러운 구어체. 존댓말 사용.
+
+출력 형식: 다른 설명 없이 아래 JSON 배열만 출력해라.
+[{"speaker": "host", "text": "..."}, {"speaker": "analyst", "text": "..."}, ...]
+speaker 값은 반드시 "host" 또는 "analyst"만 사용해."""
+
+
+def generate_briefing_script(us_news: list[dict], kr_news: list[dict],
+                              mood: dict, fear_greed: dict | None) -> list[dict] | None:
+    """뉴스/시장무드 데이터를 Claude API(claude-opus-5)에 전달해 호스트-애널리스트 대화체 대본 생성."""
+    import anthropic
+
+    if not os.path.exists(ANTHROPIC_KEY_FILE):
+        log.warning("Anthropic API 키 파일 없음 — 음성 브리핑 대본 생성 스킵")
+        return None
+
+    def _fmt_headline(n: dict) -> str:
+        title = n["title"]
+        line = f"{title} [티커: {n['ticker']}]" if n.get("ticker") else title
+        summary = n.get("summary")
+        if summary:
+            line += f"\n  요약: {summary}"
+        return line
+
+    us_headlines = [_fmt_headline(n) for n in us_news[:3] if n.get("title")]
+    kr_headlines = [_fmt_headline(n) for n in kr_news[:3] if n.get("title")]
+    if not us_headlines and not kr_headlines:
+        log.warning("음성 브리핑용 뉴스 없음 — 스킵")
+        return None
+
+    fg_text = (f"{fear_greed['score']}({fear_greed['rating']})"
+               if fear_greed and fear_greed.get("score") is not None else "데이터 없음")
+
+    user_prompt = f"""오늘 날짜: {datetime.now().strftime('%Y년 %m월 %d일')}
+
+시장 분위기: Fear&Greed 지수 {fg_text}, 최근 뉴스·리포트 감성 비율 긍정 {mood.get('positive', 0)}% / 부정 {mood.get('negative', 0)}% / 중립 {mood.get('neutral', 0)}% ({mood.get('label', 'Mixed')})
+
+해외 뉴스 헤드라인:
+{chr(10).join(f'- {h}' for h in us_headlines) or '(없음)'}
+
+국내 뉴스 헤드라인:
+{chr(10).join(f'- {h}' for h in kr_headlines) or '(없음)'}
+
+위 내용으로 오늘의 음성 브리핑 대본을 작성해줘."""
+
+    try:
+        with open(ANTHROPIC_KEY_FILE, encoding="utf-8") as f:
+            api_key = f.read().strip()
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-opus-5",
+            max_tokens=16000,
+            output_config={"effort": "medium"},
+            system=_BRIEFING_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        if resp.stop_reason == "max_tokens":
+            log.warning("음성 브리핑 대본 생성: max_tokens 도달 — 응답이 잘렸을 수 있음")
+        text = next((b.text for b in resp.content if b.type == "text"), "").strip()
+        start, end = text.find("["), text.rfind("]")
+        if start == -1 or end == -1:
+            raise ValueError("응답에서 JSON 배열을 찾지 못함")
+        script = json.loads(text[start:end + 1])
+        script = [t for t in script if t.get("text") and t.get("speaker") in _BRIEFING_VOICES]
+        if not script:
+            raise ValueError("파싱된 대본이 비어있음")
+        log.info(f"음성 브리핑 대본 생성 완료: {len(script)}턴 "
+                 f"(입력 {resp.usage.input_tokens}/출력 {resp.usage.output_tokens} 토큰)")
+        return script
+    except Exception as e:
+        log.error(f"음성 브리핑 대본 생성 실패: {e}")
+        return None
+
+
+def _google_tts_token() -> str:
+    """Google Cloud 서비스계정 인증 후 액세스 토큰 반환."""
+    from google.oauth2 import service_account
+    import google.auth.transport.requests
+
+    creds = service_account.Credentials.from_service_account_file(
+        GOOGLE_TTS_KEY_FILE, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    creds.refresh(google.auth.transport.requests.Request())
+    return creds.token
+
+
+def synthesize_tts(text: str, voice_name: str, token: str) -> bytes:
+    """Google Cloud TTS로 텍스트 한 발화를 mp3 바이트로 합성."""
+    resp = requests.post(
+        "https://texttospeech.googleapis.com/v1/text:synthesize",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={
+            "input": {"text": text},
+            "voice": {"languageCode": "ko-KR", "name": voice_name},
+            "audioConfig": {"audioEncoding": "MP3"},
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return base64.b64decode(resp.json()["audioContent"])
+
+
+def build_voice_briefing(us_news: list[dict], kr_news: list[dict],
+                          mood: dict, fear_greed: dict | None) -> dict | None:
+    """대본 생성 + 발화별 TTS 합성 + data/audio/ 저장. 실패 시 None."""
+    script = generate_briefing_script(us_news, kr_news, mood, fear_greed)
+    if not script:
+        return None
+
+    os.makedirs(BRIEFING_AUDIO_DIR, exist_ok=True)
+    for fname in os.listdir(BRIEFING_AUDIO_DIR):
+        try:
+            os.remove(os.path.join(BRIEFING_AUDIO_DIR, fname))
+        except OSError:
+            pass
+
+    try:
+        token = _google_tts_token()
+    except Exception as e:
+        log.error(f"Google TTS 인증 실패 — 음성 브리핑 스킵: {e}")
+        return None
+
+    def _synth_one(i: int, turn: dict) -> dict | None:
+        speaker = turn["speaker"]
+        text = turn["text"].strip()
+        try:
+            audio = synthesize_tts(text, _BRIEFING_VOICES[speaker], token)
+        except Exception as e:
+            log.warning(f"음성 브리핑 TTS 합성 실패(turn {i}): {e}")
+            return None
+        fname = f"turn_{i:03d}.mp3"
+        with open(os.path.join(BRIEFING_AUDIO_DIR, fname), "wb") as f:
+            f.write(audio)
+        return {"speaker": speaker, "text": text, "audio_file": fname}
+
+    slots: list[dict | None] = [None] * len(script)
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(_synth_one, i, turn): i for i, turn in enumerate(script)}
+        for fut in as_completed(futures):
+            slots[futures[fut]] = fut.result()
+
+    turns = [t for t in slots if t]
+    if not turns:
+        log.error("음성 브리핑: 모든 turn TTS 합성 실패")
+        return None
+
+    log.info(f"음성 브리핑 생성 완료: {len(turns)}개 발화 음성 합성")
+    result = {"generated_at": datetime.now().isoformat(), "turns": turns}
+
+    try:
+        with open(BRIEFING_MANIFEST_FILE, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        log.warning(f"음성 브리핑 매니페스트 저장 실패: {e}")
+
+    return result
+
+
+def load_cached_voice_briefing() -> dict | None:
+    """오늘 이미 생성된 음성 브리핑이 디스크에 있으면 반환 -- 서버 재시작 시 불필요한 Claude/TTS 재호출(과금) 방지."""
+    if not os.path.exists(BRIEFING_MANIFEST_FILE):
+        return None
+    try:
+        with open(BRIEFING_MANIFEST_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("generated_at", "")[:10] != datetime.now().strftime("%Y-%m-%d"):
+            return None
+        if not all(os.path.exists(os.path.join(BRIEFING_AUDIO_DIR, t["audio_file"]))
+                   for t in data.get("turns", [])):
+            return None
+        return data
+    except (OSError, ValueError, KeyError) as e:
+        log.warning(f"음성 브리핑 캐시 로드 실패: {e}")
+        return None
