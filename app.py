@@ -728,6 +728,7 @@ _EMPTY_DAILY_SIGNALS = {
     "us": {"buy": [], "sell": []}, "kr": {"buy": [], "sell": []},
     "volume_surges": {"us": [], "kr": []},
     "candle_patterns": {"us": {"bullish": [], "bearish": []}, "kr": {"bullish": [], "bearish": []}},
+    "rsi_divergences": {"us": {"bullish": [], "bearish": []}, "kr": {"bullish": [], "bearish": []}},
     "generated_at": 0,
 }
 
@@ -752,6 +753,14 @@ def candle_patterns():
     data = cache.get("daily_signals") or _EMPTY_DAILY_SIGNALS
     empty = {"bullish": [], "bearish": []}
     return jsonify(data.get("candle_patterns") or {"us": empty, "kr": empty})
+
+
+@app.route("/api/rsi-divergence")
+def rsi_divergence():
+    """RSI 다이버전스 스캐너 (US/KR 각각, 상승형/하락형) — 일일 신호 배치와 함께 계산됨."""
+    data = cache.get("daily_signals") or _EMPTY_DAILY_SIGNALS
+    empty = {"bullish": [], "bearish": []}
+    return jsonify(data.get("rsi_divergences") or {"us": empty, "kr": empty})
 
 
 @app.route("/api/52w-movers")

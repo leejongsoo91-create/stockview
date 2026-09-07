@@ -39,6 +39,7 @@ function initBrief() {
   loadEarningsSignals();
   loadVolumeSurges();
   loadCandlePatterns();
+  loadRsiDivergence();
   loadVoiceBriefing();
   _briefInited = true;
 }
@@ -187,20 +188,30 @@ async function loadCandlePatterns() {
   } catch {}
 }
 
-function _renderPatternList(elId, items) {
+function _renderPatternList(elId, items, label) {
   const el = document.getElementById(elId);
   if (!el) return;
   if (!items || !items.length) {
-    el.innerHTML = '<div class="brief-empty">해당 패턴이 없습니다.</div>';
+    el.innerHTML = '<div class="brief-empty">해당 항목이 없습니다.</div>';
     return;
   }
   el.innerHTML = items.map(s => `
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
-      <span class="brief-signal-term term-pattern">${s.pattern}</span>
+      <span class="brief-signal-term term-pattern">${label || s.pattern}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
       <span class="brief-signal-name">${s.name || ''}</span>
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');
+}
+
+async function loadRsiDivergence() {
+  try {
+    const data = await api('/api/rsi-divergence');
+    _renderPatternList('brief-rsidiv-us-bullish', data.us?.bullish, '상승 DIV');
+    _renderPatternList('brief-rsidiv-us-bearish', data.us?.bearish, '하락 DIV');
+    _renderPatternList('brief-rsidiv-kr-bullish', data.kr?.bullish, '상승 DIV');
+    _renderPatternList('brief-rsidiv-kr-bearish', data.kr?.bearish, '하락 DIV');
+  } catch {}
 }
 
 async function loadVolumeSurges() {

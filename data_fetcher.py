@@ -2329,7 +2329,12 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
             score     = compute_today_signal(ohlcv, is_kr)
             vol_ratio = _calc_volume_ratio(ohlcv)
             pattern   = _candle_pattern_today(ohlcv)
-            if not score and (vol_ratio is None or vol_ratio < _VOLUME_POOL_RATIO) and not pattern:
+            # 다이버전스는 스윙 확정에 order봉 지연이 있어 마지막 봉엔 거의 안 찍힘 →
+            # 최근 10거래일 안에 감지된 가장 최신 신호를 본다
+            _div_arr  = _sig_rsi_divergence([b["close"] for b in ohlcv])
+            rsi_div   = next((v for v in reversed(_div_arr[-10:]) if v != 0), 0)
+            if (not score and (vol_ratio is None or vol_ratio < _VOLUME_POOL_RATIO)
+                    and not pattern and not rsi_div):
                 return None
             wtrend = _sig_weekly_trend(ohlcv)
             return {
@@ -2344,6 +2349,7 @@ def compute_daily_metrics(stocks: list[dict], is_kr: bool, max_workers: int = 20
                 "volume_ratio": vol_ratio,
                 "pattern":      pattern[0] if pattern else None,
                 "pattern_dir":  pattern[1] if pattern else 0,
+                "rsi_div":      rsi_div,
                 "weekly_trend": wtrend[-1] if wtrend else 0,
             }
         except Exception:
@@ -2441,10 +2447,20 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
                               key=lambda s: -(s.get("market_cap") or 0))[:15]
         bearish_pat = sorted((s for s in metrics if s["pattern_dir"] < 0),
                               key=lambda s: -(s.get("market_cap") or 0))[:15]
-        return {"buy": buy, "sell": sell}, surges, {"bullish": bullish_pat, "bearish": bearish_pat}, pool
+        bullish_div = sorted((s for s in metrics if s.get("rsi_div", 0) > 0),
+                              key=lambda s: -(s.get("market_cap") or 0))[:15]
+        bearish_div = sorted((s for s in metrics if s.get("rsi_div", 0) < 0),
+                              key=lambda s: -(s.get("market_cap") or 0))[:15]
+        return (
+            {"buy": buy, "sell": sell},
+            surges,
+            {"bullish": bullish_pat, "bearish": bearish_pat},
+            {"bullish": bullish_div, "bearish": bearish_div},
+            pool,
+        )
 
-    us_sig, us_surges, us_patterns, _us_pool = _process(us_stocks, False, "us")
-    kr_sig, kr_surges, kr_patterns, kr_pool  = _process(kr_stocks, True, "kr")
+    us_sig, us_surges, us_patterns, us_rsidiv, _us_pool = _process(us_stocks, False, "us")
+    kr_sig, kr_surges, kr_patterns, kr_rsidiv, kr_pool  = _process(kr_stocks, True, "kr")
 
     kr_investor_leaders = get_kr_investor_leaders(kr_pool)
 
@@ -2455,6 +2471,7 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
         "kr": kr_sig,
         "volume_surges":  {"us": us_surges,   "kr": kr_surges},
         "candle_patterns": {"us": us_patterns, "kr": kr_patterns},
+        "rsi_divergences": {"us": us_rsidiv,  "kr": kr_rsidiv},
         "kr_investor_leaders": kr_investor_leaders,
         "generated_at": int(time.time()),
     }
