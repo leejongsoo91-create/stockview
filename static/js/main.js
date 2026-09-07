@@ -88,6 +88,35 @@ function makeGroupStore(key, namesKey) {
   };
 }
 
+// ── CSV 헬퍼 (Watchlist / Portfolio 내보내기·가져오기 공용) ─────────────────────
+// 셀에 쉼표·따옴표·줄바꿈이 있으면 "..."로 감싸고 내부 "는 ""로 이스케이프
+function _csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+// 따옴표로 감싼 필드(내부 쉼표 포함) 인식하는 한 줄 파서
+function _csvSplitLine(line) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else if (c === '"') {
+      inQ = true;
+    } else if (c === ',') {
+      out.push(cur); cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
 // ── 다중종목 비교차트 (6번, Watchlist/Portfolio 공용) ───────────────────────────
 const _cmpSel = { wl: new Set(), pt: new Set() };
 
@@ -735,15 +764,28 @@ function renderHomeWatchlistSummary() {
   }
   rows.sort((a, b) => Math.abs(b.change_pct || 0) - Math.abs(a.change_pct || 0));
   const top = rows.slice(0, 5);
+
+  // 목표가 도달 종목 (상승 목표: 현재가 ≥ 목표가)
+  const hit = typeof WLN === 'undefined' ? [] : rows.filter(s => {
+    const tg = WLN.get(s.ticker).target;
+    return tg && s.price != null && s.price >= tg;
+  }).map(s => s.code || s.ticker);
+  const hitHtml = hit.length
+    ? `<div class="home-my-target">🎯 목표가 도달 ${hit.length}건 — ${hit.slice(0, 4).join(', ')}${hit.length > 4 ? ' 외' : ''}</div>`
+    : '';
+
   el.innerHTML = `
     <div class="home-my-count">${tickers.length}개 종목 중 변동폭 상위 ${top.length}개</div>
+    ${hitHtml}
     <table class="movers-table"><tbody>
       ${top.map(s => {
         const disp = s.code || s.ticker;
         const name = s.name_ko || s.name || '';
         const pct  = s.change_pct || 0;
+        const tg   = typeof WLN !== 'undefined' ? WLN.get(s.ticker).target : null;
+        const mark = (tg && s.price != null && s.price >= tg) ? ' <span class="home-my-hit">✓</span>' : '';
         return `<tr onclick="navigateToChart('${s.ticker}')">
-          <td class="m-ticker">${disp}</td>
+          <td class="m-ticker">${disp}${mark}</td>
           <td class="m-name">${name}</td>
           <td class="m-pct ${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</td>
         </tr>`;
@@ -778,10 +820,22 @@ function renderHomePortfolioSummary() {
   const pnl    = totalValue - totalCost;
   const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
   const cls    = pnl >= 0 ? 'up' : 'down';
+
+  // 목표가 도달 종목
+  const hit = typeof PTN === 'undefined' ? [] : tickers.filter(t => {
+    const tg = PTN.get(t).target;
+    const s  = us.find(x => x.ticker === t) || kr.find(x => x.ticker === t);
+    return tg && s && s.price != null && s.price >= tg;
+  });
+  const hitHtml = hit.length
+    ? `<div class="home-my-target">🎯 목표가 도달 ${hit.length}건 — ${hit.slice(0, 4).join(', ')}${hit.length > 4 ? ' 외' : ''}</div>`
+    : '';
+
   el.innerHTML = `
     <div class="home-my-count">${tickers.length}개 보유 종목</div>
     <div class="home-pf-value">${fmt$(totalValue)}</div>
-    <div class="home-pf-pnl ${cls}">${pnl >= 0 ? '+' : '-'}${fmt$(Math.abs(pnl))} (${fmtPct(pnlPct)})</div>`;
+    <div class="home-pf-pnl ${cls}">${pnl >= 0 ? '+' : '-'}${fmt$(Math.abs(pnl))} (${fmtPct(pnlPct)})</div>
+    ${hitHtml}`;
 }
 
 // ── 뉴스 북마크 저장소 (url -> 뉴스 아이템) ──────────────────────────────────

@@ -331,16 +331,19 @@ async function exportWatchlistCSV() {
     }
   } catch { return; }
 
-  const headers = ['Ticker', 'Name', 'Group', 'Sector', 'Price', 'Change%'];
+  const headers = ['Ticker', 'Name', 'Group', 'Sector', 'Price', 'Change%', 'Memo', 'Target'];
   const rows = tickers.map(t => {
     const s = stocks.find(x => x.ticker === t) || {};
+    const n = WLN.get(t);
     return [
       t,
-      `"${(s.name || '').replace(/"/g, '""')}"`,
-      WLG.get(t) || '',
-      s.sector || '',
+      _csvCell(s.name || ''),
+      _csvCell(WLG.get(t) || ''),
+      _csvCell(s.sector || ''),
       s.price != null ? s.price : '',
       s.change_pct != null ? s.change_pct : '',
+      _csvCell(n.memo || ''),
+      n.target ?? '',
     ].join(',');
   });
 
@@ -362,22 +365,23 @@ function importWatchlistCSV(file) {
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (!lines.length) { alert('빈 파일입니다.'); return; }
 
-      const header    = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
+      const header    = _csvSplitLine(lines[0]).map(h => h.trim().toLowerCase());
       const hasHeader = header.includes('ticker');
       const tIdx      = hasHeader ? header.indexOf('ticker') : 0;
-      const groupIdx  = hasHeader ? header.indexOf('group') : -1;
+      const groupIdx  = hasHeader ? header.indexOf('group')  : -1;
+      const memoIdx   = hasHeader ? header.indexOf('memo')   : -1;
+      const targetIdx = hasHeader ? header.indexOf('target') : -1;
       const startIdx  = hasHeader ? 1 : 0;
 
       let added = 0;
       for (let i = startIdx; i < lines.length; i++) {
-        const cols   = lines[i].split(',');
-        const ticker = (cols[tIdx] || '').trim().toUpperCase().replace(/^"|"$/g, '');
+        const cols   = _csvSplitLine(lines[i]);
+        const ticker = (cols[tIdx] || '').trim().toUpperCase();
         if (!ticker) continue;
         if (!WL.has(ticker)) { WL.add(ticker); added++; }
-        if (groupIdx !== -1) {
-          const group = (cols[groupIdx] || '').trim().replace(/^"|"$/g, '');
-          if (group) WLG.set(ticker, group);
-        }
+        if (groupIdx  !== -1 && (cols[groupIdx]  || '').trim()) WLG.set(ticker, cols[groupIdx].trim());
+        if (memoIdx   !== -1 && (cols[memoIdx]   || '').trim()) WLN.setMemo(ticker, cols[memoIdx].trim());
+        if (targetIdx !== -1 && (cols[targetIdx] || '').trim()) WLN.setTarget(ticker, cols[targetIdx].trim());
       }
       alert(`${added}개 종목을 관심종목에 추가했습니다.`);
       updateWLCount();

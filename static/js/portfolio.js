@@ -418,14 +418,18 @@ async function exportPortfolioCSV() {
     }
   } catch {}
 
-  const headers = ['Ticker', 'Qty', 'AvgPrice', 'Name', 'CurrentPrice'];
+  const headers = ['Ticker', 'Qty', 'AvgPrice', 'Name', 'CurrentPrice', 'Group', 'Memo', 'Target'];
   const rows = tickers.map(t => {
     const { qty, avgPrice } = data[t];
     const s = priceMap[t] || {};
+    const n = PTN.get(t);
     return [
       t, qty, avgPrice,
-      `"${(s.name || '').replace(/"/g, '""')}"`,
+      _csvCell(s.name || ''),
       s.price != null ? s.price : '',
+      _csvCell(PTG.get(t) || ''),
+      _csvCell(n.memo || ''),
+      n.target ?? '',
     ].join(',');
   });
 
@@ -447,23 +451,29 @@ function importPortfolioCSV(file) {
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (!lines.length) { alert('빈 파일입니다.'); return; }
 
-      const header    = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
+      const header    = _csvSplitLine(lines[0]).map(h => h.trim().toLowerCase());
       const hasHeader = header.includes('ticker');
       const tIdx      = hasHeader ? header.indexOf('ticker')    : 0;
       const qIdx      = hasHeader ? header.indexOf('qty')       : 1;
       const pIdx      = hasHeader ? header.indexOf('avgprice')  : 2;
+      const gIdx      = hasHeader ? header.indexOf('group')     : -1;
+      const mIdx      = hasHeader ? header.indexOf('memo')      : -1;
+      const tgIdx     = hasHeader ? header.indexOf('target')    : -1;
       const startIdx  = hasHeader ? 1 : 0;
 
       if (qIdx === -1 || pIdx === -1) { alert('CSV에 Qty/AvgPrice 컬럼이 필요합니다.'); return; }
 
       let added = 0;
       for (let i = startIdx; i < lines.length; i++) {
-        const cols   = lines[i].split(',');
-        const ticker = (cols[tIdx] || '').trim().toUpperCase().replace(/^"|"$/g, '');
+        const cols   = _csvSplitLine(lines[i]);
+        const ticker = (cols[tIdx] || '').trim().toUpperCase();
         const qty    = parseFloat(cols[qIdx]);
         const price  = parseFloat(cols[pIdx]);
         if (!ticker || !Number.isFinite(qty) || !Number.isFinite(price)) continue;
         PT.set(ticker, qty, price);
+        if (gIdx  !== -1 && (cols[gIdx]  || '').trim()) PTG.set(ticker, cols[gIdx].trim());
+        if (mIdx  !== -1 && (cols[mIdx]  || '').trim()) PTN.setMemo(ticker, cols[mIdx].trim());
+        if (tgIdx !== -1 && (cols[tgIdx] || '').trim()) PTN.setTarget(ticker, cols[tgIdx].trim());
         added++;
       }
       alert(`${added}개 종목을 포트폴리오에 반영했습니다.`);
