@@ -981,6 +981,9 @@ def cache_status():
 
 # ── 더미 OHLCV 폴백 ──────────────────────────────────────────────────────────
 def _generate_ohlcv_dummy(ticker: str, days: int = 180) -> list[dict]:
+    """실시간 OHLCV 조회 실패(Yahoo 레이트리밋/차단/폐지 티커 등) 시 폴백용 랜덤 워크.
+    각 봉에 "_dummy": True 태그를 달아, 프론트가 예시 데이터 배너를 띄우고
+    SIGNAL 카드 등 오해 소지 있는 계산을 숨기게 한다."""
     stock = next((s for s in STOCKS if s["ticker"] == ticker), None)
     base_price = stock["price"] if stock else 100.0
     seed = int(hashlib.md5(ticker.encode()).hexdigest(), 16) % (10 ** 8)
@@ -995,7 +998,7 @@ def _generate_ohlcv_dummy(ticker: str, days: int = 180) -> list[dict]:
         lo   = round(min(op, cl) * (1 - rng.uniform(0, 0.012)), 2)
         vol  = int((stock["volume"] if stock else 1000000) * rng.uniform(0.5, 1.5))
         data.append({"time": d_str, "open": round(op, 2), "high": hi, "low": lo,
-                     "close": cl, "volume": vol})
+                     "close": cl, "volume": vol, "_dummy": True})
         price = cl
     return data
 

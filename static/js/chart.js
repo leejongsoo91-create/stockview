@@ -12,6 +12,7 @@ let _currentInterval = '1d';
 let _priceTimer     = null;
 let _candleTimer    = null;
 let _lastOhlcv      = [];
+let _chartIsDummy   = false;  // 현재 표시 중인 OHLCV가 서버 폴백 더미(_dummy 태그)인지
 
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
 const _activeInds = new Set(['ma5','ma20','ma60','bb','rsi','macd','sto','volma']);
@@ -1002,6 +1003,8 @@ async function loadChart(ticker) {
 
     if (!ohlcv.length) throw new Error('No data');
 
+    _chartIsDummy = _isDummyOhlcv(ohlcv);
+    _setDummyBanner(_chartIsDummy, ticker);
     _lastOhlcv = ohlcv;
     _renderCandles(ohlcv);
     _loadDrawingsForCurrentTicker();
@@ -1027,6 +1030,30 @@ async function loadChart(ticker) {
       `<div class="info-placeholder" style="color:var(--red)">Ticker "${ticker}" not found</div>`;
     document.getElementById('chart-ticker-label').textContent  = ticker;
     document.getElementById('chart-company-label').textContent = '';
+  }
+}
+
+// ── 예시(더미) 데이터 경고 배너 ──────────────────────────────────────────────
+function _isDummyOhlcv(ohlcv) {
+  return Array.isArray(ohlcv) && ohlcv.length > 0 && ohlcv[0]._dummy === true;
+}
+
+function _setDummyBanner(show, ticker) {
+  let el = document.getElementById('chart-dummy-banner');
+  if (!el) {
+    const anchor = document.getElementById('lw-chart');
+    if (!anchor) return;
+    el = document.createElement('div');
+    el.id = 'chart-dummy-banner';
+    el.className = 'chart-dummy-banner';
+    el.hidden = true;
+    anchor.parentNode.insertBefore(el, anchor);
+  }
+  if (show) {
+    el.textContent = `⚠️ 예시 데이터입니다 — ${ticker || ''} 실시간 시세를 불러오지 못했습니다. 잠시 후 자동 재시도합니다.`;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
   }
 }
 
@@ -1397,8 +1424,15 @@ function _applyIndicators() {
     stoPanel.style.display = 'none';
   }
 
-  _applySignalMarkers();
-  _renderSignalCard();
+  if (_chartIsDummy) {
+    // 예시 데이터 위에 가짜 매수/매도 신호를 띄우지 않는다
+    _candleSeries.setMarkers([]);
+    const sc = document.getElementById('signal-card');
+    if (sc) sc.style.display = 'none';
+  } else {
+    _applySignalMarkers();
+    _renderSignalCard();
+  }
   _resizeChartPanels();
 }
 
@@ -2191,6 +2225,19 @@ function _startAutoRefresh() {
       const chartUrl = _buildChartUrl(_currentTicker);
       const ohlcv = await api(chartUrl);
       if (!ohlcv.length) return;
+
+      const refDummy = _isDummyOhlcv(ohlcv);
+      // 실데이터를 보고 있는데 이번 응답이 더미면(일시적 조회 실패) 갱신 건너뜀 — 화면 보존
+      if (refDummy && !_chartIsDummy) return;
+      // 더미를 보던 중 실데이터 복구 → 배너 내리고 지표/신호 정상화, 전체 재렌더
+      if (!refDummy && _chartIsDummy) {
+        _chartIsDummy = false;
+        _setDummyBanner(false);
+        _lastOhlcv = ohlcv;
+        _renderCandles(ohlcv, { fit: false });
+        _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));
+        return;
+      }
 
       const latest = ohlcv[ohlcv.length - 1];
       const prev   = _lastOhlcv[_lastOhlcv.length - 1];

@@ -1794,6 +1794,17 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 #chart-price-badge  { font-size: 15px; font-weight: 700; text-align: right; line-height: 1.5; }
 #lw-chart { padding: 0; position: relative; touch-action: none; } /* 터치 드래그줌 제스처가 브라우저 기본 스크롤/핀치와 충돌하지 않도록 */
 
+.chart-dummy-banner {
+  margin: 6px 0;
+  padding: 8px 12px;
+  background: var(--red-bg);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .chart-sidebar {
   background: var(--bg-card);
   border: 1px solid var(--border);
