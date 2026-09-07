@@ -34,72 +34,15 @@ const PT = {
 };
 
 // ── 포트폴리오 메모/목표가 저장소 (Watchlist WLN과 동일 구조, 별도 키) ─────────
+// 구현은 main.js의 makeNotesStore() 공용 팩토리
 const PTN_KEY = 'stockview_portfolio_notes';
-const PTN = {
-  _map: null,
-  load() {
-    if (this._map) return this._map;
-    try { this._map = JSON.parse(localStorage.getItem(PTN_KEY) || '{}'); }
-    catch { this._map = {}; }
-    return this._map;
-  },
-  save() { localStorage.setItem(PTN_KEY, JSON.stringify(this._map)); },
-  get(ticker) { return this.load()[ticker] || {}; },
-  setMemo(ticker, memo) {
-    const m = this.load();
-    const cur = { ...(m[ticker] || {}) };
-    if (memo) cur.memo = memo; else delete cur.memo;
-    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
-    this.save();
-  },
-  setTarget(ticker, target) {
-    const m = this.load();
-    const cur = { ...(m[ticker] || {}) };
-    const n = parseFloat(target);
-    if (target !== '' && Number.isFinite(n)) cur.target = n; else delete cur.target;
-    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
-    this.save();
-  },
-};
+const PTN = makeNotesStore(PTN_KEY);
 
 // ── 포트폴리오 그룹 저장소 (Watchlist WLG와 동일 구조, 별도 키) ────────────────
+// 구현은 main.js의 makeGroupStore() 공용 팩토리
 const PTG_KEY = 'stockview_portfolio_groups';
 const PTG_NAMES_KEY = 'stockview_portfolio_group_names';
-const PTG = {
-  _map: null,
-  _names: null,
-  load() {
-    if (this._map) return this._map;
-    try { this._map = JSON.parse(localStorage.getItem(PTG_KEY) || '{}'); }
-    catch { this._map = {}; }
-    return this._map;
-  },
-  save() { localStorage.setItem(PTG_KEY, JSON.stringify(this._map)); },
-  get(ticker) { return this.load()[ticker] || ''; },
-  set(ticker, group) {
-    const m = this.load();
-    if (group) { m[ticker] = group; this.addGroupName(group); } else delete m[ticker];
-    this.save();
-  },
-  remove(ticker) { this.set(ticker, ''); },
-  loadNames() {
-    if (this._names) return this._names;
-    try { this._names = JSON.parse(localStorage.getItem(PTG_NAMES_KEY) || '[]'); }
-    catch { this._names = []; }
-    return this._names;
-  },
-  saveNames() { localStorage.setItem(PTG_NAMES_KEY, JSON.stringify(this._names)); },
-  addGroupName(name) {
-    const names = this.loadNames();
-    if (!names.includes(name)) { names.push(name); this.saveNames(); }
-  },
-  allGroups(tickers) {
-    const m = this.load();
-    const set = new Set(this.loadNames());
-    tickers.forEach(t => { if (m[t]) set.add(m[t]); });
-    return [...set].sort();
-  },
-};
+const PTG = makeGroupStore(PTG_KEY, PTG_NAMES_KEY);
 let _ptGroupFilter = '전체';
 
 // ── 차트 색상 ─────────────────────────────────────────────────────────────────

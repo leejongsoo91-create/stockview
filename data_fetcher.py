@@ -31,9 +31,28 @@ YF_HEADERS = {
     "Accept": "application/json",
 }
 
-FMP_KEY      = "uF46pP4IocE5ToPciq8lniQ3gpREJEpo"
-AV_KEY       = "BHLMLWDEUN9B98HW"
-FINNHUB_KEY  = "d93qog9r01qj2ci8oaf0d93qog9r01qj2ci8oafg"
+_API_KEY_DIR = os.path.join(os.path.dirname(__file__), "api")
+
+
+def _load_api_key(filename: str) -> str:
+    """api/<filename>에서 API 키를 읽어 반환. 파일이 없거나 비어 있으면 "" (해당 소스만 조용히 스킵).
+
+    키를 소스에 평문으로 두지 않기 위한 분리 -- api/ 폴더는 .gitignore 처리됨.
+    """
+    path = os.path.join(_API_KEY_DIR, filename)
+    try:
+        with open(path, encoding="utf-8") as f:
+            key = f.read().strip()
+        if not key:
+            log.warning(f"API 키 파일 비어 있음: api/{filename} -- 해당 뉴스 소스 스킵")
+        return key
+    except OSError:
+        log.warning(f"API 키 파일 없음: api/{filename} -- 해당 뉴스 소스 스킵")
+        return ""
+
+
+AV_KEY       = _load_api_key("alphavantage.txt")
+FINNHUB_KEY  = _load_api_key("finnhub.txt")
 
 RSS_FEEDS = [
     # 기존 7개
@@ -1473,56 +1492,6 @@ def fetch_quote(ticker: str) -> dict | None:
         return None
 
 
-def fetch_quote_v7(ticker: str) -> dict | None:
-    """Yahoo Finance v7 quoteSummary API로 상세 정보 조회"""
-    url = (
-        f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-        "?modules=summaryDetail,defaultKeyStatistics,price"
-    )
-    try:
-        r = requests.get(url, headers=YF_HEADERS, timeout=10)
-        r.raise_for_status()
-        result = r.json()["quoteSummary"]["result"][0]
-        price_m  = result.get("price", {})
-        summary  = result.get("summaryDetail", {})
-        stats    = result.get("defaultKeyStatistics", {})
-
-        def rv(d, k):
-            v = d.get(k, {})
-            return v.get("raw") if isinstance(v, dict) else v
-
-        price      = _safe(rv(price_m, "regularMarketPrice"))
-        prev       = _safe(rv(price_m, "regularMarketPreviousClose")) or price
-        change     = _safe(rv(price_m, "regularMarketChange"), 0.0)
-        change_pct = _safe(rv(price_m, "regularMarketChangePercent"), 0.0)
-        if change_pct and abs(change_pct) > 1:
-            change_pct = round(change_pct, 2)
-        else:
-            change_pct = round(change_pct * 100, 2) if change_pct else 0.0
-
-        market_cap_b = None
-        mc = _safe(rv(price_m, "marketCap"))
-        if mc:
-            market_cap_b = round(mc / 1_000_000_000, 2)
-
-        return {
-            "price":        round(price, 2) if price else None,
-            "change":       round(change, 2) if change else 0.0,
-            "change_pct":   change_pct,
-            "volume":       int(_safe(rv(price_m, "regularMarketVolume"), 0) or 0),
-            "market_cap":   market_cap_b,
-            "pe":           _safe(rv(summary, "trailingPE")),
-            "eps":          _safe(rv(stats, "trailingEps")),
-            "week52_high":  _safe(rv(summary, "fiftyTwoWeekHigh")),
-            "week52_low":   _safe(rv(summary, "fiftyTwoWeekLow")),
-            "name":         price_m.get("longName") or price_m.get("shortName", ""),
-            "sector":       result.get("assetProfile", {}).get("sector", ""),
-        }
-    except Exception as e:
-        log.debug(f"fetch_quote_v7({ticker}): {e}")
-        return None
-
-
 # interval → (yf_interval, yf_range) 매핑
 # 일봉은 period 파라미터로 별도 조절
 _INTERVAL_MAP: dict[str, tuple[str, str]] = {
@@ -1712,7 +1681,7 @@ _YF_HTML_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-def fetch_pe_eps_fmp(tickers: list[str], daily_limit: int = 500) -> dict[str, dict]:
+def fetch_pe_eps_yahoo(tickers: list[str], daily_limit: int = 500) -> dict[str, dict]:
     """Yahoo Finance 종목 페이지 HTML 파싱으로 PE(TTM), EPS(TTM) 수집.
 
     - 일일 한도 없음 (공개 HTML 페이지)
@@ -2902,7 +2871,9 @@ def fetch_earnings_calendar(date_str: str) -> list[dict]:
 
 
 # ── 경제 지표 캘린더 ──────────────────────────────────────────────────────────
-# 2026년 주요 미국 경제 지표 발표 일정 (BLS/Fed 공식 일정 기준)
+# 2026~2027년 주요 미국 경제 지표 발표 일정. 2026은 BLS/Fed 공식 일정, 2027은
+# FOMC만 연준 공표일이고 나머지는 2026 패턴 +52주 근사(위젯이 "다가오는 일정 안내"
+# 용도라 월 단위 정확도면 충분). 목록이 소진되기 전 fetch_economic_calendar()가 경고 로그.
 _ECO_EVENTS: list[tuple] = [
     # (날짜, 이벤트명, 중요도, 카테고리)
     # ── FOMC 금리 결정 ──────────────────────────────────────────────────
@@ -3009,6 +2980,111 @@ _ECO_EVENTS: list[tuple] = [
     ("2026-10-27", "Consumer Confidence (Oct)",   "medium", "Consumer"),
     ("2026-11-24", "Consumer Confidence (Nov)",   "medium", "Consumer"),
     ("2026-12-22", "Consumer Confidence (Dec)",   "medium", "Consumer"),
+    # === 2027 (2026 pattern +52w / FOMC official / NFP first Friday) ===
+    # -- FOMC 2027 --
+    ("2027-01-27", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-03-17", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-04-28", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-06-09", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-07-28", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-09-15", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-10-27", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    ("2027-12-08", "FOMC Rate Decision",          "high",   "Fed Policy"),
+    # -- Non-Farm Payrolls 2027 (first Friday) --
+    ("2027-01-08", "Non-Farm Payrolls (Dec 2026)","high",   "Employment"),
+    ("2027-02-05", "Non-Farm Payrolls (Jan 2027)","high",   "Employment"),
+    ("2027-03-05", "Non-Farm Payrolls (Feb 2027)","high",   "Employment"),
+    ("2027-04-02", "Non-Farm Payrolls (Mar 2027)","high",   "Employment"),
+    ("2027-05-07", "Non-Farm Payrolls (Apr 2027)","high",   "Employment"),
+    ("2027-06-04", "Non-Farm Payrolls (May 2027)","high",   "Employment"),
+    ("2027-07-02", "Non-Farm Payrolls (Jun 2027)","high",   "Employment"),
+    ("2027-08-06", "Non-Farm Payrolls (Jul 2027)","high",   "Employment"),
+    ("2027-09-03", "Non-Farm Payrolls (Aug 2027)","high",   "Employment"),
+    ("2027-10-01", "Non-Farm Payrolls (Sep 2027)","high",   "Employment"),
+    ("2027-11-05", "Non-Farm Payrolls (Oct 2027)","high",   "Employment"),
+    ("2027-12-03", "Non-Farm Payrolls (Nov 2027)","high",   "Employment"),
+    # -- CPI 2027 --
+    ("2027-01-14", "CPI (Dec 2026)",              "high",   "Inflation"),
+    ("2027-02-11", "CPI (Jan 2027)",              "high",   "Inflation"),
+    ("2027-03-11", "CPI (Feb 2027)",              "high",   "Inflation"),
+    ("2027-04-09", "CPI (Mar 2027)",              "high",   "Inflation"),
+    ("2027-05-13", "CPI (Apr 2027)",              "high",   "Inflation"),
+    ("2027-06-10", "CPI (May 2027)",              "high",   "Inflation"),
+    ("2027-07-14", "CPI (Jun 2027)",              "high",   "Inflation"),
+    ("2027-08-11", "CPI (Jul 2027)",              "high",   "Inflation"),
+    ("2027-09-09", "CPI (Aug 2027)",              "high",   "Inflation"),
+    ("2027-10-13", "CPI (Sep 2027)",              "high",   "Inflation"),
+    ("2027-11-11", "CPI (Oct 2027)",              "high",   "Inflation"),
+    ("2027-12-09", "CPI (Nov 2027)",              "high",   "Inflation"),
+    # -- PCE Price Index 2027 --
+    ("2027-01-29", "PCE Price Index (Dec 2026)",  "high",   "Inflation"),
+    ("2027-02-26", "PCE Price Index (Jan 2027)",  "high",   "Inflation"),
+    ("2027-03-26", "PCE Price Index (Feb 2027)",  "high",   "Inflation"),
+    ("2027-04-29", "PCE Price Index (Mar 2027)",  "high",   "Inflation"),
+    ("2027-05-28", "PCE Price Index (Apr 2027)",  "high",   "Inflation"),
+    ("2027-06-25", "PCE Price Index (May 2027)",  "high",   "Inflation"),
+    ("2027-07-30", "PCE Price Index (Jun 2027)",  "high",   "Inflation"),
+    ("2027-08-27", "PCE Price Index (Jul 2027)",  "high",   "Inflation"),
+    ("2027-09-24", "PCE Price Index (Aug 2027)",  "high",   "Inflation"),
+    ("2027-10-29", "PCE Price Index (Sep 2027)",  "high",   "Inflation"),
+    ("2027-11-24", "PCE Price Index (Oct 2027)",  "high",   "Inflation"),
+    ("2027-12-22", "PCE Price Index (Nov 2027)",  "high",   "Inflation"),
+    # -- GDP 2027 (Advance) --
+    ("2027-01-28", "GDP Q4 2026 (Advance)",       "high",   "GDP"),
+    ("2027-04-28", "GDP Q1 2027 (Advance)",       "high",   "GDP"),
+    ("2027-07-28", "GDP Q2 2027 (Advance)",       "high",   "GDP"),
+    ("2027-10-28", "GDP Q3 2027 (Advance)",       "high",   "GDP"),
+    # -- PPI 2027 --
+    ("2027-01-15", "PPI (Dec 2026)",              "medium", "Inflation"),
+    ("2027-02-12", "PPI (Jan 2027)",              "medium", "Inflation"),
+    ("2027-03-12", "PPI (Feb 2027)",              "medium", "Inflation"),
+    ("2027-04-10", "PPI (Mar 2027)",              "medium", "Inflation"),
+    ("2027-05-14", "PPI (Apr 2027)",              "medium", "Inflation"),
+    ("2027-06-11", "PPI (May 2027)",              "medium", "Inflation"),
+    ("2027-07-15", "PPI (Jun 2027)",              "medium", "Inflation"),
+    ("2027-08-12", "PPI (Jul 2027)",              "medium", "Inflation"),
+    ("2027-09-10", "PPI (Aug 2027)",              "medium", "Inflation"),
+    ("2027-10-14", "PPI (Sep 2027)",              "medium", "Inflation"),
+    ("2027-11-12", "PPI (Oct 2027)",              "medium", "Inflation"),
+    ("2027-12-10", "PPI (Nov 2027)",              "medium", "Inflation"),
+    # -- Retail Sales 2027 --
+    ("2027-01-15", "Retail Sales (Dec 2026)",     "medium", "Consumer"),
+    ("2027-02-12", "Retail Sales (Jan 2027)",     "medium", "Consumer"),
+    ("2027-03-16", "Retail Sales (Feb 2027)",     "medium", "Consumer"),
+    ("2027-04-14", "Retail Sales (Mar 2027)",     "medium", "Consumer"),
+    ("2027-05-14", "Retail Sales (Apr 2027)",     "medium", "Consumer"),
+    ("2027-06-16", "Retail Sales (May 2027)",     "medium", "Consumer"),
+    ("2027-07-16", "Retail Sales (Jun 2027)",     "medium", "Consumer"),
+    ("2027-08-13", "Retail Sales (Jul 2027)",     "medium", "Consumer"),
+    ("2027-09-15", "Retail Sales (Aug 2027)",     "medium", "Consumer"),
+    ("2027-10-13", "Retail Sales (Sep 2027)",     "medium", "Consumer"),
+    ("2027-11-12", "Retail Sales (Oct 2027)",     "medium", "Consumer"),
+    ("2027-12-11", "Retail Sales (Nov 2027)",     "medium", "Consumer"),
+    # -- ISM Manufacturing PMI 2027 --
+    ("2027-02-01", "ISM Manufacturing PMI (Jan)", "medium", "Manufacturing"),
+    ("2027-03-01", "ISM Manufacturing PMI (Feb)", "medium", "Manufacturing"),
+    ("2027-03-31", "ISM Manufacturing PMI (Mar)", "medium", "Manufacturing"),
+    ("2027-04-30", "ISM Manufacturing PMI (Apr)", "medium", "Manufacturing"),
+    ("2027-05-31", "ISM Manufacturing PMI (May)", "medium", "Manufacturing"),
+    ("2027-06-30", "ISM Manufacturing PMI (Jun)", "medium", "Manufacturing"),
+    ("2027-08-02", "ISM Manufacturing PMI (Jul)", "medium", "Manufacturing"),
+    ("2027-08-31", "ISM Manufacturing PMI (Aug)", "medium", "Manufacturing"),
+    ("2027-09-30", "ISM Manufacturing PMI (Sep)", "medium", "Manufacturing"),
+    ("2027-11-01", "ISM Manufacturing PMI (Oct)", "medium", "Manufacturing"),
+    ("2027-11-30", "ISM Manufacturing PMI (Nov)", "medium", "Manufacturing"),
+    # -- Consumer Confidence 2027 --
+    ("2027-01-26", "Consumer Confidence (Jan)",   "medium", "Consumer"),
+    ("2027-02-23", "Consumer Confidence (Feb)",   "medium", "Consumer"),
+    ("2027-03-30", "Consumer Confidence (Mar)",   "medium", "Consumer"),
+    ("2027-04-27", "Consumer Confidence (Apr)",   "medium", "Consumer"),
+    ("2027-05-25", "Consumer Confidence (May)",   "medium", "Consumer"),
+    ("2027-06-29", "Consumer Confidence (Jun)",   "medium", "Consumer"),
+    ("2027-07-27", "Consumer Confidence (Jul)",   "medium", "Consumer"),
+    ("2027-08-24", "Consumer Confidence (Aug)",   "medium", "Consumer"),
+    ("2027-09-28", "Consumer Confidence (Sep)",   "medium", "Consumer"),
+    ("2027-10-26", "Consumer Confidence (Oct)",   "medium", "Consumer"),
+    ("2027-11-23", "Consumer Confidence (Nov)",   "medium", "Consumer"),
+    ("2027-12-21", "Consumer Confidence (Dec)",   "medium", "Consumer"),
 ]
 
 
@@ -3018,6 +3094,12 @@ def fetch_economic_calendar(days_ahead: int = 21) -> list[dict]:
     today = date.today()
     cutoff = today + timedelta(days=days_ahead)
     today_str = today.isoformat()
+
+    # 하드코딩 목록이 곧 소진되면 조용히 빈 캘린더가 되므로 미리 경고
+    last_event = max(d for d, *_ in _ECO_EVENTS)
+    if (date.fromisoformat(last_event) - today).days < 45:
+        log.warning(f"경제캘린더 데이터 갱신 필요 — 마지막 이벤트 {last_event} "
+                    f"(_ECO_EVENTS에 다음 연도 일정 추가 요망)")
 
     result = []
     for date_str, event, importance, category in _ECO_EVENTS:
@@ -3172,17 +3254,15 @@ def build_voice_briefing(us_news: list[dict], kr_news: list[dict],
     if not script:
         return None
 
+    # 기존 오디오는 선삭제하지 않는다 -- 대본은 됐는데 TTS가 전부 실패하면
+    # 어제 만들어둔 브리핑까지 사라져 복구 불가였음. 합성이 다 끝난 뒤(성공 시에만)
+    # 새 turn 세트에 없는 잔여 파일만 정리한다.
     os.makedirs(BRIEFING_AUDIO_DIR, exist_ok=True)
-    for fname in os.listdir(BRIEFING_AUDIO_DIR):
-        try:
-            os.remove(os.path.join(BRIEFING_AUDIO_DIR, fname))
-        except OSError:
-            pass
 
     try:
         token = _google_tts_token()
     except Exception as e:
-        log.error(f"Google TTS 인증 실패 — 음성 브리핑 스킵: {e}")
+        log.error(f"Google TTS 인증 실패 — 음성 브리핑 스킵(기존 오디오 유지): {e}")
         return None
 
     def _synth_one(i: int, turn: dict) -> dict | None:
@@ -3206,8 +3286,17 @@ def build_voice_briefing(us_news: list[dict], kr_news: list[dict],
 
     turns = [t for t in slots if t]
     if not turns:
-        log.error("음성 브리핑: 모든 turn TTS 합성 실패")
+        log.error("음성 브리핑: 모든 turn TTS 합성 실패 — 기존 오디오/매니페스트 유지")
         return None
+
+    # 성공했으니 이번 세트에 없는 옛 파일만 정리
+    keep = {t["audio_file"] for t in turns}
+    for fname in os.listdir(BRIEFING_AUDIO_DIR):
+        if fname not in keep:
+            try:
+                os.remove(os.path.join(BRIEFING_AUDIO_DIR, fname))
+            except OSError:
+                pass
 
     log.info(f"음성 브리핑 생성 완료: {len(turns)}개 발화 음성 합성")
     result = {"generated_at": datetime.now().isoformat(), "turns": turns}

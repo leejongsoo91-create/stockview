@@ -1024,7 +1024,7 @@ async function loadChart(ticker) {
 
   } catch {
     document.getElementById('stock-info-panel').innerHTML =
-      `<div class="info-placeholder" style="color:#f85149">Ticker "${ticker}" not found</div>`;
+      `<div class="info-placeholder" style="color:var(--red)">Ticker "${ticker}" not found</div>`;
     document.getElementById('chart-ticker-label').textContent  = ticker;
     document.getElementById('chart-company-label').textContent = '';
   }
@@ -1686,12 +1686,12 @@ function _renderSignalCard() {
                       : patName;
   }
 
-  const scoreColor = finalTotal > 0 ? '#3fb950' : finalTotal < 0 ? '#f85149' : '#8b949e';
+  const scoreColor = finalTotal > 0 ? 'var(--green)' : finalTotal < 0 ? 'var(--red)' : 'var(--muted)';
   const scoreLabel = finalTotal >= 3 ? 'STRONG BUY'  : finalTotal === 2  ? 'BUY'
                    : finalTotal <= -3 ? 'STRONG SELL' : finalTotal === -2 ? 'SELL'
                    : finalTotal === 1 ? 'Weak Buy'    : finalTotal === -1 ? 'Weak Sell' : 'Neutral';
 
-  const trendColor = trendUp ? '#3fb950' : trendDown ? '#f85149' : '#8b949e';
+  const trendColor = trendUp ? 'var(--green)' : trendDown ? 'var(--red)' : 'var(--muted)';
   const trendLabel = trendUp ? '▲ 상승 추세' : trendDown ? '▼ 하락 추세' : '— 중립';
   const ma50Val    = lastMa50 != null ? lastMa50.toFixed(2) : '—';
   const trendRow   = `<div class="sc-row sc-trend-row">
@@ -1703,7 +1703,7 @@ function _renderSignalCard() {
   // 주봉 MA13 추세 행
   const wTrendArr  = _getWeeklyTrendArray(_lastOhlcv, 13);
   const wTrendNow  = wTrendArr[n - 1];
-  const wTrendColor = wTrendNow ===  1 ? '#3fb950' : wTrendNow === -1 ? '#f85149' : '#8b949e';
+  const wTrendColor = wTrendNow ===  1 ? 'var(--green)' : wTrendNow === -1 ? 'var(--red)' : 'var(--muted)';
   const wTrendLabel = wTrendNow ===  1 ? '▲ 주봉 상승' : wTrendNow === -1 ? '▼ 주봉 하락' : '— 중립';
   const weeklyRow  = `<div class="sc-row sc-trend-row">
     <span class="sc-label">W.MA13</span>
@@ -1718,12 +1718,12 @@ function _renderSignalCard() {
     (filteredByMA50 <= -2 && lastPb <= _sellThr)
   );
   const pbColor = bbBlocked ? '#ffa64d'
-    : lastPb == null   ? '#8b949e'
-    : lastPb < 0.20    ? '#3fb950'
-    : lastPb < 0.35    ? '#58a6ff'
-    : lastPb > 0.80    ? '#f85149'
+    : lastPb == null   ? 'var(--muted)'
+    : lastPb < 0.20    ? 'var(--green)'
+    : lastPb < 0.35    ? 'var(--accent)'
+    : lastPb > 0.80    ? 'var(--red)'
     : lastPb > 0.65    ? '#ffa64d'
-    : '#8b949e';
+    : 'var(--muted)';
   const pbLabel = bbBlocked       ? '⚡ 신호 차단'
     : lastPb == null   ? '—'
     : lastPb < 0.20    ? '하단권 (강한 반등)'
@@ -1739,17 +1739,17 @@ function _renderSignalCard() {
 
   const rowsHtml = rows.map(r => {
     if (r.infoOnly) {
-      const ic = r.detail === '—' ? '#8b949e' : r.detail.startsWith('B') ? '#58a6ff' : '#ffa64d';
+      const ic = r.detail === '—' ? 'var(--muted)' : r.detail.startsWith('B') ? 'var(--accent)' : '#ffa64d';
       return `<div class="sc-row">
         <span class="sc-label">${r.label}</span>
         <span class="sc-val" style="color:${ic}">${r.detail}</span>
-        <span class="sc-sig" style="color:#555e6b">참고</span>
+        <span class="sc-sig" style="color:var(--muted);opacity:.7">참고</span>
       </div>`;
     }
     // 추세 반대 신호는 회색으로 표시 (필터됨)
     const filtered = (trendUp && r.score < 0) || (trendDown && r.score > 0);
-    const ic = filtered ? '#444c56'
-             : r.score > 0 ? '#3fb950' : r.score < 0 ? '#f85149' : '#8b949e';
+    const ic = filtered ? 'var(--muted)'
+             : r.score > 0 ? 'var(--green)' : r.score < 0 ? 'var(--red)' : 'var(--muted)';
     const il = filtered
              ? (r.score > 0 ? '▲ 매수 (필터)' : '▼ 매도 (필터)')
              : r.score > 0 ? '▲ 매수' : r.score < 0 ? '▼ 매도' : '— 중립';
@@ -1761,8 +1761,8 @@ function _renderSignalCard() {
   }).join('');
 
   const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0); // DIV는 RSI 활성 시 포함
-  const scoreBg = finalTotal > 0 ? 'rgba(63,185,80,0.14)'
-                : finalTotal < 0 ? 'rgba(248,81,73,0.14)'
+  const scoreBg = finalTotal > 0 ? 'var(--green-bg)'
+                : finalTotal < 0 ? 'var(--red-bg)'
                 : 'rgba(139,148,158,0.08)';
   card.innerHTML = `
     <div class="sc-banner" style="background:${scoreBg};border-left-color:${scoreColor}">
@@ -2421,16 +2421,16 @@ async function _loadKrInvestor(ticker) {
   if (!section) return;
   const code = ticker.replace(/\.(KS|KQ)$/, '');
   section.innerHTML = `<div class="info-section-title" style="margin-top:10px">수급 동향 (최근 5일)</div>
-    <div style="color:#8b949e;font-size:11px;padding:4px 0">Loading…</div>`;
+    <div style="color:var(--muted);font-size:11px;padding:4px 0">Loading…</div>`;
   try {
     const rows = await api(`/api/kr-investor/${code}`);
     if (!rows || !rows.length) {
       section.innerHTML = `<div class="info-section-title" style="margin-top:10px">수급 동향</div>
-        <div style="color:#8b949e;font-size:11px;padding:4px 0">정보 없음</div>`;
+        <div style="color:var(--muted);font-size:11px;padding:4px 0">정보 없음</div>`;
       return;
     }
     const fmtV = v => {
-      if (!v) return '<span style="color:#8b949e">—</span>';
+      if (!v) return '<span style="color:var(--muted)">—</span>';
       const abs = Math.abs(v).toLocaleString('ko-KR');
       return v >= 0
         ? `<span class="up">+${abs}</span>`
@@ -2455,7 +2455,7 @@ async function _loadStockNews(ticker) {
   const section = document.getElementById('stock-news-section');
   if (!section) return;
   section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
-    <div style="color:#8b949e;font-size:11px;padding:4px 0">Loading…</div>`;
+    <div style="color:var(--muted);font-size:11px;padding:4px 0">Loading…</div>`;
   try {
     const url = _isKrStock(ticker)
       ? `/api/kr-news/${encodeURIComponent(ticker)}`
@@ -2463,7 +2463,7 @@ async function _loadStockNews(ticker) {
     const news = await api(url);
     if (!news || !news.length) {
       section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
-        <div style="color:#8b949e;font-size:11px;padding:4px 0">No recent news</div>`;
+        <div style="color:var(--muted);font-size:11px;padding:4px 0">No recent news</div>`;
       return;
     }
     const items = news.slice(0, 8).map(n => {

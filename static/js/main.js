@@ -16,6 +16,78 @@ async function api(path) {
   return r.json();
 }
 
+// ── localStorage 저장소 팩토리 (Watchlist / Portfolio 공용) ─────────────────────
+// 메모/목표가 저장소: 티커 -> {memo, target}. WLN(watchlist.js) / PTN(portfolio.js)이 이걸로 생성됨.
+function makeNotesStore(key) {
+  return {
+    _map: null,
+    load() {
+      if (this._map) return this._map;
+      try { this._map = JSON.parse(localStorage.getItem(key) || '{}'); }
+      catch { this._map = {}; }
+      return this._map;
+    },
+    save() { localStorage.setItem(key, JSON.stringify(this._map)); },
+    get(ticker) { return this.load()[ticker] || {}; },
+    setMemo(ticker, memo) {
+      const m = this.load();
+      const cur = { ...(m[ticker] || {}) };
+      if (memo) cur.memo = memo; else delete cur.memo;
+      if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
+      this.save();
+    },
+    setTarget(ticker, target) {
+      const m = this.load();
+      const cur = { ...(m[ticker] || {}) };
+      const n = parseFloat(target);
+      if (target !== '' && Number.isFinite(n)) cur.target = n; else delete cur.target;
+      if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
+      this.save();
+    },
+  };
+}
+
+// 그룹 저장소: 티커 -> 그룹명(없으면 미분류) + 종목 미배정 상태에서도 유지되는 그룹명 목록.
+// WLG(watchlist.js) / PTG(portfolio.js)가 이걸로 생성됨.
+function makeGroupStore(key, namesKey) {
+  return {
+    _map: null,
+    _names: null,
+    load() {
+      if (this._map) return this._map;
+      try { this._map = JSON.parse(localStorage.getItem(key) || '{}'); }
+      catch { this._map = {}; }
+      return this._map;
+    },
+    save() { localStorage.setItem(key, JSON.stringify(this._map)); },
+    get(ticker) { return this.load()[ticker] || ''; },
+    set(ticker, group) {
+      const m = this.load();
+      if (group) { m[ticker] = group; this.addGroupName(group); } else delete m[ticker];
+      this.save();
+    },
+    remove(ticker) { this.set(ticker, ''); },
+    loadNames() {
+      if (this._names) return this._names;
+      try { this._names = JSON.parse(localStorage.getItem(namesKey) || '[]'); }
+      catch { this._names = []; }
+      return this._names;
+    },
+    saveNames() { localStorage.setItem(namesKey, JSON.stringify(this._names)); },
+    addGroupName(name) {
+      const names = this.loadNames();
+      if (!names.includes(name)) { names.push(name); this.saveNames(); }
+    },
+    // 저장된 그룹명 + 현재 종목에 실제 배정된 그룹명을 합쳐 정렬 반환
+    allGroups(tickers) {
+      const m = this.load();
+      const set = new Set(this.loadNames());
+      tickers.forEach(t => { if (m[t]) set.add(m[t]); });
+      return [...set].sort();
+    },
+  };
+}
+
 // ── 다중종목 비교차트 (6번, Watchlist/Portfolio 공용) ───────────────────────────
 const _cmpSel = { wl: new Set(), pt: new Set() };
 

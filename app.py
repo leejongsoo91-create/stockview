@@ -108,7 +108,7 @@ def refresh_kr_stocks():
 
 
 def refresh_pe_eps():
-    """FMP 무료 API로 PE/EPS 수집 (1일 1회).
+    """Yahoo Finance 종목 페이지 HTML 파싱으로 PE/EPS 수집 (1일 1회).
     이미 있는 종목은 건너뛰고 누락 종목부터 시총 상위 순으로 처리.
     결과는 파일에 저장해 서버 재시작 후에도 유지.
     """
@@ -125,7 +125,7 @@ def refresh_pe_eps():
         refresh  = [t for t in all_tickers if t in existing]
         ordered  = (missing + refresh)[:200]   # 누락 먼저, 기존 갱신은 뒤에
 
-        new_data = df.fetch_pe_eps_fmp(ordered)
+        new_data = df.fetch_pe_eps_yahoo(ordered)
         if new_data:
             existing.update(new_data)
             _save_pe_eps(existing)
@@ -899,11 +899,15 @@ def stock_analysis(ticker):
 
 @app.route("/api/financials/<ticker>")
 def financials(ticker):
-    """재무제표 -- KR: 네이버 스크래핑 / US: SEC EDGAR API. 12시간 lazy 캐시."""
+    """재무제표 -- KR: 네이버 스크래핑 / US: SEC EDGAR API. 성공 12h / 없음 6h lazy 캐시.
+    재무제표 없는 종목(ETF/ADR/SPAC 등)이 US 5,000개 중 상당수라, 404도 캐시해
+    차트 열 때마다 SEC EDGAR가 반복 호출되는 것을 막는다(초당 10요청 제한)."""
     t = ticker.upper()
     key = f"financials_{t}"
     cached = cache.get(key)
     if cached is not None:
+        if cached.get("__notfound__"):
+            return jsonify({"error": "Not found"}), 404
         return jsonify(cached)
 
     if t.endswith((".KS", ".KQ")):
@@ -913,6 +917,7 @@ def financials(ticker):
         result = df.fetch_us_financials(t)
 
     if result is None:
+        cache.set(key, {"__notfound__": True}, ttl=21600)
         return jsonify({"error": "Not found"}), 404
 
     cache.set(key, result, ttl=43200)

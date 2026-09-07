@@ -9,37 +9,8 @@ const WLN_KEY = 'stockview_watchlist_notes'; // 종목별 메모/목표가 저�
 let _wlGroupFilter = '전체'; // '전체' | '미분류' | 그룹명
 
 // ── 관심종목 메모/목표가 저장소 (티커 -> {memo, target}) ────────────────────────
-const WLN = {
-  _map: null,
-
-  load() {
-    if (this._map) return this._map;
-    try { this._map = JSON.parse(localStorage.getItem(WLN_KEY) || '{}'); }
-    catch { this._map = {}; }
-    return this._map;
-  },
-
-  save() { localStorage.setItem(WLN_KEY, JSON.stringify(this._map)); },
-
-  get(ticker) { return this.load()[ticker] || {}; },
-
-  setMemo(ticker, memo) {
-    const m = this.load();
-    const cur = { ...(m[ticker] || {}) };
-    if (memo) cur.memo = memo; else delete cur.memo;
-    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
-    this.save();
-  },
-
-  setTarget(ticker, target) {
-    const m = this.load();
-    const cur = { ...(m[ticker] || {}) };
-    const n = parseFloat(target);
-    if (target !== '' && Number.isFinite(n)) cur.target = n; else delete cur.target;
-    if (Object.keys(cur).length) m[ticker] = cur; else delete m[ticker];
-    this.save();
-  },
-};
+// 구현은 main.js의 makeNotesStore() 공용 팩토리 (Portfolio PTN과 동일 구조)
+const WLN = makeNotesStore(WLN_KEY);
 
 function _wlEsc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -54,55 +25,8 @@ function _wlTargetStatusHtml(price, target) {
 }
 
 // ── 관심종목 그룹 저장소 (티커 -> 그룹명, 없으면 미분류) ───────────────────────
-const WLG = {
-  _map: null,
-  _names: null,
-
-  load() {
-    if (this._map) return this._map;
-    try { this._map = JSON.parse(localStorage.getItem(WLG_KEY) || '{}'); }
-    catch { this._map = {}; }
-    return this._map;
-  },
-
-  save() { localStorage.setItem(WLG_KEY, JSON.stringify(this._map)); },
-
-  get(ticker) { return this.load()[ticker] || ''; },
-
-  set(ticker, group) {
-    const m = this.load();
-    if (group) { m[ticker] = group; this.addGroupName(group); } else delete m[ticker];
-    this.save();
-  },
-
-  remove(ticker) { this.set(ticker, ''); },
-
-  loadNames() {
-    if (this._names) return this._names;
-    try { this._names = JSON.parse(localStorage.getItem(WLG_NAMES_KEY) || '[]'); }
-    catch { this._names = []; }
-    return this._names;
-  },
-
-  saveNames() { localStorage.setItem(WLG_NAMES_KEY, JSON.stringify(this._names)); },
-
-  // 종목 배정 여부와 무관하게 그룹명을 등록 (빈 그룹도 목록에 유지되도록)
-  addGroupName(name) {
-    const names = this.loadNames();
-    if (!names.includes(name)) {
-      names.push(name);
-      this.saveNames();
-    }
-  },
-
-  // 저장된 그룹명 + 현재 워치리스트 종목에 실제 배정된 그룹명을 합쳐 반환
-  allGroups(tickers) {
-    const m = this.load();
-    const set = new Set(this.loadNames());
-    tickers.forEach(t => { if (m[t]) set.add(m[t]); });
-    return [...set].sort();
-  },
-};
+// 구현은 main.js의 makeGroupStore() 공용 팩토리 (Portfolio PTG와 동일 구조)
+const WLG = makeGroupStore(WLG_KEY, WLG_NAMES_KEY);
 
 // ── 워치리스트 저장소 ─────────────────────────────────────────────────────────
 const WL = {
