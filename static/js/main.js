@@ -1183,7 +1183,7 @@ async function _refreshCurrentView() {
       const indices = await api('/api/indices');
       buildTickerTape(indices, stocks);
       renderMovers(stocks);
-      renderSectorPerf(stocks);
+      renderSectorPerf(_sectorItemsFrom1D(stocks));
       renderVolumeLeaders(stocks);
       renderMarketStatBar(stocks);
     }

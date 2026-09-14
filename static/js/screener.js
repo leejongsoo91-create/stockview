@@ -1018,6 +1018,7 @@ function _getKrFiltered() {
   // 정렬 — 가격 없는 종목은 항상 맨 뒤 (1차 + Shift+클릭 2차)
   const _krCmpCol = (a, b, col, dir) => {
     let av = a[col] ?? 0, bv = b[col] ?? 0;
+    if (col === '_52wpos') { av = _calc52wPosKr(a) ?? 0; bv = _calc52wPosKr(b) ?? 0; }
     if (typeof av === 'string') av = av.toLowerCase();
     if (typeof bv === 'string') bv = bv.toLowerCase();
     return av < bv ? dir : av > bv ? -dir : 0;
@@ -1120,7 +1121,7 @@ function renderKrScreener() {
       { key: 'market',     label: '시장',     cls: '' },
       { key: 'price',      label: '현재가',   cls: 'num' },
       { key: 'change_pct', label: '등락률',   cls: 'num' },
-      { key: '_52w_pos',   label: '52W 위치', cls: 'num' },
+      { key: '_52wpos',    label: '52W 위치', cls: 'num' },
       { key: 'volume',     label: '거래량',   cls: 'num' },
       { key: 'market_cap', label: '시가총액', cls: 'num' },
     ],
@@ -1172,7 +1173,7 @@ function renderKrScreener() {
         case 'eps':        return `<td class="num">${s.eps ? _fmtKrw(s.eps) : '—'}</td>`;
         case 'week52_high':return `<td class="num up">${s.week52_high ? _fmtKrw(s.week52_high) : '—'}</td>`;
         case 'week52_low': return `<td class="num down">${s.week52_low ? _fmtKrw(s.week52_low) : '—'}</td>`;
-        case '_52w_pos':   return `<td class="num">${pos52 !== null ? pos52 + '%' : '—'}</td>`;
+        case '_52wpos':    return `<td class="num">${pos52 !== null ? pos52 + '%' : '—'}</td>`;
         default:           return `<td>—</td>`;
       }
     }).join('');

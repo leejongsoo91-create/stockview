@@ -243,15 +243,6 @@ function renderHeatmap() {
   const defs = svg.append('defs');
   const tooltip = document.getElementById('heatmap-tooltip');
 
-  // 평균 등락률 → 반투명 배경색
-  function _avgFill(avgChg, alpha) {
-    if (avgChg >=  0.5) return `rgba(22,163,74,${alpha})`;
-    if (avgChg >=  0.1) return `rgba(22,163,74,${alpha * 0.55})`;
-    if (avgChg <= -0.5) return `rgba(185,28,28,${alpha})`;
-    if (avgChg <= -0.1) return `rgba(185,28,28,${alpha * 0.55})`;
-    return `rgba(55,65,81,${alpha})`;
-  }
-
   // 상위 상승/하락 종목 행 HTML
   function _topRows(leaves, n) {
     const sorted = [...leaves].sort((a, b) => (b.data.change_pct || 0) - (a.data.change_pct || 0));
@@ -675,7 +666,7 @@ function renderKrHeatmap() {
     svg.append('rect')
       .attr('x', mkt.x0).attr('y', mkt.y0)
       .attr('width', mw).attr('height', mh)
-      .attr('fill', _avgFillKr(mAvg, 0.08))
+      .attr('fill', _avgFill(mAvg, 0.08))
       .attr('stroke', isKosdaq ? 'rgba(251,191,36,.4)' : 'rgba(99,102,241,.4)')
       .attr('stroke-width', 2)
       .attr('rx', 4);
@@ -698,7 +689,7 @@ function renderKrHeatmap() {
     svg.append('rect')
       .attr('x', sec.x0).attr('y', sec.y0)
       .attr('width', sw).attr('height', sh)
-      .attr('fill', _avgFillKr(sAvg, 0.12))
+      .attr('fill', _avgFill(sAvg, 0.12))
       .attr('rx', 2)
       .on('mouseover', (e) => {
         tooltip.style.display = 'block';
@@ -814,10 +805,11 @@ function renderKrHeatmap() {
   });
 }
 
-function _avgFillKr(avg, alpha) {
-  if (avg >=  0.5) return `rgba(22,163,74,${alpha})`;
-  if (avg >=  0.1) return `rgba(22,163,74,${alpha * 0.55})`;
-  if (avg <= -0.5) return `rgba(185,28,28,${alpha})`;
-  if (avg <= -0.1) return `rgba(185,28,28,${alpha * 0.55})`;
+// 평균 등락률 → 반투명 배경색 (US/KR 히트맵 공용)
+function _avgFill(avgChg, alpha) {
+  if (avgChg >=  0.5) return `rgba(22,163,74,${alpha})`;
+  if (avgChg >=  0.1) return `rgba(22,163,74,${alpha * 0.55})`;
+  if (avgChg <= -0.5) return `rgba(185,28,28,${alpha})`;
+  if (avgChg <= -0.1) return `rgba(185,28,28,${alpha * 0.55})`;
   return `rgba(55,65,81,${alpha})`;
 }

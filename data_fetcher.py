@@ -226,7 +226,6 @@ NAME_KO: dict[str, str] = {
     "KHC": "크라프트하인즈", "STZ": "컨스텔레이션브랜즈",
     "MNST": "몬스터베버리지", "KDP": "큐리그닥터페퍼",
     "SYY": "시스코코퍼레이션", "USFD": "US푸즈",
-    "DG": "달러제너럴",
     "CLX": "클로락스", "CHD": "처치앤드와이트",
     "SJM": "JM스머커", "CAG": "코나그라브랜즈",
     "HRL": "호멜푸즈", "CPB": "캠벨수프", "MKC": "맥코믹",
@@ -911,9 +910,10 @@ def _fetch_kr_price_one(stock: dict) -> tuple[dict, bool]:
         # 52W High/Low는 v8 meta에서 제공됨
         w52h  = meta.get("fiftyTwoWeekHigh",  0) or stock.get("week52_high", 0) or 0
         w52l  = meta.get("fiftyTwoWeekLow",   0) or stock.get("week52_low",  0) or 0
-        # PER은 Naver base에서 유지, EPS는 price/PER로 계산
-        per   = stock.get("pe", 0) or 0
-        eps   = round(price / per, 0) if per > 0 and price > 0 else (stock.get("eps", 0) or 0)
+        # EPS는 base(스크립트 수집 시점) 값을 고정 앵커로 유지, PER은 현재가/EPS로 실시간 재계산
+        # (EPS가 없거나 0이면 — 예: 적자기업 — base PER을 그대로 유지)
+        eps = stock.get("eps", 0) or 0
+        per = round(price / eps, 1) if eps > 0 and price > 0 else (stock.get("pe", 0) or 0)
         row   = dict(stock)
         row.update(price=price, change=round(chg, 0),
                    change_pct=chg_pct, volume=vol, market_cap=cap,
@@ -1613,7 +1613,7 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
 
 
 def fetch_indices() -> list[dict]:
-    """지수 10개를 ThreadPoolExecutor로 병렬 조회"""
+    """지수 19개를 ThreadPoolExecutor로 병렬 조회"""
     symbols_meta = [
         ("^GSPC",   "S&P 500"),
         ("^IXIC",   "NASDAQ"),

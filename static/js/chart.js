@@ -1135,10 +1135,15 @@ function _calcRSIDivergence(closes, order = 5) {
 }
 
 // ── 멀티 타임프레임: 일봉 → 주봉 집계 ────────────────────────────────────────
+// bar.time은 인터벌에 따라 형식이 다름: 분봉~시봉은 UTC 초단위 숫자, 일봉 이상은 "YYYY-MM-DD" 문자열
+function _parseBarTime(t) {
+  if (typeof t === 'number') return new Date(t * 1000);
+  return new Date(t + 'T00:00:00Z');
+}
 function _resampleWeekly(ohlcv) {
   const byWeek = new Map();
   for (const bar of ohlcv) {
-    const d   = new Date(bar.time * 1000);
+    const d   = _parseBarTime(bar.time);
     const dow = d.getUTCDay();                            // 0=일, 1=월...
     const mon = new Date(d);
     mon.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1));
