@@ -1127,4 +1127,7 @@ NEWS = [
 if __name__ == "__main__":
     initial_load()
     _scheduler.start()
-    socketio.run(app, debug=False, port=5001, allow_unsafe_werkzeug=True)
+    # Render 등 호스팅 서비스는 PORT 환경변수로 포트를 지정하고, 0.0.0.0으로 바인딩해야
+    # 외부에서 접속 가능하다. 로컬 실행 시(.env 미설정)에는 기존처럼 5001 포트를 사용.
+    _port = int(os.environ.get("PORT", 5001))
+    socketio.run(app, host="0.0.0.0", port=_port, debug=False, allow_unsafe_werkzeug=True)
