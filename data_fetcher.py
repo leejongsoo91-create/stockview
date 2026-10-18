@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -32,22 +33,36 @@ YF_HEADERS = {
 }
 
 _API_KEY_DIR = os.path.join(os.path.dirname(__file__), "api")
+_RENDER_SECRETS_DIR = "/etc/secrets"  # Render Secret Files는 파일명에 '/'를 허용하지 않아 여기 평평하게 저장됨
+
+
+def _resolve_api_file(filename: str) -> str:
+    """api/<filename>(로컬) 또는 /etc/secrets/<filename>(Render Secret Files) 중 실제 존재하는 경로를 반환.
+    둘 다 없으면 로컬 경로를 그대로 반환(에러 메시지 일관성 유지용)."""
+    local_path = os.path.join(_API_KEY_DIR, filename)
+    if os.path.exists(local_path):
+        return local_path
+    render_path = os.path.join(_RENDER_SECRETS_DIR, filename)
+    if os.path.exists(render_path):
+        return render_path
+    return local_path
 
 
 def _load_api_key(filename: str) -> str:
-    """api/<filename>에서 API 키를 읽어 반환. 파일이 없거나 비어 있으면 "" (해당 소스만 조용히 스킵).
+    """api/<filename>(로컬) 또는 /etc/secrets/<filename>(Render)에서 API 키를 읽어 반환.
+    파일이 없거나 비어 있으면 "" (해당 소스만 조용히 스킵).
 
     키를 소스에 평문으로 두지 않기 위한 분리 -- api/ 폴더는 .gitignore 처리됨.
     """
-    path = os.path.join(_API_KEY_DIR, filename)
+    path = _resolve_api_file(filename)
     try:
         with open(path, encoding="utf-8") as f:
             key = f.read().strip()
         if not key:
-            log.warning(f"API 키 파일 비어 있음: api/{filename} -- 해당 뉴스 소스 스킵")
+            log.warning(f"API 키 파일 비어 있음: {path} -- 해당 뉴스 소스 스킵")
         return key
     except OSError:
-        log.warning(f"API 키 파일 없음: api/{filename} -- 해당 뉴스 소스 스킵")
+        log.warning(f"API 키 파일 없음: api/{filename} (Render: /etc/secrets/{filename}) -- 해당 뉴스 소스 스킵")
         return ""
 
 
@@ -885,19 +900,39 @@ def fetch_russell2000_iwm() -> set[str]:
 
 
 # ── 국내주식 가격 배치 수집 ────────────────────────────────────────────────────
-def _fetch_kr_price_one(stock: dict) -> tuple[dict, bool]:
+_kr_tls = threading.local()
+
+
+def _kr_session() -> requests.Session:
+    """스레드별 Session 재사용 -- 종목마다 TLS 핸드셰이크를 새로 하지 않아 CPU·지연이 줄어든다
+    (저사양 호스팅에서 3천여 종목을 5분 안에 돌리기 위함)."""
+    s = getattr(_kr_tls, "session", None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update(YF_HEADERS)
+        _kr_tls.session = s
+    return s
+
+
+def _fetch_kr_price_one(stock: dict) -> tuple[dict, str]:
+    """반환: (행, 상태). 상태: "ok" | "429"(Yahoo 요청 제한) | "fail". ok가 아니면 행은 입력 그대로."""
     ticker = stock["ticker"]
     try:
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
             f"?interval=1d&range=2d"
         )
-        r = requests.get(url, headers=YF_HEADERS, timeout=8)
+        r = _kr_session().get(url, timeout=8)
+        if r.status_code == 429:
+            return dict(stock), "429"
         r.raise_for_status()
         data  = r.json()
         res   = data["chart"]["result"][0]
         meta  = res["meta"]
         price = meta.get("regularMarketPrice") or meta.get("previousClose", 0) or 0
+        if not price:
+            # 현재가를 못 얻은 응답으로 기존 값을 0원으로 덮어쓰지 않는다
+            return dict(stock), "fail"
         prev  = meta.get("chartPreviousClose") or meta.get("previousClose", price) or price
         chg   = (price - prev) if price else 0
         chg_pct = round((chg / prev * 100), 2) if (prev and price) else 0.0
@@ -917,27 +952,56 @@ def _fetch_kr_price_one(stock: dict) -> tuple[dict, bool]:
         row   = dict(stock)
         row.update(price=price, change=round(chg, 0),
                    change_pct=chg_pct, volume=vol, market_cap=cap,
-                   week52_high=w52h, week52_low=w52l, pe=per, eps=eps)
-        return row, True
+                   week52_high=w52h, week52_low=w52l, pe=per, eps=eps,
+                   updated_at=int(time.time()))   # 실제로 갱신된 행 표시 (없으면 파일 기준 옛 값)
+        return row, "ok"
     except Exception:
-        return dict(stock), False
+        return dict(stock), "fail"
 
 
-def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25) -> list[dict]:
-    """kr_stocks.json 기반 종목 목록에 Yahoo Finance 가격을 채워 반환."""
-    result = []
-    failed  = 0
+def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25,
+                    chunk_size: int = 400, on_progress=None) -> list[dict]:
+    """kr_stocks.json 기반 종목 목록에 Yahoo Finance 가격을 채워 반환.
+
+    시가총액 큰 종목부터 chunk_size개씩 갱신하고, chunk가 끝날 때마다 on_progress(행 목록 복사본)를
+    호출한다. 느린 서버에서 전체가 늦어져도 대형주(히트맵 KOSPI200·KOSDAQ150 등)는 먼저 최신화된다.
+    반환 목록의 순서는 입력 순서와 같고, 실패한 종목은 입력 값을 그대로 유지한다.
+    """
+    rows  = [dict(s) for s in base_stocks]
+    order = sorted(range(len(rows)),
+                   key=lambda i: _safe(rows[i].get("market_cap"), 0) or 0, reverse=True)
+    total = len(rows)
+    ok = fail = limited = 0
+    t0 = time.time()
+
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futs = {ex.submit(_fetch_kr_price_one, s): s for s in base_stocks}
-        for fut in as_completed(futs):
-            row, ok = fut.result()
-            result.append(row)
-            if not ok:
-                failed += 1
+        for start in range(0, total, chunk_size):
+            idxs = order[start:start + chunk_size]
+            futs = {ex.submit(_fetch_kr_price_one, rows[i]): i for i in idxs}
+            chunk_limited = 0
+            for fut in as_completed(futs):
+                row, status = fut.result()
+                if status == "ok":
+                    rows[futs[fut]] = row
+                    ok += 1
+                else:
+                    fail += 1
+                    if status == "429":
+                        limited += 1
+                        chunk_limited += 1
+            if on_progress:
+                try:
+                    on_progress(list(rows))
+                except Exception as e:
+                    log.warning(f"fetch_kr_prices on_progress 오류: {e}")
+            if chunk_limited > len(idxs) * 0.3:
+                time.sleep(3)   # Yahoo 요청 제한이 잦으면 잠깐 쉬었다가 다음 chunk 진행
 
-    if failed:
-        log.warning(f"fetch_kr_prices: {failed}/{len(base_stocks)}개 실패 (기존 base 값 유지)")
-    return result
+    elapsed = time.time() - t0
+    log.info(f"fetch_kr_prices: 성공 {ok}/{total}, 실패 {fail} (429 제한 {limited}건), {elapsed:.0f}초")
+    if fail:
+        log.warning(f"fetch_kr_prices: {fail}/{total}개 실패 (기존 값 유지)")
+    return rows
 
 
 # ── 국내주식 수급 동향 ────────────────────────────────────────────────────────
@@ -983,6 +1047,8 @@ def fetch_kr_investor(code: str) -> list[dict]:
             if len(rows) >= 5:
                 break
 
+        if not rows:
+            log.warning(f"KR 수급(네이버) 0건 code={code} status={resp.status_code} len={len(html)}")
         return rows
     except Exception as e:
         log.warning(f"KR investor fetch failed ({code}): {e}")
@@ -1035,6 +1101,8 @@ def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
         r   = requests.get(url, headers={
             "User-Agent": "Mozilla/5.0", "Referer": "https://finance.naver.com",
         }, timeout=8)
+        if r.status_code != 200:
+            log.warning(f"KR 뉴스(네이버) HTTP {r.status_code} code={code}")
         content = r.content.decode("euc-kr", errors="replace")
 
         result = []
@@ -1053,9 +1121,47 @@ def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
                 result.append({"title": title, "source": source, "time": date, "url": raw_url})
             if len(result) >= limit:
                 break
+        if not result:
+            # 해외 서버에서 네이버가 막거나 빈 페이지를 줄 때 원인 파악용
+            log.warning(f"KR 뉴스(네이버) 0건 code={code} status={r.status_code} len={len(content)}")
         return result
     except Exception as e:
         log.warning(f"KR 뉴스 조회 실패 {code}: {e}")
+        return []
+
+
+def fetch_kr_stock_news_google(name: str, limit: int = 5) -> list[dict]:
+    """종목명으로 Google News RSS(한국어) 검색 -- 네이버가 해외 IP에서 막힐 때의 대체 소스(키 불필요).
+    반환 형식은 fetch_kr_stock_news와 같다: {"title", "source", "time", "url"}."""
+    if not name:
+        return []
+    import urllib.parse
+    try:
+        q   = urllib.parse.quote(f"{name} 주식 when:7d")
+        url = f"https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; StockView/1.0)"}, timeout=8)
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+        kst  = timezone(timedelta(hours=9))
+        result = []
+        for e in feed.entries:
+            title = (e.get("title") or "").strip()
+            src   = e.get("source")
+            source = (src.get("title", "") if isinstance(src, dict) else str(src or "")).strip()
+            if source and title.endswith(" - " + source):
+                title = title[: -(len(source) + 3)].strip()   # Google은 제목 끝에 " - 매체명"을 붙임
+            if not title:
+                continue
+            pp = e.get("published_parsed")
+            when = (datetime(*pp[:6], tzinfo=timezone.utc).astimezone(kst).strftime("%Y.%m.%d %H:%M")
+                    if pp else "")
+            result.append({"title": title, "source": source or "Google News",
+                           "time": when, "url": e.get("link", "")})
+            if len(result) >= limit:
+                break
+        return result
+    except Exception as e:
+        log.warning(f"KR 뉴스(Google News) 조회 실패 {name}: {e}")
         return []
 
 
@@ -1824,37 +1930,48 @@ def fetch_kr_market_news() -> list[dict]:
     seen: set[str] = set()
     results: list[dict] = []
 
-    _HEADERS = {"User-Agent": "StockView/1.0 (finviz-clone; educational project)"}
+    _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockView/1.0; +personal research app)"}
     _TIMEOUT = 8
 
-    for feed_info in KR_RSS_FEEDS:
+    def _get_feed(feed_info: dict):
+        """피드 1개 조회 -- 8개를 동시에 받아 느린 서버에서도 몇 초 안에 끝나게 한다."""
         try:
             resp = requests.get(feed_info["url"], headers=_HEADERS, timeout=_TIMEOUT)
             resp.raise_for_status()
-            feed = feedparser.parse(resp.text)
-
-            for entry in feed.entries[:10]:
-                title = entry.get("title", "").strip()
-                if not title or title in seen:
-                    continue
-                seen.add(title)
-
-                results.append({
-                    "id":        len(results) + 1,
-                    "title":     title,
-                    "source":    feed_info["source"],
-                    "time":      _time_ago(entry.get("published_parsed")),
-                    "timestamp": _to_timestamp(entry.get("published_parsed")),
-                    "ticker":    None,
-                    "sentiment": "neutral",
-                    "score":     0,
-                    "url":       entry.get("link", ""),
-                    "market":    "KR",
-                    "summary":   _clean_summary(entry.get("summary", "")),
-                })
+            return feed_info, feedparser.parse(resp.text).entries[:10], None
         except Exception as e:
-            log.warning(f"KR RSS({feed_info['source']}): {e}")
+            return feed_info, [], e
 
+    with ThreadPoolExecutor(max_workers=len(KR_RSS_FEEDS)) as ex:
+        fetched = list(ex.map(_get_feed, KR_RSS_FEEDS))   # 입력 순서 유지
+
+    ok_feeds = 0
+    for feed_info, entries, err in fetched:
+        if err is not None:
+            log.warning(f"KR RSS({feed_info['source']}): {err}")
+            continue
+        ok_feeds += 1
+        for entry in entries:
+            title = entry.get("title", "").strip()
+            if not title or title in seen:
+                continue
+            seen.add(title)
+
+            results.append({
+                "id":        len(results) + 1,
+                "title":     title,
+                "source":    feed_info["source"],
+                "time":      _time_ago(entry.get("published_parsed")),
+                "timestamp": _to_timestamp(entry.get("published_parsed")),
+                "ticker":    None,
+                "sentiment": "neutral",
+                "score":     0,
+                "url":       entry.get("link", ""),
+                "market":    "KR",
+                "summary":   _clean_summary(entry.get("summary", "")),
+            })
+
+    log.info(f"KR RSS: {ok_feeds}/{len(KR_RSS_FEEDS)}개 피드 성공, 기사 {len(results)}건")
     return results[:100]
 
 
@@ -3142,8 +3259,8 @@ def fetch_economic_calendar(days_ahead: int = 21) -> list[dict]:
 
 # ── AI 음성 브리핑 (Claude API 대본생성 + Google Cloud TTS 음성합성) ────────────
 
-ANTHROPIC_KEY_FILE   = os.path.join(os.path.dirname(__file__), "api", "anthropic-key.txt")
-GOOGLE_TTS_KEY_FILE  = os.path.join(os.path.dirname(__file__), "api", "google-tts-key.json")
+ANTHROPIC_KEY_FILE   = _resolve_api_file("anthropic-key.txt")
+GOOGLE_TTS_KEY_FILE  = _resolve_api_file("google-tts-key.json")
 BRIEFING_AUDIO_DIR   = os.path.join(os.path.dirname(__file__), "data", "audio")
 BRIEFING_MANIFEST_FILE = os.path.join(os.path.dirname(__file__), "data", "voice_briefing.json")
 

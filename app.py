@@ -96,11 +96,22 @@ def refresh_stocks():
 
 
 def refresh_kr_stocks():
-    """국내주식 가격 갱신 (Yahoo Finance). kr_stocks.json 기반."""
+    """국내주식 가격 갱신 (Yahoo Finance). kr_stocks.json 기반.
+
+    시총 큰 종목부터 chunk 단위로 갱신하고 chunk마다 캐시에 즉시 반영한다.
+    이전 주기에 갱신된 행(updated_at 있음)은 이어서 쓰므로, 다음 주기 도중에 파일의 옛 값으로 되돌아가지 않는다.
+    """
     base = _load_kr_base()
     if not base:
         return
-    updated = df.fetch_kr_prices(base)
+    prev = {s.get("ticker"): s for s in (cache.get("kr_stocks") or []) if s.get("updated_at")}
+    if prev:
+        base = [prev.get(s.get("ticker"), s) for s in base]
+
+    def _publish(rows):
+        cache.set("kr_stocks", rows, ttl=300)
+
+    updated = df.fetch_kr_prices(base, on_progress=_publish)
     if updated:
         cache.set("kr_stocks", updated, ttl=300)
         _emit_queue.put(("kr_stocks_update", {"count": len(updated)}))
@@ -608,7 +619,7 @@ def kr_investor(code: str):
     if cached is not None:
         return jsonify(cached)
     data = df.fetch_kr_investor(code)
-    cache.set(key, data, ttl=3600)
+    cache.set(key, data, ttl=3600 if data else 120)   # 빈 결과(일시 차단 등)는 오래 캐시하지 않는다
     return jsonify(data)
 
 
@@ -635,7 +646,14 @@ def kr_news(code: str):
     if cached is not None:
         return jsonify(cached)
     result = df.fetch_kr_stock_news(code)
-    cache.set(key, result, ttl=1800)
+    if not result:
+        # 네이버가 해외 서버에서 막히면 종목명으로 Google News RSS 검색해 대체
+        name = next((s.get("name") for s in (cache.get("kr_stocks") or [])
+                     if s.get("code") == code), "")
+        result = df.fetch_kr_stock_news_google(name)
+        if result:
+            log.info(f"KR 뉴스: 네이버 0건 → Google News 대체 {len(result)}건 ({name})")
+    cache.set(key, result, ttl=1800 if result else 120)   # 빈 결과는 짧게만 캐시
     return jsonify(result)
 
 
