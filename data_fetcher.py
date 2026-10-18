@@ -1130,6 +1130,80 @@ def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
         return []
 
 
+_NAVER_ID_ENV, _NAVER_SECRET_ENV = "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"
+
+
+def _load_naver_credentials() -> tuple[str, str]:
+    """네이버 검색 API 키(Client ID, Client Secret)를 읽는다. 없으면 ("", "").
+    우선순위: 환경변수 -> naver-client.txt(1행 ID, 2행 Secret 또는 'ID:Secret') -> 
+    naver-client-id.txt + naver-client-secret.txt. 파일은 api/ 또는 /etc/secrets/ 에서 찾는다."""
+    cid, sec = os.environ.get(_NAVER_ID_ENV, "").strip(), os.environ.get(_NAVER_SECRET_ENV, "").strip()
+    if cid and sec:
+        return cid, sec
+
+    def _read(name: str) -> str:
+        path = _resolve_api_file(name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    for name in ("naver-client.txt", "naver.txt", "naver-api.txt"):
+        raw = _read(name)
+        if raw:
+            parts = [x.strip() for x in re.split(r"[\r\n:,\s]+", raw) if x.strip()]
+            if len(parts) >= 2:
+                return parts[0], parts[1]
+    cid, sec = _read("naver-client-id.txt"), _read("naver-client-secret.txt")
+    return (cid, sec) if cid and sec else ("", "")
+
+
+def fetch_kr_stock_news_naver_api(name: str, limit: int = 5) -> list[dict]:
+    """네이버 검색 API(공식, 뉴스)로 종목명 뉴스 검색. 키가 없으면 [] (조용히 스킵).
+    반환 형식은 fetch_kr_stock_news와 같다: {"title", "source", "time", "url"}."""
+    if not name:
+        return []
+    cid, sec = _load_naver_credentials()
+    if not cid:
+        return []
+    import html as _html
+    import urllib.parse
+    from email.utils import parsedate_to_datetime
+    try:
+        r = requests.get(
+            "https://openapi.naver.com/v1/search/news.json",
+            params={"query": name, "display": max(limit * 2, 10), "sort": "date"},
+            headers={"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": sec},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            log.warning(f"KR 뉴스(네이버 검색API) HTTP {r.status_code} name={name} body={r.text[:120]}")
+            return []
+        kst = timezone(timedelta(hours=9))
+        result, seen = [], set()
+        for it in r.json().get("items", []):
+            title = _html.unescape(re.sub(r"<[^>]+>", "", it.get("title", ""))).strip()
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            link = it.get("originallink") or it.get("link") or ""
+            host = urllib.parse.urlparse(link).netloc.lower()
+            source = re.sub(r"^(www|news|m)\.", "", host) or "네이버뉴스"
+            try:
+                when = parsedate_to_datetime(it.get("pubDate", "")).astimezone(kst).strftime("%Y.%m.%d %H:%M")
+            except Exception:
+                when = ""
+            result.append({"title": title, "source": source, "time": when,
+                           "url": it.get("link") or link})
+            if len(result) >= limit:
+                break
+        return result
+    except Exception as e:
+        log.warning(f"KR 뉴스(네이버 검색API) 조회 실패 {name}: {e}")
+        return []
+
+
 def fetch_kr_stock_news_google(name: str, limit: int = 5) -> list[dict]:
     """종목명으로 Google News RSS(한국어) 검색 -- 네이버가 해외 IP에서 막힐 때의 대체 소스(키 불필요).
     반환 형식은 fetch_kr_stock_news와 같다: {"title", "source", "time", "url"}."""

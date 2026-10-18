@@ -645,14 +645,18 @@ def kr_news(code: str):
     cached = cache.get(key)
     if cached is not None:
         return jsonify(cached)
-    result = df.fetch_kr_stock_news(code)
+    name = next((s.get("name") for s in (cache.get("kr_stocks") or [])
+                 if s.get("code") == code), "")
+    # 1순위: 네이버 검색 API(공식, 키 필요) → 2순위: 네이버 금융 스크래핑 → 3순위: Google News RSS
+    result = df.fetch_kr_stock_news_naver_api(name)
+    if result:
+        log.info(f"KR 뉴스: 네이버 검색API {len(result)}건 ({name})")
+    else:
+        result = df.fetch_kr_stock_news(code)
     if not result:
-        # 네이버가 해외 서버에서 막히면 종목명으로 Google News RSS 검색해 대체
-        name = next((s.get("name") for s in (cache.get("kr_stocks") or [])
-                     if s.get("code") == code), "")
         result = df.fetch_kr_stock_news_google(name)
         if result:
-            log.info(f"KR 뉴스: 네이버 0건 → Google News 대체 {len(result)}건 ({name})")
+            log.info(f"KR 뉴스: Google News 대체 {len(result)}건 ({name})")
     cache.set(key, result, ttl=1800 if result else 120)   # 빈 결과는 짧게만 캐시
     return jsonify(result)
 
