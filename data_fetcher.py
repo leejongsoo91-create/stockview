@@ -1048,7 +1048,12 @@ def fetch_kr_investor(code: str) -> list[dict]:
                 break
 
         if not rows:
-            log.warning(f"KR 수급(네이버) 0건 code={code} status={resp.status_code} len={len(html)}")
+            dates = re.findall(r'\d{4}\.\d{2}\.\d{2}', html)
+            tables = re.findall(r'<table[^>]*>', html)[:6]
+            i = html.find(dates[0]) if dates else -1
+            snippet = re.sub(r'\s+', ' ', html[max(0, i - 80): i + 420]) if i >= 0 else re.sub(r'\s+', ' ', html[:300])
+            log.warning(f"KR 수급(네이버) 0건 code={code} status={resp.status_code} len={len(html)} "
+                        f"tr={html.count('<tr')} dates={len(dates)} tables={tables} snippet={snippet}")
         return rows
     except Exception as e:
         log.warning(f"KR investor fetch failed ({code}): {e}")
@@ -1166,6 +1171,8 @@ def fetch_kr_stock_news_naver_api(name: str, limit: int = 5) -> list[dict]:
         return []
     cid, sec = _load_naver_credentials()
     if not cid:
+        log.warning("KR 뉴스(네이버 검색API) 키 없음 -- Secret File naver-client.txt(1행 ID, 2행 Secret) 또는 "
+                    "환경변수 NAVER_CLIENT_ID/NAVER_CLIENT_SECRET 확인")
         return []
     import html as _html
     import urllib.parse
@@ -1198,6 +1205,8 @@ def fetch_kr_stock_news_naver_api(name: str, limit: int = 5) -> list[dict]:
                            "url": it.get("link") or link})
             if len(result) >= limit:
                 break
+        if not result:
+            log.warning(f"KR 뉴스(네이버 검색API) 0건 name={name} items={len(r.json().get('items', []))}")
         return result
     except Exception as e:
         log.warning(f"KR 뉴스(네이버 검색API) 조회 실패 {name}: {e}")
