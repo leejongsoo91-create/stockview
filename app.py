@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import json
 import logging
@@ -48,6 +49,66 @@ log = logging.getLogger(__name__)
 app      = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", logger=False, engineio_logger=False)
 cache    = Cache()
+
+# ── 응답 압축(gzip) ───────────────────────────────────────────────────────────
+# 5,000건짜리 JSON 목록 등을 70~85% 줄여 전송한다. 환경변수 DISABLE_GZIP=1 이면 끈다.
+# - 대상: JSON/HTML/JS/CSS/SVG/텍스트 (오디오 등 이미 압축된 파일은 제외)
+# - Socket.IO 경로, HEAD 요청, 오류/304/206 응답, 1KB 미만 응답은 건드리지 않는다
+# - 무료 서버(0.1 vCPU)에서 같은 큰 응답을 매번 다시 압축하지 않도록 결과를 캐시한다
+_GZIP_TYPES   = {"application/json", "text/html", "text/css", "application/javascript",
+                 "text/javascript", "image/svg+xml", "text/plain"}
+_GZIP_MIN     = 1024
+_GZIP_LEVEL   = 5
+_GZIP_CACHE_MAX = 24
+_gzip_cache: "dict[str, bytes]" = {}
+_gzip_lock = threading.Lock()
+
+
+def _gzip_bytes(data: bytes) -> bytes:
+    key = hashlib.md5(data).hexdigest()
+    with _gzip_lock:
+        hit = _gzip_cache.get(key)
+    if hit is not None:
+        return hit
+    gz = gzip.compress(data, compresslevel=_GZIP_LEVEL, mtime=0)
+    with _gzip_lock:
+        if len(_gzip_cache) >= _GZIP_CACHE_MAX:
+            _gzip_cache.pop(next(iter(_gzip_cache)))      # 가장 오래된 항목부터 제거
+        _gzip_cache[key] = gz
+    return gz
+
+
+@app.after_request
+def _compress_response(resp):
+    try:
+        if os.environ.get("DISABLE_GZIP") == "1":
+            return resp
+        if request.method == "HEAD" or request.path.startswith("/socket.io"):
+            return resp
+        if resp.status_code != 200 or "Content-Encoding" in resp.headers:
+            return resp
+        if resp.mimetype not in _GZIP_TYPES:
+            return resp
+        resp.headers.add("Vary", "Accept-Encoding")
+        if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+            return resp
+        if resp.direct_passthrough:                       # 정적 파일(send_file) 응답
+            resp.direct_passthrough = False
+        data = resp.get_data()
+        if len(data) < _GZIP_MIN:
+            return resp
+        gz = _gzip_bytes(data)
+        if len(gz) >= len(data):
+            return resp
+        resp.set_data(gz)
+        resp.headers["Content-Encoding"] = "gzip"
+        resp.headers["Content-Length"] = str(len(gz))
+        etag = resp.headers.get("ETag")
+        if etag and not etag.startswith("W/"):
+            resp.headers["ETag"] = "W/" + etag            # 압축본은 약한 ETag로 표시
+    except Exception as e:                                # 압축 실패가 응답 실패로 번지지 않게
+        log.debug(f"gzip 건너뜀: {e}")
+    return resp
 
 # APScheduler 스레드에서 직접 emit하면 WebSocket 전송이 불안정하므로
 # 전용 큐 + start_background_task 워커를 통해 emit한다
@@ -465,16 +526,25 @@ def initial_load():
     socketio.start_background_task(_emit_worker)
 
     # 백그라운드 갱신 스레드 시작
-    threading.Thread(target=refresh_indices,        daemon=True).start()
-    threading.Thread(target=refresh_news,           daemon=True).start()
-    threading.Thread(target=refresh_kr_market_news, daemon=True).start()
-    threading.Thread(target=refresh_reports,        daemon=True).start()
-    threading.Thread(target=refresh_earnings,       daemon=True).start()
-    threading.Thread(target=refresh_av_news,        daemon=True).start()
-    threading.Thread(target=refresh_finnhub_news,   daemon=True).start()
-    threading.Thread(target=_load_sp500_background, daemon=True).start()
-    threading.Thread(target=refresh_dynamic_indices, daemon=True).start()
-    threading.Thread(target=refresh_fear_greed,     daemon=True).start()
+    # 느린 서버(0.1 vCPU)에서 시작 직후 한꺼번에 몰리지 않도록 작업을 몇 초씩 나눠 시작한다.
+    # 사용자가 바로 보는 데이터(지수, 미국 종목, 뉴스)는 즉시, 부가 데이터는 뒤로 미룬다.
+    def _start_after(delay: float, fn):
+        def _run():
+            if delay:
+                import time as _t; _t.sleep(delay)
+            fn()
+        threading.Thread(target=_run, daemon=True).start()
+
+    _start_after(0,  refresh_indices)
+    _start_after(0,  _load_sp500_background)
+    _start_after(2,  refresh_finnhub_news)
+    _start_after(4,  refresh_news)
+    _start_after(6,  refresh_fear_greed)
+    _start_after(8,  refresh_kr_market_news)
+    _start_after(12, refresh_reports)
+    _start_after(16, refresh_earnings)
+    _start_after(20, refresh_av_news)
+    _start_after(24, refresh_dynamic_indices)
     # extra_fields는 stocks 로드 후 실행 — 약간 지연해서 시작
     def _delayed_extra():
         import time as _t; _t.sleep(30)
@@ -508,13 +578,14 @@ def initial_load():
     if kr_base:
         cache.set("kr_stocks", kr_base, ttl=300)
         log.info(f"국내주식 파일 캐시 로드: {len(kr_base)}개")
-        threading.Thread(target=refresh_kr_stocks, daemon=True).start()
+        _start_after(5, refresh_kr_stocks)        # 3,936종목 시세 갱신은 초반 부하를 피해 5초 뒤 시작
     else:
         log.info("kr_stocks.json 없음 — scripts/fetch_kr_stocks.py 실행 필요")
 
 
 # ── 스케줄러 ─────────────────────────────────────────────────────────────────
-_scheduler = BackgroundScheduler()
+# 느린 서버에서 30초 주기 작업이 밀릴 때 'missed' 경고가 쌓이지 않도록 1회로 합치고 60초까지 허용
+_scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "misfire_grace_time": 60})
 _scheduler.add_job(refresh_stocks,          "interval", minutes=5,  id="stocks")
 _scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")

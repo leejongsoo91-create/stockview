@@ -1157,9 +1157,13 @@ def _load_naver_credentials() -> tuple[str, str]:
     for name in ("naver-client.txt", "naver.txt", "naver-api.txt"):
         raw = _read(name)
         if raw:
-            parts = [x.strip() for x in re.split(r"[\r\n:,\s]+", raw) if x.strip()]
-            if len(parts) >= 2:
-                return parts[0], parts[1]
+            # 줄마다 'Client ID: xxx' / 'secret=xxx' 같은 라벨이 붙어 있어도 값만 취한다
+            lines = [re.split(r"[:=]", ln)[-1].strip().strip("\"'") for ln in raw.splitlines() if ln.strip()]
+            lines = [x for x in lines if x]
+            if len(lines) == 1:                       # 'ID,Secret' 한 줄 형식
+                lines = [x.strip() for x in re.split(r"[,\s]+", lines[0]) if x.strip()]
+            if len(lines) >= 2:
+                return lines[0], lines[1]
     cid, sec = _read("naver-client-id.txt"), _read("naver-client-secret.txt")
     return (cid, sec) if cid and sec else ("", "")
 
