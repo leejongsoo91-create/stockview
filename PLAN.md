@@ -836,6 +836,9 @@ APScheduler>=3.10.4
 - [x] `style.css` — `.ind-ma120`(초록) / `.ind-ma240`(핑크) active 색상 추가
 - Flask가 비-디버그 모드라 템플릿을 메모리 캐시하고 있어 서버 재시작 후에야 반영됨(정적 파일 캐싱 이슈, 향후 템플릿 수정 시 재시작 필요 유의)
 
+### KR 수급(외국인·기관) 데이터 소스 교체 ✅ 완료 (2026-10-31)
+- [x] `data_fetcher.py` `fetch_kr_investor()` — 폐기된 `finance.naver.com/item/frgn.naver` HTML 파싱 → `m.stock.naver.com/api/stock/{code}/integration` JSON API로 교체. 개인 순매수도 근사값(-(foreign+institution))에서 API 실제 값으로 정확도 향상. 반환 형식 동일 유지해 호출부 무수정. KOSPI(005930)·KOSDAQ(035720) 실API 검증 + Playwright 실브라우저 스크린샷으로 차트 탭 수급 동향 표 정상 렌더링 확인
+
 ### Phase 4-76 이후 — 예정 항목
 | 항목 | 우선순위 | 설명 |
 |------|---------|------|
@@ -846,7 +849,6 @@ APScheduler>=3.10.4
 | US 매도 신호 개선 | 보류 | 구조적 한계로 개선 포기 처리됨 |
 | FinBERT 감성 분석 | 막힘 | 이 환경(Python 3.15 알파)엔 torch/transformers 설치 불가 확인 — 로컬 구동 불가능, 하려면 외부 호스팅 API 연동으로 설계 전환 필요 |
 | 재무제표 페이지 | 막힘 | Yahoo financials 페이지(404)·quoteSummary API(401 Invalid Crumb) 둘 다 차단 확인 — 대체 무료 데이터 소스 조사 선행 필요 |
-| KR 수급(외국인·기관) 데이터 소스 교체 | 높음 | 네이버가 `finance.naver.com/item/frgn.naver`를 폐기(HTTP 410/302)하고 `stock.naver.com` SPA(Next.js)로 전면 개편 — 기존 `<tr>` 정규식 파싱 완전히 깨짐 (`/api/kr-investor`가 항상 빈 배열). 새 페이지의 내부 API 역추적 또는 대체 소스 조사 필요. 2026-10-31 확인 |
 | 해외주식(US) 수급 대안 — 브리핑 탭에 별도 관리 | 보류 | US는 KRX처럼 일별 외국인/기관 순매수 공개 데이터가 없어 KR과 동일한 방식 구현 불가. 대안(13F 기관 보유비중 분기 변화, Form 4 내부자거래 등)은 실시간성이 달라 차트 패널이 아니라 Brief 탭에서 별도 섹션으로 관리하기로 결정. 사용자 요청으로 일단 보류, 작업리스트에만 등록 (2026-10-31) |
 
 ---
