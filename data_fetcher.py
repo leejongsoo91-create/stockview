@@ -1007,53 +1007,44 @@ def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25,
 # ── 국내주식 수급 동향 ────────────────────────────────────────────────────────
 def fetch_kr_investor(code: str) -> list[dict]:
     """
-    네이버 금융 수급 동향: 외국인·기관 최근 5일 순매수(주) 반환.
-    URL: https://finance.naver.com/item/frgn.naver?code={code}
-    컬럼: 날짜 | 종가 | 전일비 | 등락률 | 거래량 | 외국인순매수 | 기관합계 | 외국인보유
+    국내주식 수급 동향: 외국인·기관·개인 최근 5일 순매수(주) 반환.
+    네이버 모바일 증권 내부 API 사용(UTF-8 JSON).
+    URL: https://m.stock.naver.com/api/stock/{code}/integration
+    기존엔 finance.naver.com/item/frgn.naver(HTML 테이블)를 정규식 파싱했으나,
+    네이버가 이 URL을 폐기(Next.js SPA로 개편, HTTP 410/구조변경)해 완전히 깨짐
+    — 2026-10-31 새 API로 교체. individual(개인)도 기존 근사값(-(foreign+institution))
+    대신 API가 직접 제공하는 값으로 정확도 향상.
     """
     try:
-        url = f"https://finance.naver.com/item/frgn.naver?code={code}"
+        url = f"https://m.stock.naver.com/api/stock/{code}/integration"
         resp = requests.get(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": f"https://finance.naver.com/item/main.naver?code={code}",
         }, timeout=8)
-        resp.encoding = "euc-kr"
-        html = resp.text
+        if resp.status_code != 200:
+            log.warning(f"KR 수급(네이버) HTTP {resp.status_code} code={code}")
+            return []
+        data = resp.json()
+
+        def to_int(s):
+            try:
+                return int(str(s).replace(',', '').replace('+', '')) if s else 0
+            except ValueError:
+                return 0
 
         rows = []
-        for row_html in re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL):
-            cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
-            def clean(s):
-                s = re.sub(r'<[^>]+>', '', s).strip()
-                return s.replace(',', '').replace('+', '').replace('\xa0', '').replace('&nbsp;', '')
-            texts = [clean(c) for c in cells]
-            texts = [t for t in texts if t]
-            if not texts or not re.match(r'\d{4}\.\d{2}\.\d{2}', texts[0]):
+        for d in data.get("dealTrendInfos", [])[:5]:
+            bizdate = d.get("bizdate", "")
+            if len(bizdate) != 8:
                 continue
-            def to_int(s):
-                try:
-                    return int(s.replace(',', '').replace('+', '')) if s else 0
-                except ValueError:
-                    return 0
-            if len(texts) >= 7:
-                foreign     = to_int(texts[5])
-                institution = to_int(texts[6])
-                rows.append({
-                    "date":        texts[0],
-                    "foreign":     foreign,
-                    "institution": institution,
-                    "individual":  -(foreign + institution),  # 시장 제로섬 근사값
-                })
-            if len(rows) >= 5:
-                break
+            rows.append({
+                "date":        f"{bizdate[:4]}.{bizdate[4:6]}.{bizdate[6:]}",
+                "foreign":     to_int(d.get("foreignerPureBuyQuant")),
+                "institution": to_int(d.get("organPureBuyQuant")),
+                "individual":  to_int(d.get("individualPureBuyQuant")),
+            })
 
         if not rows:
-            dates = re.findall(r'\d{4}\.\d{2}\.\d{2}', html)
-            tables = re.findall(r'<table[^>]*>', html)[:6]
-            i = html.find(dates[0]) if dates else -1
-            snippet = re.sub(r'\s+', ' ', html[max(0, i - 80): i + 420]) if i >= 0 else re.sub(r'\s+', ' ', html[:300])
-            log.warning(f"KR 수급(네이버) 0건 code={code} status={resp.status_code} len={len(html)} "
-                        f"tr={html.count('<tr')} dates={len(dates)} tables={tables} snippet={snippet}")
+            log.warning(f"KR 수급(네이버) 0건 code={code} status={resp.status_code} len={len(resp.text)}")
         return rows
     except Exception as e:
         log.warning(f"KR investor fetch failed ({code}): {e}")
