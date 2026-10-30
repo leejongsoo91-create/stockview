@@ -769,7 +769,9 @@ function bindScreenerEvents() {
 
 // ── 종목 상세 모달 ────────────────────────────────────────────────────────────
 function openStockModal(ticker) {
-  const s = _scStocks.find(x => x.ticker === ticker);
+  // 스크리너 탭 미방문 시 `_scStocks`(내부 변수)는 비어있을 수 있음 — 전역검색
+  // 프리로드(main.js `_preloadGlobalSearchData`)가 채워두는 `window._scStocks` 기준으로 조회
+  const s = (window._scStocks || _scStocks).find(x => x.ticker === ticker);
   if (!s) return;
 
   const modal = document.getElementById('stock-modal');
