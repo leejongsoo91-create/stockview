@@ -53,6 +53,7 @@ const _INDEX_NAMES = {
   '^IXIC': 'NASDAQ Composite',
   '^DJI':  'Dow Jones Industrial',
   '^RUT':  'Russell 2000 Index',
+  '^SOX':  'PHLX Semiconductor Index',
   '^VIX':  'CBOE Volatility Index',
   'CL=F':  'WTI Crude Oil Futures',
   'GC=F':  'Gold Futures',
@@ -980,7 +981,7 @@ async function loadChart(ticker) {
       const indices = await api('/api/indices');
       const idx = indices.find(i => {
         const map = { '^GSPC':'S&P 500','^IXIC':'NASDAQ','^DJI':'Dow Jones',
-                      '^RUT':'Russell 2000','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
+                      '^RUT':'Russell 2000','^SOX':'PHLX Semi','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
         return map[ticker] === i.name;
       });
       stockData = idx
@@ -2200,7 +2201,7 @@ function _startAutoRefresh() {
       if (_isIndex(_currentTicker)) {
         const indices = await api('/api/indices');
         const map = { '^GSPC':'S&P 500','^IXIC':'NASDAQ','^DJI':'Dow Jones',
-                      '^RUT':'Russell 2000','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
+                      '^RUT':'Russell 2000','^SOX':'PHLX Semi','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
         const idx = indices.find(i => map[_currentTicker] === i.name);
         if (idx) {
           const s = { ticker: _currentTicker, price: idx.value,

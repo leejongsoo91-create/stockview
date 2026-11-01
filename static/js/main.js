@@ -634,6 +634,7 @@ const _INDEX_SYMBOL = {
   'NASDAQ':       '^IXIC',
   'Dow Jones':    '^DJI',
   'Russell 2000': '^RUT',
+  'PHLX Semi':    '^SOX',
   'VIX':          '^VIX',
   'WTI Crude':    'CL=F',
   'Gold':         'GC=F',
@@ -641,7 +642,6 @@ const _INDEX_SYMBOL = {
   '10Y Yield':    '^TNX',
   'DXY':          'DX-Y.NYB',
   'EUR/USD':      'EURUSD=X',
-  'GBP/USD':      'GBPUSD=X',
   'USD/JPY':      'JPY=X',
   'USD/KRW':      'KRW=X',
   'KOSPI':        '^KS11',
@@ -653,9 +653,9 @@ const _INDEX_SYMBOL = {
 
 // Overview 3그룹 정의
 const _INDEX_GROUPS = [
-  { label: '📈 Major Indices', names: ['S&P 500','NASDAQ','Dow Jones','Russell 2000','KOSPI','KOSDAQ'] },
+  { label: '📈 Major Indices', names: ['S&P 500','NASDAQ','Dow Jones','Russell 2000','PHLX Semi','KOSPI','KOSDAQ'] },
   { label: '🛢️ Futures',       names: ['US500','US30','US Tech 100','WTI Crude','Gold','Bitcoin'] },
-  { label: '🏦 Bonds & FX',    names: ['10Y Yield','DXY','EUR/USD','GBP/USD','USD/JPY','USD/KRW','VIX'] },
+  { label: '🏦 Bonds & FX',    names: ['10Y Yield','DXY','EUR/USD','USD/JPY','USD/KRW','VIX'] },
 ];
 
 // ── 지수 Overview 3그룹 렌더링 ────────────────────────────────────────────────
@@ -677,7 +677,7 @@ function renderIndices(indices) {
       // 값 포맷
       let valStr;
       if (name === 'Bitcoin')            valStr = '$' + Math.round(i.value).toLocaleString('en-US');
-      else if (name === 'EUR/USD' || name === 'GBP/USD') valStr = i.value.toFixed(4);
+      else if (name === 'EUR/USD') valStr = i.value.toFixed(4);
       else if (name === 'USD/JPY' || name === 'USD/KRW') valStr = i.value.toFixed(2);
       else if (name === '10Y Yield' || name === 'VIX') valStr = i.value.toFixed(2);
       else if (name === 'DXY')           valStr = i.value.toFixed(2);
@@ -687,7 +687,7 @@ function renderIndices(indices) {
       const sign = i.change >= 0 ? '+' : '';
       let chgStr;
       if (name === 'Bitcoin') chgStr = sign + '$' + Math.abs(i.change).toLocaleString('en-US', {maximumFractionDigits:0});
-      else if (name === 'EUR/USD' || name === 'GBP/USD') chgStr = sign + i.change.toFixed(4);
+      else if (name === 'EUR/USD') chgStr = sign + i.change.toFixed(4);
       else chgStr = sign + i.change.toFixed(2);
 
       return `<div class="ov-row" ${click}>
