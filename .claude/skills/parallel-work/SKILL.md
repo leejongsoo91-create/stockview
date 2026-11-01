@@ -54,6 +54,7 @@ git merge --no-ff wt/<이름>
 ```
 
 - `data_fetcher.py`는 git index가 CRLF — 스크립트로 파일을 다시 쓸 때 줄바꿈을 CRLF로 유지한다(LF로 쓰면 전체 diff가 생김).
+- **`docs/CHANGELOG.md`·`docs/ROADMAP.md`는 worktree 안에서 고치지 않는다** — 여러 작업이 같은 줄(맨 위)을 동시에 고쳐 병합 충돌이 난다. 병합이 모두 끝난 뒤 **main에서 한 번에** 기록한다(`work-report` 스킬 B-2). worktree의 결과보고서에는 "CHANGELOG에 넣을 한 줄"만 적어 둔다.
 - 병합 후 main에서 `stockview-verify`로 한 번 더 확인.
 
 ## 5. 정리
