@@ -408,7 +408,8 @@ function renderSectorPerf(items) {
   }).join('');
 }
 
-async function loadSectorPerf(period) {
+// silent: 자동 갱신용 — "Loading…" 표시·에러 문구 없이 기존 칩을 유지한 채 교체 (5분마다 깜빡임 방지)
+async function loadSectorPerf(period, silent = false) {
   _sectorPeriod = period;
   document.querySelectorAll('.sp-period-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.period === period);
@@ -417,12 +418,13 @@ async function loadSectorPerf(period) {
     renderSectorPerf(_sectorItemsFrom1D(_homeStocks));
   } else {
     const el = document.getElementById('sector-perf-grid');
-    if (el) el.innerHTML = '<span style="color:var(--muted);font-size:12px">Loading…</span>';
+    if (el && !silent) el.innerHTML = '<span style="color:var(--muted);font-size:12px">Loading…</span>';
     try {
       const perfMap = await api(`/api/heatmap-perf?period=${period}`);
+      if (_sectorPeriod !== period) return;   // 응답 대기 중 다른 기간 버튼을 눌렀으면 덮어쓰지 않음
       renderSectorPerf(_sectorItemsFromPerf(perfMap, _homeStocks));
     } catch {
-      if (el) el.innerHTML = '<span style="color:#f85149;font-size:12px">Error loading data</span>';
+      if (el && !silent) el.innerHTML = '<span style="color:#f85149;font-size:12px">Error loading data</span>';
     }
   }
 }
@@ -1181,9 +1183,10 @@ async function _refreshCurrentView() {
     const stocks = await api('/api/stocks');
     if (_currentView === 'home') {
       const indices = await api('/api/indices');
+      _homeStocks = stocks;   // 기간 버튼 클릭 시에도 최신 시세 기준으로 계산되도록
       buildTickerTape(indices, stocks);
       renderMovers(stocks);
-      renderSectorPerf(_sectorItemsFrom1D(stocks));
+      loadSectorPerf(_sectorPeriod, true);   // 선택 중인 기간(1D/1W/1M) 유지
       renderVolumeLeaders(stocks);
       renderMarketStatBar(stocks);
     }
