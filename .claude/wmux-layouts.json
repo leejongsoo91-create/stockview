@@ -1,0 +1,54 @@
+{
+  "_설명": [
+    "StockView wmux 창 배치 프리셋. 이 파일만 고치면 창 구성이 바뀐다.",
+    "columns = 왼쪽부터 세로 줄 목록, 각 줄 안의 항목 = 위에서부터 창.",
+    "창 항목: name(창 제목) / cmd(시작 명령, 생략하면 빈 셸) / cwd(프로젝트 기준 상대경로, 기본 '.')",
+    "        port(서버 창: 이 포트가 이미 사용 중이면 cmd를 실행하지 않음, PORT 환경변수로도 전달)",
+    "        browser(이 창 옆에 wmux 내장 브라우저로 열 주소. 127.0.0.1 주소면 서버가 뜰 때까지 최대 90초 기다림)",
+    "perWorktree = columns 대신 쓰는 반복 줄 템플릿. -Worktrees a,b 로 넘긴 이름마다 줄 1개 생성. {wt}=이름, {port}=portBase부터 1씩 증가",
+    "적용: powershell -File .claude/skills/wmux-layout/apply-layout.ps1 -Preset basic"
+  ],
+  "presets": {
+    "basic": {
+      "title": "기본",
+      "description": "Claude 2개 + 서버 + git (일반 개발)",
+      "columns": [
+        [
+          { "name": "Claude-메인", "cmd": "claude" },
+          { "name": "서버", "cmd": "python app.py", "port": 5001 }
+        ],
+        [
+          { "name": "Claude-보조", "cmd": "claude" },
+          { "name": "git", "cmd": "git status --short; git log --oneline -5" }
+        ]
+      ]
+    },
+    "verify": {
+      "title": "화면확인",
+      "description": "Claude + StockView 화면(내장 브라우저) + 서버",
+      "columns": [
+        [
+          { "name": "Claude-메인", "cmd": "claude" },
+          { "name": "서버", "cmd": "python app.py", "port": 5001, "browser": "http://127.0.0.1:5001" }
+        ]
+      ]
+    },
+    "focus": {
+      "title": "집중",
+      "description": "Claude 1개 + 서버 (창 최소화)",
+      "columns": [
+        [ { "name": "Claude-메인", "cmd": "claude" } ],
+        [ { "name": "서버", "cmd": "python app.py", "port": 5001 } ]
+      ]
+    },
+    "parallel": {
+      "title": "병렬",
+      "description": "worktree마다 세로 줄 1개(Claude + 서버). parallel-work 스킬과 함께 사용, -Worktrees 필수",
+      "portBase": 5002,
+      "perWorktree": [
+        { "name": "Claude-{wt}", "cmd": "claude", "cwd": "../finviz-app-wt/{wt}" },
+        { "name": "서버-{wt}", "cmd": "python app.py", "cwd": "../finviz-app-wt/{wt}", "port": "{port}" }
+      ]
+    }
+  }
+}
