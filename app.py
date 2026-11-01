@@ -1281,5 +1281,8 @@ if __name__ == "__main__":
     _scheduler.start()
     # Render 등 호스팅 서비스는 PORT 환경변수로 포트를 지정하고, 0.0.0.0으로 바인딩해야
     # 외부에서 접속 가능하다. 로컬 실행 시(.env 미설정)에는 기존처럼 5001 포트를 사용.
+    # [보안] 0.0.0.0은 Render(RENDER 환경변수 자동 설정)에서만 — 로컬은 127.0.0.1로 고정해
+    # 같은 네트워크(공용 와이파이 등)의 다른 기기가 접속하지 못하게 한다.
     _port = int(os.environ.get("PORT", 5001))
-    socketio.run(app, host="0.0.0.0", port=_port, debug=False, allow_unsafe_werkzeug=True)
+    _host = "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
+    socketio.run(app, host=_host, port=_port, debug=False, allow_unsafe_werkzeug=True)
