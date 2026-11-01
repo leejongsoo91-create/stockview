@@ -39,3 +39,13 @@ Thumbs.db
 
 # API 키 파일
 api/
+
+# 서버가 하루 1회 자동 재수집해 덮어쓰는 KR PER 캐시 (런타임 상태)
+data/kr_per_cache.json
+
+# Claude Code 로컬 전용 (.claude/ 폴더 자체는 추적 — rules·skills는 커밋 대상)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Claude 작업용 임시 폴더
+$SCRATCH/
