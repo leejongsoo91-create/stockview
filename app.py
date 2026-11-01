@@ -6,6 +6,7 @@ import os
 import queue
 import random
 import re
+import time
 import threading
 from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request, send_from_directory
@@ -26,6 +27,35 @@ def _load_kr_base() -> list:
     except Exception as e:
         log.warning(f"kr_stocks.json 로드 실패: {e}")
     return []
+
+KR_PER_FILE = os.path.join(os.path.dirname(__file__), "data", "kr_per_cache.json")
+
+def _load_kr_per() -> dict:
+    """{"updated_at": 유닉스초, "data": {code: {"pe", "eps"}}} — refresh_kr_per()가 1일 1회 갱신."""
+    try:
+        if os.path.exists(KR_PER_FILE):
+            with open(KR_PER_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        log.warning(f"kr_per_cache.json 로드 실패: {e}")
+    return {}
+
+def _apply_kr_per(rows: list) -> list:
+    """kr_stocks.json의 옛 EPS 앵커(07-02 수집)를 kr_per_cache.json의 최신 값으로 교체.
+    PER은 현재가/EPS로 재계산, 적자(EPS<=0)는 네이버 PER(0)을 그대로 쓴다."""
+    per_map = (_load_kr_per().get("data") or {})
+    if not per_map:
+        return rows
+    out = []
+    for s in rows:
+        v = per_map.get(s.get("code"))
+        if v:
+            s = dict(s)
+            eps, price = v.get("eps") or 0, s.get("price") or 0
+            s["eps"] = eps
+            s["pe"]  = round(price / eps, 1) if eps > 0 and price > 0 else (v.get("pe") or 0)
+        out.append(s)
+    return out
 
 def _load_pe_eps() -> dict:
     try:
@@ -168,6 +198,7 @@ def refresh_kr_stocks():
     prev = {s.get("ticker"): s for s in (cache.get("kr_stocks") or []) if s.get("updated_at")}
     if prev:
         base = [prev.get(s.get("ticker"), s) for s in base]
+    base = _apply_kr_per(base)
 
     def _publish(rows):
         cache.set("kr_stocks", rows, ttl=300)
@@ -177,6 +208,32 @@ def refresh_kr_stocks():
         cache.set("kr_stocks", updated, ttl=300)
         _emit_queue.put(("kr_stocks_update", {"count": len(updated)}))
         log.info(f"국내주식 가격 갱신: {len(updated)}개")
+
+
+def refresh_kr_per(force: bool = False):
+    """국내주식 PER/EPS 1일 1회 재수집 (네이버) → data/kr_per_cache.json.
+    서버 재시작마다 3,900여 건을 다시 요청하지 않도록 20시간 이내 캐시면 건너뛴다."""
+    try:
+        saved = _load_kr_per()
+        if not force and time.time() - (saved.get("updated_at") or 0) < 20 * 3600:
+            return
+        codes = [s["code"] for s in _load_kr_base() if s.get("code")]
+        if not codes:
+            return
+        new_data = df.fetch_kr_per_eps(codes)
+        if len(new_data) < len(codes) * 0.5:   # 대량 실패(차단 등) 시 기존 캐시를 덮어쓰지 않음
+            log.warning(f"refresh_kr_per: {len(new_data)}/{len(codes)}개만 성공 — 저장 안 함")
+            return
+        merged = dict(saved.get("data") or {})
+        merged.update(new_data)
+        with open(KR_PER_FILE, "w", encoding="utf-8") as f:
+            json.dump({"updated_at": int(time.time()), "data": merged}, f)
+        rows = cache.get("kr_stocks")
+        if rows:
+            cache.set("kr_stocks", _apply_kr_per(rows), ttl=300)
+        log.info(f"국내주식 PER/EPS 갱신: {len(new_data)}개")
+    except Exception as e:
+        log.error(f"refresh_kr_per 실패: {e}")
 
 
 def refresh_pe_eps():
@@ -576,9 +633,10 @@ def initial_load():
     # 국내주식: 파일 기반 베이스 로드 후 백그라운드 가격 갱신
     kr_base = _load_kr_base()
     if kr_base:
-        cache.set("kr_stocks", kr_base, ttl=300)
+        cache.set("kr_stocks", _apply_kr_per(kr_base), ttl=300)
         log.info(f"국내주식 파일 캐시 로드: {len(kr_base)}개")
         _start_after(5, refresh_kr_stocks)        # 3,936종목 시세 갱신은 초반 부하를 피해 5초 뒤 시작
+        _start_after(300, refresh_kr_per)         # PER/EPS 재수집(캐시 20시간 이내면 스킵) — 음성 브리핑(270초) 뒤
     else:
         log.info("kr_stocks.json 없음 — scripts/fetch_kr_stocks.py 실행 필요")
 
@@ -596,6 +654,7 @@ _scheduler.add_job(refresh_earnings,        "interval", hours=1,    id="earnings
 _scheduler.add_job(refresh_market_caps,     "interval", hours=6,    id="market_caps")
 _scheduler.add_job(refresh_extra_fields,    "interval", hours=6,    id="extra_fields")
 _scheduler.add_job(refresh_pe_eps,          "interval", hours=24,   id="pe_eps")
+_scheduler.add_job(refresh_kr_per,          "interval", hours=24,   id="kr_per")
 _scheduler.add_job(refresh_av_news,         "interval", hours=12,   id="av_news")
 _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_news")
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")

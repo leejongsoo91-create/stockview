@@ -1004,6 +1004,53 @@ def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25,
     return rows
 
 
+# ── 국내주식 PER/EPS (네이버 integration API, 1일 1회) ─────────────────────────
+def _naver_num(s) -> float | None:
+    """네이버 표시값("22,292원", "9.89배", "N/A", "-")을 숫자로. 파싱 불가면 None."""
+    m = re.search(r"-?[\d,]+(?:\.\d+)?", str(s or ""))
+    if not m:
+        return None
+    try:
+        return float(m.group().replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _fetch_kr_per_eps_one(session: requests.Session, code: str) -> dict | None:
+    try:
+        r = session.get(f"https://m.stock.naver.com/api/stock/{code}/integration", timeout=8)
+        if r.status_code != 200:
+            return None
+        info = {i.get("code"): i.get("value") for i in r.json().get("totalInfos", [])}
+        if "eps" not in info and "per" not in info:
+            return None   # ETF 등 PER/EPS 항목 자체가 없는 종목
+        return {"pe": _naver_num(info.get("per")) or 0, "eps": _naver_num(info.get("eps")) or 0}
+    except Exception:
+        return None
+
+
+def fetch_kr_per_eps(codes: list[str], max_workers: int = 8) -> dict[str, dict]:
+    """국내주식 최신 PER/EPS(최근 4분기 합산 기준) 수집. 반환: {code: {"pe": float, "eps": float}}.
+
+    finance.naver.com/sise/sise_market_sum.naver(scripts/fetch_kr_stocks.py의 PER 소스)가
+    네이버 개편으로 폐기돼(302 → stock.naver.com SPA), 수급과 같은 모바일 JSON API로 대체.
+    적자기업은 PER이 "N/A"라 pe=0, eps는 음수 그대로 — 가격 갱신 쪽에서 eps>0일 때만 PER을 재계산한다.
+    조회 실패 종목은 결과에서 빠진다(호출부가 기존 값 유지).
+    """
+    session = requests.Session()
+    session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    result: dict[str, dict] = {}
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(_fetch_kr_per_eps_one, session, c): c for c in codes}
+        for fut in as_completed(futs):
+            v = fut.result()
+            if v is not None:
+                result[futs[fut]] = v
+    log.info(f"fetch_kr_per_eps: {len(result)}/{len(codes)}개, {time.time() - t0:.0f}초")
+    return result
+
+
 # ── 국내주식 수급 동향 ────────────────────────────────────────────────────────
 def fetch_kr_investor(code: str) -> list[dict]:
     """
