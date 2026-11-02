@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-03 | 환경 | Aside AI 브라우저 Free 플랜 보조 연결 (Windows CLI + `aside` MCP, 카드·API 키 미등록) → [decisions/005](decisions/005-aside-free-plan.md) | (이번 커밋)
 - 11-02 | 문서 | 파일 구조 개편 — docs/(ROADMAP·CHANGELOG·architecture·decisions) 신설, PLAN.md 분리, CLAUDE.md 269→80줄 + 스킬 트리거 표, rules 3개(css·python·kr), 스킬 2개(load-status·work-report), 메모리 103KB→8KB | (이번 커밋)
 - 11-02 | 정리 | .gitignore에 kr_per_cache.json·$SCRATCH·.claude 로컬 파일 추가 | cb9b392
 - 11-02 | 보안 | 로컬 실행 시 127.0.0.1 바인딩 (0.0.0.0은 RENDER 환경변수 있을 때만) | e9e0745
