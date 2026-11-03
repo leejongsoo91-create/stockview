@@ -6,6 +6,7 @@
     "        port(서버 창: 이 포트가 이미 사용 중이면 cmd를 실행하지 않음, PORT 환경변수로도 전달)",
     "        browser(이 창 옆에 wmux 내장 브라우저로 열 주소. 127.0.0.1 주소면 서버가 뜰 때까지 최대 90초 기다림)",
     "perWorktree = columns 대신 쓰는 반복 줄 템플릿. -Worktrees a,b 로 넘긴 이름마다 줄 1개 생성. {wt}=이름, {port}=portBase부터 1씩 증가",
+    "서버 cmd는 WSL Ubuntu .venv(Python 3.12.3)로 실행 — 창은 PowerShell이라 $env:PORT가 WSL에 안 넘어가므로 env PORT=... 로 직접 전달",
     "적용: powershell -File .claude/skills/wmux-layout/apply-layout.ps1 -Preset basic"
   ],
   "presets": {
@@ -15,7 +16,7 @@
       "columns": [
         [
           { "name": "Claude-메인", "cmd": "claude" },
-          { "name": "서버", "cmd": "python app.py", "port": 5001 }
+          { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- env PORT=5001 .venv/bin/python app.py", "port": 5001 }
         ],
         [
           { "name": "Claude-보조", "cmd": "claude" },
@@ -29,7 +30,7 @@
       "columns": [
         [
           { "name": "Claude-메인", "cmd": "claude" },
-          { "name": "서버", "cmd": "python app.py", "port": 5001, "browser": "http://127.0.0.1:5001" }
+          { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- env PORT=5001 .venv/bin/python app.py", "port": 5001, "browser": "http://127.0.0.1:5001" }
         ]
       ]
     },
@@ -38,7 +39,7 @@
       "description": "Claude 1개 + 서버 (창 최소화)",
       "columns": [
         [ { "name": "Claude-메인", "cmd": "claude" } ],
-        [ { "name": "서버", "cmd": "python app.py", "port": 5001 } ]
+        [ { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- env PORT=5001 .venv/bin/python app.py", "port": 5001 } ]
       ]
     },
     "parallel": {
@@ -47,7 +48,7 @@
       "portBase": 5002,
       "perWorktree": [
         { "name": "Claude-{wt}", "cmd": "claude", "cwd": "../finviz-app-wt/{wt}" },
-        { "name": "서버-{wt}", "cmd": "python app.py", "cwd": "../finviz-app-wt/{wt}", "port": "{port}" }
+        { "name": "서버-{wt}", "cmd": "wsl -d Ubuntu -u root --cd /root/finviz-app-wt/{wt} -- env PORT={port} /root/stockview/.venv/bin/python app.py", "cwd": "../finviz-app-wt/{wt}", "port": "{port}" }
       ]
     }
   }
