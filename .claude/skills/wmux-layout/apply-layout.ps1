@@ -29,9 +29,23 @@ $W = Join-Path $env:LOCALAPPDATA 'wmux\bin\wmux.cmd'
 
 if (-not (Test-Path $W)) { throw "wmux CLI not found: $W (is wmux installed?)" }
 
+# wmux.cmd writes harmless noise to stderr (cmd.exe "UNC paths are not supported" when the cwd is
+# \\wsl.localhost\..., and a crashpad "CreateFile" log line). With 'Stop' + 2>&1, PS 5.1 turned that
+# into a terminating error, so: run from a local folder, keep stderr apart, and judge failure only by
+# the exit code or an "Error:" line.
 function Wm {
-    $out = & $W @args 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or $out -match '^\s*Error:') { throw "wmux $($args -join ' ') failed: $out" }
+    $eap = $ErrorActionPreference
+    Push-Location -LiteralPath $env:TEMP
+    try {
+        $ErrorActionPreference = 'Continue'
+        $all = & $W @args 2>&1
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $eap; Pop-Location }
+    $out = ($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] } | Out-String)
+    $err = (@($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n")
+    if ($code -ne 0 -or $out -match '(?m)^\s*Error:' -or $err -match '(?m)^\s*Error:') {
+        throw "wmux $($args -join ' ') failed (exit $code): $out $err"
+    }
     return $out
 }
 # PS 5.1 returns a JSON array as ONE object; ForEach-Object unrolls it into real elements.
@@ -156,7 +170,7 @@ for ($c = 0; $c -lt $columns.Count; $c++) {
             $wait = if ($u.Host -in @('127.0.0.1', 'localhost')) { $u.Port } else { 0 }
             $line += "; `$null = Start-Job -ArgumentList $(Q $s.browser),$wait -ScriptBlock { param(`$u,`$p); " +
                      "if (`$p) { for (`$i = 0; `$i -lt 90; `$i++) { try { (New-Object Net.Sockets.TcpClient('127.0.0.1', `$p)).Close(); break } catch { Start-Sleep 1 } } }; " +
-                     "& (Join-Path `$env:LOCALAPPDATA 'wmux\bin\wmux.cmd') open `$u }"
+                     "Set-Location -LiteralPath `$env:TEMP; & (Join-Path `$env:LOCALAPPDATA 'wmux\bin\wmux.cmd') open `$u 2>`$null }"
         }
         if ($s.cmd -and -not $missing) {
             if ($port -and (Test-Port $port)) {

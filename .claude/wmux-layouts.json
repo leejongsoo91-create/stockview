@@ -20,7 +20,7 @@
         ],
         [
           { "name": "Claude-보조", "cmd": "claude" },
-          { "name": "git", "cmd": "git status --short; git log --oneline -5" }
+          { "name": "git", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- git status --short; wsl -d Ubuntu -u root --cd /root/stockview -- git log --oneline -5" }
         ]
       ]
     },
