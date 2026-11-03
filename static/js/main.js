@@ -73,6 +73,38 @@ function koIndustry(v) { return INDUSTRY_KO[v] || v; }
 function koCountry(v)  { return COUNTRY_KO[v]  || v; }
 function koMood(v)     { return MOOD_KO[v]     || v; }
 
+// 공포·탐욕 등급 (CSS 클래스는 영어 등급으로 만들고, 글자만 한글로)
+const FG_KO = { 'Extreme Fear': '극단적 공포', 'Fear': '공포', 'Neutral': '중립', 'Greed': '탐욕', 'Extreme Greed': '극단적 탐욕' };
+function koFg(v) { if (!v) return v; const k = Object.keys(FG_KO).find(x => x.toLowerCase() === String(v).toLowerCase()); return k ? FG_KO[k] : v; }
+
+// 지수·선물·환율 표시 이름 (데이터 키·차트 심볼은 영어 이름 그대로)
+const INDEX_KO = {
+  'NASDAQ': '나스닥', 'Dow Jones': '다우존스', 'Russell 2000': '러셀 2000', 'PHLX Semi': '필라델피아 반도체',
+  'VIX': 'VIX(변동성)', 'WTI Crude': 'WTI 원유', 'Gold': '금', 'Bitcoin': '비트코인', '10Y Yield': '미 10년물 금리',
+  'DXY': '달러인덱스', 'EUR/USD': '유로/달러', 'USD/JPY': '달러/엔', 'USD/KRW': '달러/원', 'KOSPI': '코스피', 'KOSDAQ': '코스닥',
+  'US500': 'S&P 500 선물', 'US30': '다우 선물', 'US Tech 100': '나스닥100 선물',
+};
+function koIndex(v) { return INDEX_KO[v] || v; }
+
+// 경제 일정 (서버 _ECO_EVENTS 이름: "CPI (Nov 2026)", "GDP Q3 2026 (Advance)" 형식)
+const ECO_CAT_KO = { 'Fed Policy': '통화정책', 'Inflation': '물가', 'Employment': '고용', 'GDP': 'GDP', 'Consumer': '소비', 'Manufacturing': '제조업' };
+const _ECO_EVENT_KO = {
+  'CPI': '소비자물가지수(CPI)', 'PPI': '생산자물가지수(PPI)', 'PCE Price Index': 'PCE 물가지수',
+  'Non-Farm Payrolls': '비농업 고용', 'Retail Sales': '소매판매', 'Consumer Confidence': '소비자신뢰지수',
+  'ISM Manufacturing PMI': 'ISM 제조업 PMI', 'FOMC Rate Decision': 'FOMC 금리 결정',
+};
+const _MON_NUM = { Jan:1, Feb:2, Mar:3, Apr:4, May:5, Jun:6, Jul:7, Aug:8, Sep:9, Oct:10, Nov:11, Dec:12 };
+function koEcoEvent(name) {
+  const m = String(name || '').match(/^(.*?)(?:\s*\(([^)]*)\))?$/);
+  let base = m[1], tail = m[2] || '';
+  const gdp = base.match(/^GDP Q([1-4]) (\d{4})$/);
+  base = gdp ? `GDP ${gdp[2]}년 ${gdp[1]}분기` : (_ECO_EVENT_KO[base] || base);
+  const mt = tail.match(/^([A-Z][a-z]{2})(?: (\d{4}))?$/);
+  if (mt && _MON_NUM[mt[1]]) tail = (mt[2] ? mt[2] + '년 ' : '') + _MON_NUM[mt[1]] + '월';
+  else if (tail === 'Advance') tail = '속보치';
+  return tail ? `${base} (${tail})` : base;
+}
+
 // api fetch 래퍼
 async function api(path) {
   const r = await fetch(path);
@@ -406,19 +438,19 @@ function renderMarketStatus() {
   const et    = new Date(etStr);
   const day   = et.getDay();
   const mins  = et.getHours() * 60 + et.getMinutes();
-  const timeStr = et.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) + ' ET';
+  const timeStr = '뉴욕 ' + et.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
 
   let statusKey, label;
   if (day === 0 || day === 6) {
-    statusKey = 'closed'; label = 'MARKET CLOSED';
+    statusKey = 'closed'; label = '장 마감';
   } else if (mins >= 9 * 60 + 30 && mins < 16 * 60) {
-    statusKey = 'open';   label = 'MARKET OPEN';
+    statusKey = 'open';   label = '정규장';
   } else if (mins >= 4 * 60 && mins < 9 * 60 + 30) {
-    statusKey = 'pre';    label = 'PRE-MARKET';
+    statusKey = 'pre';    label = '프리마켓';
   } else if (mins >= 16 * 60 && mins < 20 * 60) {
-    statusKey = 'after';  label = 'AFTER HOURS';
+    statusKey = 'after';  label = '애프터마켓';
   } else {
-    statusKey = 'closed'; label = 'MARKET CLOSED';
+    statusKey = 'closed'; label = '장 마감';
   }
 
   const el = document.getElementById('market-status');
@@ -466,7 +498,7 @@ function renderSectorPerf(items) {
     const cls  = avg >= 0 ? 'up' : 'down';
     const sign = avg >= 0 ? '+' : '';
     return `<div class="sec-chip ${cls}">
-      <span class="sec-chip-name">${name}</span>
+      <span class="sec-chip-name">${koSector(name)}</span>
       <span class="sec-chip-pct">${sign}${avg}%</span>
     </div>`;
   }).join('');
@@ -557,23 +589,23 @@ function renderHomeFearGreed(fg) {
   const scoreEl  = document.getElementById('home-fg-score');
   const ratingEl = document.getElementById('home-fg-rating');
   if (scoreEl)  { scoreEl.textContent = score;  scoreEl.className  = 'fg-score-big '    + rCls; }
-  if (ratingEl) { ratingEl.textContent = rating; ratingEl.className = 'fg-rating-label ' + rCls; }
+  if (ratingEl) { ratingEl.textContent = koFg(rating); ratingEl.className = 'fg-rating-label ' + rCls; }
 
   // 과거 비교
   const histEl = document.getElementById('home-fg-history');
   if (histEl) {
     const rows = [
-      ['Yesterday',  prev_close],
-      ['Last Week',  prev_1w],
-      ['Last Month', prev_1m],
-      ['Last Year',  prev_1y],
+      ['어제',     prev_close],
+      ['1주 전',   prev_1w],
+      ['1개월 전', prev_1m],
+      ['1년 전',   prev_1y],
     ];
     histEl.innerHTML = rows.map(([label, val]) => {
       const r = _scoreToRating(val);
       return `<div class="fg-hist-row">
         <span class="fg-hist-label">${label}</span>
         <span class="fg-hist-val ${_fgRatingClass(r)}">${val}</span>
-        <span class="fg-hist-rating">${r}</span>
+        <span class="fg-hist-rating">${koFg(r)}</span>
       </div>`;
     }).join('');
   }
@@ -589,16 +621,16 @@ const _CAT_ICON = {
   'Manufacturing': '🏭',
 };
 const _IMP_DOT = {
-  high:   '<span class="eco-dot eco-high"  title="High impact"></span>',
-  medium: '<span class="eco-dot eco-med"   title="Medium impact"></span>',
-  low:    '<span class="eco-dot eco-low"   title="Low impact"></span>',
+  high:   '<span class="eco-dot eco-high"  title="중요도 높음"></span>',
+  medium: '<span class="eco-dot eco-med"   title="중요도 보통"></span>',
+  low:    '<span class="eco-dot eco-low"   title="중요도 낮음"></span>',
 };
 
 function renderEconomicCalendar(events, elId = 'eco-cal-body') {
   const el = document.getElementById(elId);
   if (!el) return;
   if (!events || !events.length) {
-    el.innerHTML = '<span style="color:var(--muted);font-size:13px">No upcoming events in the next 3 weeks.</span>';
+    el.innerHTML = '<span style="color:var(--muted);font-size:13px">향후 3주 안에 예정된 일정이 없습니다.</span>';
     return;
   }
 
@@ -611,12 +643,12 @@ function renderEconomicCalendar(events, elId = 'eco-cal-body') {
 
   const fmtDate = d => {
     const dt = new Date(d + 'T00:00:00');
-    return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return dt.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
   };
 
   el.innerHTML = Object.entries(groups).map(([date, evs]) => {
     const first = evs[0];
-    const dayLabel = first.is_today ? '🔴 Today' : first.is_tomorrow ? '🟡 Tomorrow' : fmtDate(date);
+    const dayLabel = first.is_today ? '🔴 오늘' : first.is_tomorrow ? '🟡 내일' : fmtDate(date);
     const rowClass = first.is_today ? 'eco-today' : first.is_tomorrow ? 'eco-tomorrow' : '';
     const rows = evs.map(ev => {
       const icon = _CAT_ICON[ev.category] || '📌';
@@ -625,8 +657,8 @@ function renderEconomicCalendar(events, elId = 'eco-cal-body') {
         <span class="eco-day">${dayLabel}</span>
         <span class="eco-dot-wrap">${dot}</span>
         <span class="eco-icon">${icon}</span>
-        <span class="eco-event">${ev.event}</span>
-        <span class="eco-cat">${ev.category}</span>
+        <span class="eco-event">${koEcoEvent(ev.event)}</span>
+        <span class="eco-cat">${ECO_CAT_KO[ev.category] || ev.category}</span>
       </div>`;
     }).join('');
     return rows;
@@ -675,7 +707,7 @@ async function loadHome() {
 function buildTickerTape(indices, stocks) {
   const tape = document.getElementById('ticker-inner');
   const items = [
-    ...indices.map(i => ({ label: i.name, value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct })),
+    ...indices.map(i => ({ label: koIndex(i.name), value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct })),
     ...['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','JPM','LLY','NFLX'].map(t => {
       const s = stocks.find(x => x.ticker === t);
       if (!s) return null;
@@ -717,9 +749,9 @@ const _INDEX_SYMBOL = {
 
 // Overview 3그룹 정의
 const _INDEX_GROUPS = [
-  { label: '📈 Major Indices', names: ['S&P 500','NASDAQ','Dow Jones','Russell 2000','PHLX Semi','KOSPI','KOSDAQ'] },
-  { label: '🛢️ Futures',       names: ['US500','US30','US Tech 100','WTI Crude','Gold','Bitcoin'] },
-  { label: '🏦 Bonds & FX',    names: ['10Y Yield','DXY','EUR/USD','USD/JPY','USD/KRW','VIX'] },
+  { label: '📈 주요 지수', names: ['S&P 500','NASDAQ','Dow Jones','Russell 2000','PHLX Semi','KOSPI','KOSDAQ'] },
+  { label: '🛢️ 선물·원자재',  names: ['US500','US30','US Tech 100','WTI Crude','Gold','Bitcoin'] },
+  { label: '🏦 금리·환율',    names: ['10Y Yield','DXY','EUR/USD','USD/JPY','USD/KRW','VIX'] },
 ];
 
 // ── 지수 Overview 3그룹 렌더링 ────────────────────────────────────────────────
@@ -755,7 +787,7 @@ function renderIndices(indices) {
       else chgStr = sign + i.change.toFixed(2);
 
       return `<div class="ov-row" ${click}>
-        <span class="ov-name">${name}</span>
+        <span class="ov-name">${koIndex(name)}</span>
         <span class="ov-value">${valStr}</span>
         <span class="ov-chg ${cls}">${chgStr} (${fmtPct(i.change_pct)})</span>
       </div>`;
@@ -816,7 +848,7 @@ function renderHomeWatchlistSummary() {
   if (!el || typeof WL === 'undefined') return;
   const tickers = WL.load();
   if (!tickers.length) {
-    el.innerHTML = `<div class="home-my-empty">관심종목이 없습니다. <a href="javascript:void(0)" onclick="switchView('screener')">스크리너</a>에서 ☆를 눌러 추가하세요.</div>`;
+    el.innerHTML = `<div class="home-my-empty">관심종목이 없습니다. <a href="javascript:void(0)" onclick="switchView('screener')">종목검색</a>에서 ☆를 눌러 추가하세요.</div>`;
     return;
   }
   const us = window._scStocks || [];
@@ -1235,7 +1267,7 @@ let _currentView = 'home';
 // ── 타임스탬프 ────────────────────────────────────────────────────────────────
 function updateTimestamp() {
   const el = document.getElementById('last-updated');
-  if (el) el.textContent = 'Live · ' + new Date().toLocaleTimeString('ko-KR');
+  if (el) el.textContent = '실시간 · ' + new Date().toLocaleTimeString('ko-KR');
 }
 
 // ── WebSocket 연결 + 이벤트 핸들러 ──────────────────────────────────────────

@@ -6,7 +6,7 @@
 ## 🔨 진행 중
 | 항목 | 시작일 | 메모 |
 |------|--------|------|
-| 사이트 한글화 (A안: 문구 직접 교체, 한/영 전환 없음) | 11-04 | 1단계(공통) 완료. 남은 단계: 2 홈 → 3 종목검색 → 4 히트맵·차트 → 5 뉴스·브리핑·실적발표 → 6 관심종목·포트폴리오. 변환표 `koSector/koIndustry/koCountry/koMood`(main.js)는 3단계부터 적용. 3단계에서 섹터 필터 옵션 `Communication`·`Materials`가 실제 데이터 값(`Telecommunications`·`Basic Materials`)과 달라 결과 0건인 문제 함께 확인 |
+| 사이트 한글화 (A안: 문구 직접 교체, 한/영 전환 없음) | 11-04 | 1·2단계(공통·홈) 완료. 남은 단계: 3 종목검색 → 4 히트맵·차트 → 5 뉴스·브리핑·실적발표 → 6 관심종목·포트폴리오. 변환표 `koSector/koIndustry/koCountry/koMood`(main.js)는 3단계부터 적용. 3단계에서 섹터 필터 옵션 `Communication`·`Materials`가 실제 데이터 값(`Telecommunications`·`Basic Materials`)과 달라 결과 0건인 문제 함께 확인 |
 
 ## ⏭️ 다음 (우선순위 높음)
 | 항목 | 설명 |

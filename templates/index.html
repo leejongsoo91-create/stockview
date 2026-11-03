@@ -60,11 +60,11 @@
       <!-- 섹터 퍼포먼스 가로 스트립 -->
       <div class="home-sector-strip">
         <div class="sp-strip-header">
-          <span class="sp-strip-label">Sectors</span>
+          <span class="sp-strip-label">섹터</span>
           <div class="sp-period-bar">
-            <button class="sp-period-btn active" data-period="1d">1D</button>
-            <button class="sp-period-btn" data-period="1w">1W</button>
-            <button class="sp-period-btn" data-period="1m">1M</button>
+            <button class="sp-period-btn active" data-period="1d">1일</button>
+            <button class="sp-period-btn" data-period="1w">1주</button>
+            <button class="sp-period-btn" data-period="1m">1개월</button>
           </div>
         </div>
         <div id="sector-perf-grid"></div>
@@ -76,7 +76,7 @@
         <!-- 왼쪽: Fear & Greed -->
         <div class="home-left">
           <div class="home-card home-fg-panel">
-            <div class="panel-title">😨 Fear &amp; Greed</div>
+            <div class="panel-title">😨 공포·탐욕 지수</div>
             <div class="fg-gauge-wrap hfg-wrap">
               <div class="fg-arc"></div>
               <div class="fg-inner"></div>
@@ -92,19 +92,19 @@
         <div class="home-right">
           <div class="home-right-grid">
             <div class="movers-panel">
-              <h3 class="panel-title">🚀 Top Gainers</h3>
+              <h3 class="panel-title">🚀 상승 상위</h3>
               <table class="movers-table"><tbody id="gainers-body"></tbody></table>
             </div>
             <div class="movers-panel">
-              <h3 class="panel-title">📉 Top Losers</h3>
+              <h3 class="panel-title">📉 하락 상위</h3>
               <table class="movers-table"><tbody id="losers-body"></tbody></table>
             </div>
             <div class="movers-panel">
-              <h3 class="panel-title">🔥 Volume Leaders</h3>
+              <h3 class="panel-title">🔥 거래량 상위</h3>
               <table class="movers-table"><tbody id="volume-body"></tbody></table>
             </div>
             <div class="news-preview-panel">
-              <h3 class="panel-title">📰 Latest News</h3>
+              <h3 class="panel-title">📰 최신 뉴스</h3>
               <div id="home-news"></div>
             </div>
           </div>
@@ -115,11 +115,11 @@
       <!-- 내 워치리스트 / 포트폴리오 요약 -->
       <div class="home-my-section">
         <div class="home-card">
-          <h3 class="panel-title">⭐ My Watchlist</h3>
+          <h3 class="panel-title">⭐ 내 관심종목</h3>
           <div id="home-watchlist-summary"></div>
         </div>
         <div class="home-card">
-          <h3 class="panel-title">💼 My Portfolio</h3>
+          <h3 class="panel-title">💼 내 포트폴리오</h3>
           <div id="home-portfolio-summary"></div>
         </div>
       </div>
@@ -127,8 +127,8 @@
       <!-- 경제 지표 캘린더 -->
       <div class="eco-cal-wrap">
         <div class="eco-cal-header">
-          <span class="eco-cal-title">📅 Economic Calendar</span>
-          <span class="eco-cal-sub">Upcoming key US economic events</span>
+          <span class="eco-cal-title">📅 경제 일정</span>
+          <span class="eco-cal-sub">다가오는 미국 주요 경제지표 발표</span>
         </div>
         <div id="eco-cal-body" class="eco-cal-body">
           <span style="color:var(--muted);font-size:13px">불러오는 중…</span>
@@ -625,8 +625,8 @@
         <!-- 경제 지표 캘린더 (9번: Home과 동일 API/렌더 함수 재사용) -->
         <div class="brief-card eco-cal-wrap brief-eco-cal-card">
           <div class="eco-cal-header">
-            <span class="eco-cal-title">📅 Economic Calendar</span>
-            <span class="eco-cal-sub">Upcoming key US economic events</span>
+            <span class="eco-cal-title">📅 경제 일정</span>
+            <span class="eco-cal-sub">다가오는 미국 주요 경제지표 발표</span>
           </div>
           <div id="brief-eco-cal-body" class="eco-cal-body">
             <span style="color:var(--muted);font-size:13px">불러오는 중…</span>
