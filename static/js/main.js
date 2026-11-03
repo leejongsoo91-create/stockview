@@ -9,6 +9,70 @@ function fmtVol(n){ if(n >= 1e9) return (n/1e9).toFixed(2)+'B'; if(n >= 1e6) ret
 function fmtCap(n){ if(n >= 1000) return '$'+(n/1000).toFixed(2)+'T'; return '$'+n.toFixed(0)+'B'; }
 function colorCls(n){ return n >= 0 ? 'up' : 'down'; }
 
+// ── 한글 표시 변환표 ─────────────────────────────────────────────────────────
+// 데이터 값(필터·정렬·localStorage 기준)은 영어 그대로 두고, 화면에 그릴 때만 한글로 바꾼다.
+// 표에 없는 값은 원래 값을 그대로 보여준다. (KR 종목은 섹터가 이미 한글)
+const SECTOR_KO = {
+  'Basic Materials': '소재', 'Materials': '소재', 'Consumer Disc.': '경기소비재', 'Consumer Staples': '필수소비재',
+  'Energy': '에너지', 'Finance': '금융', 'Healthcare': '헬스케어', 'Industrial': '산업재',
+  'Real Estate': '부동산', 'Technology': '기술', 'Telecommunications': '통신', 'Communication': '통신',
+  'Utilities': '유틸리티', 'Other': '기타',
+};
+const INDUSTRY_KO = {
+  'Accident &Health Insurance': '상해·건강보험', 'Advertising': '광고', 'Aerospace': '항공우주',
+  'Agricultural Chemicals': '농업화학', 'Air Freight': '항공화물', 'Aluminum': '알루미늄', 'Apparel': '의류',
+  'Apparel Retail': '의류 소매', 'Asset Mgmt': '자산운용', 'Auto & Home Supply Stores': '자동차·생활용품 소매',
+  'Auto Dealers': '자동차 딜러', 'Auto Manufacturing': '자동차 제조', 'Auto Parts': '자동차 부품',
+  'Automotive Aftermarket': '자동차 애프터마켓', 'Banks': '은행', 'Beverages': '음료', 'Biotech': '바이오',
+  'Biotech/Pharma': '바이오·제약', 'Biotechnology: Commercial Physical & Biological Resarch': '바이오 연구서비스',
+  'Biotechnology: In Vitro & In Vivo Diagnostic Substances': '진단 시약', 'Blank Checks': '스팩(SPAC)',
+  'Books': '도서', 'Broadcasting': '방송', 'Building Materials': '건축자재', 'Building Products': '건축제품',
+  'Building operators': '건물 운영', 'Business Services': '비즈니스 서비스', 'Cable/Media': '케이블·미디어',
+  'Chemicals': '화학', 'Coal': '석탄', 'Comm Equipment': '통신장비', 'Comm. Services': '커뮤니케이션 서비스',
+  'Commercial Banks': '상업은행', 'Computer peripheral equipment': '컴퓨터 주변기기',
+  'Consumer Electronics/Appliances': '가전', 'Consumer Electronics/Video Chains': '가전·영상 유통',
+  'Consumer Finance': '소비자 금융', 'Consumer Specialties': '소비자 전문용품', 'Consumer Svcs': '소비자 서비스',
+  'Cosmetics': '화장품', 'Cybersecurity': '사이버보안', 'Defense Tech': '방산 기술',
+  'Diversified Financial Services': '종합 금융서비스', 'Durable Goods': '내구재', 'E-Commerce': '전자상거래',
+  'Electric Util.': '전력', 'Electrical': '전기장비', 'Electro Medical': '전자의료기기', 'Electronics': '전자',
+  'Electronics Distribution': '전자부품 유통', 'Engineering': '엔지니어링', 'Entertainment': '엔터테인먼트',
+  'Environmental Services': '환경 서비스', 'Finance': '금융', 'Finance Services': '금융 서비스',
+  'Fluid Controls': '유체 제어', 'Food Distributors': '식품 유통', 'Food/Farming': '식품·농업',
+  'Forest Products': '임산물', 'Garments and Clothing': '의류 제조', 'Gas Pipeline': '가스 파이프라인',
+  'General Bldg Contractors - Nonresidential Bldgs': '비주거 건설', 'Grocery': '식료품 소매', 'Hardware': '하드웨어',
+  'Health Services': '헬스 서비스', 'Heavy Equipment': '중장비', 'Home Furnishings': '가구·인테리어',
+  'Home Improvement': '주택 개보수', 'Homebuilding': '주택건설', 'Hospitals': '병원', 'Hotels': '호텔',
+  'IT Services': 'IT 서비스', 'Industrial Mach.': '산업기계', 'Integrated Freight & Logistics': '종합 물류',
+  'Integrated Oil': '종합 석유', 'Investment Banking': '투자은행', 'Lab Instruments': '실험장비',
+  'Life Insurance': '생명보험', 'Managed Health Care': '관리형 의료보험', 'Marine': '해운', 'Meat/Poultry/Fish': '육류·수산',
+  'Med Devices': '의료기기', 'Medical Electronics': '의료전자', 'Medical Spec.': '전문 의료',
+  'Medicinal Chemicals and Botanical Products': '의약 화학·생약', 'Metal Fab.': '금속가공', 'Mining': '광업',
+  'Misc Corporate Leasing Services': '기업 리스', 'Misc Health and Biotechnology Services': '기타 헬스·바이오 서비스',
+  'Miscellaneous manufacturing industries': '기타 제조', 'Motor Vehicles': '자동차', 'Movies/Entertainment': '영화·엔터',
+  'Multi-Sector Companies': '복합기업', 'Natural Gas': '천연가스', 'Newspapers/Magazines': '신문·잡지',
+  'Office Equipment/Supplies/Services': '사무용품·서비스', 'Oil & Gas': '석유·가스', 'Oil Machinery': '석유 장비',
+  'Oil Refining/Marketing': '정유·판매', 'Oil Services': '석유 서비스', 'Ophthalmic Goods': '안과용품',
+  'Ordnance And Accessories': '무기·탄약', 'Other': '기타', 'Other Metals and Minerals': '기타 금속·광물',
+  'Other Pharmaceuticals': '기타 제약', 'P&C Insurance': '손해보험', 'Packaged Foods': '가공식품', 'Packaging': '포장재',
+  'Paints/Coatings': '도료', 'Paper': '제지', 'Plastic Products': '플라스틱 제품', 'Pollution Control Equipment': '오염방지 장비',
+  'Power Gen.': '발전', 'Precious Metals': '귀금속', 'Precision Instruments': '정밀기기', 'Prof. Services': '전문 서비스',
+  'Professional and commerical equipment': '전문·상업용 장비', 'Publishing': '출판', 'REITs': '리츠', 'Railroads': '철도',
+  'Real Estate': '부동산', 'Recreational Games/Products/Toys': '레저·게임·완구', 'Rental/Leasing Companies': '렌탈·리스',
+  'Restaurants': '외식', 'Retail': '소매', 'Retail-Drug Stores and Proprietary Stores': '약국 소매',
+  'Retail: Computer Software & Peripheral Equipment': '컴퓨터·SW 소매', 'Savings Banks': '저축은행',
+  'Semiconductors': '반도체', 'Shoe Manufacturing': '신발 제조', 'Software': '소프트웨어', 'Spec. Industrial': '특수 산업재',
+  'Specialty Chemicals': '특수화학', 'Specialty Foods': '특수식품', 'Specialty Insurance': '특수보험',
+  'Specialty Retail': '전문 소매', 'Steel': '철강', 'Telecom Equip.': '통신장비', 'Textiles': '섬유', 'Tobacco': '담배',
+  'Tools/Hardware': '공구', 'Transportation': '운송', 'Trucking': '트럭운송', 'Trusts': '신탁', 'Water': '수도',
+  'Water Sewer Pipeline Comm & Power Line Construction': '인프라 건설', 'Wholesale Distributors': '도매',
+};
+const COUNTRY_KO = { 'USA': '미국', 'Korea': '한국', 'KR': '한국', 'US': '미국' };
+const MOOD_KO    = { 'Bullish': '강세', 'Bearish': '약세', 'Neutral': '중립', 'Mixed': '혼조' };
+function koSector(v)   { return SECTOR_KO[v]   || v; }
+function koIndustry(v) { return INDUSTRY_KO[v] || v; }
+function koCountry(v)  { return COUNTRY_KO[v]  || v; }
+function koMood(v)     { return MOOD_KO[v]     || v; }
+
 // api fetch 래퍼
 async function api(path) {
   const r = await fetch(path);
@@ -418,13 +482,13 @@ async function loadSectorPerf(period, silent = false) {
     renderSectorPerf(_sectorItemsFrom1D(_homeStocks));
   } else {
     const el = document.getElementById('sector-perf-grid');
-    if (el && !silent) el.innerHTML = '<span style="color:var(--muted);font-size:12px">Loading…</span>';
+    if (el && !silent) el.innerHTML = '<span style="color:var(--muted);font-size:12px">불러오는 중…</span>';
     try {
       const perfMap = await api(`/api/heatmap-perf?period=${period}`);
       if (_sectorPeriod !== period) return;   // 응답 대기 중 다른 기간 버튼을 눌렀으면 덮어쓰지 않음
       renderSectorPerf(_sectorItemsFromPerf(perfMap, _homeStocks));
     } catch {
-      if (el && !silent) el.innerHTML = '<span style="color:#f85149;font-size:12px">Error loading data</span>';
+      if (el && !silent) el.innerHTML = '<span style="color:#f85149;font-size:12px">데이터를 불러오지 못했습니다</span>';
     }
   }
 }
@@ -575,7 +639,7 @@ async function loadEconomicCalendar(elId = 'eco-cal-body') {
     renderEconomicCalendar(events, elId);
   } catch {
     const el = document.getElementById(elId);
-    if (el) el.innerHTML = '<span style="color:var(--muted);font-size:13px">Failed to load calendar.</span>';
+    if (el) el.innerHTML = '<span style="color:var(--muted);font-size:13px">경제 일정을 불러오지 못했습니다.</span>';
   }
 }
 
@@ -1007,7 +1071,7 @@ function _toggleDisclosureBookmark(link) {
 function loadDisclosures(force = false) {
   if (_disclosuresLoaded && !force) return;
   const el = document.getElementById('disclosures-list');
-  el.innerHTML = '<div style="color:var(--muted);padding:20px 0">Loading...</div>';
+  el.innerHTML = '<div style="color:var(--muted);padding:20px 0">불러오는 중…</div>';
   api('/api/kr-disclosures').then(data => {
     _disclosuresLoaded = true;
     _allDisclosures = data;
@@ -1056,7 +1120,7 @@ function renderDisclosures(items, dcat = 'all') {
 }
 
 function loadReports() {
-  document.getElementById('reports-list').innerHTML = '<div style="color:var(--muted);padding:20px 0">Loading...</div>';
+  document.getElementById('reports-list').innerHTML = '<div style="color:var(--muted);padding:20px 0">불러오는 중…</div>';
   api('/api/reports').then(data => {
     _allReports = data;
     renderReports('all');

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StockView — US Market</title>
+  <title>StockView — 주식 분석</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
@@ -19,18 +19,18 @@
   <header>
     <div class="logo">📈 StockView</div>
     <nav id="main-nav">
-      <button class="nav-btn active" data-view="home">Home</button>
-      <button class="nav-btn" data-view="screener">Screener</button>
-      <button class="nav-btn" data-view="heatmap">Heatmap</button>
-      <button class="nav-btn" data-view="chart">Chart</button>
-      <button class="nav-btn" data-view="news">News</button>
-      <button class="nav-btn" data-view="brief">📊 Brief</button>
-      <button class="nav-btn" data-view="earnings">📅 Earnings</button>
+      <button class="nav-btn active" data-view="home">홈</button>
+      <button class="nav-btn" data-view="screener">종목검색</button>
+      <button class="nav-btn" data-view="heatmap">히트맵</button>
+      <button class="nav-btn" data-view="chart">차트</button>
+      <button class="nav-btn" data-view="news">뉴스</button>
+      <button class="nav-btn" data-view="brief">📊 브리핑</button>
+      <button class="nav-btn" data-view="earnings">📅 실적발표</button>
       <button class="nav-btn wl-nav-btn" data-view="watchlist">
-        ★ Watchlist <span id="wl-count" class="wl-count-badge" style="display:none"></span>
+        ★ 관심종목 <span id="wl-count" class="wl-count-badge" style="display:none"></span>
       </button>
       <button class="nav-btn pt-nav-btn" data-view="portfolio">
-        💼 Portfolio <span id="pt-count" class="wl-count-badge" style="display:none"></span>
+        💼 포트폴리오 <span id="pt-count" class="wl-count-badge" style="display:none"></span>
       </button>
     </nav>
     <div class="global-search-wrap" id="global-search-wrap">
@@ -83,7 +83,7 @@
               <div class="fg-needle" id="home-fg-needle"></div>
             </div>
             <div class="fg-score-big" id="home-fg-score">—</div>
-            <div class="fg-rating-label" id="home-fg-rating">Loading…</div>
+            <div class="fg-rating-label" id="home-fg-rating">불러오는 중…</div>
             <div class="fg-history" id="home-fg-history"></div>
           </div>
         </div>
@@ -131,7 +131,7 @@
           <span class="eco-cal-sub">Upcoming key US economic events</span>
         </div>
         <div id="eco-cal-body" class="eco-cal-body">
-          <span style="color:var(--muted);font-size:13px">Loading…</span>
+          <span style="color:var(--muted);font-size:13px">불러오는 중…</span>
         </div>
       </div>
 
@@ -629,7 +629,7 @@
             <span class="eco-cal-sub">Upcoming key US economic events</span>
           </div>
           <div id="brief-eco-cal-body" class="eco-cal-body">
-            <span style="color:var(--muted);font-size:13px">Loading…</span>
+            <span style="color:var(--muted);font-size:13px">불러오는 중…</span>
           </div>
         </div>
 
@@ -661,7 +661,7 @@
             <div class="fg-needle" id="brief-fg-needle"></div>
           </div>
           <div class="fg-score-big" id="brief-fg-score">—</div>
-          <div class="fg-rating-label" id="brief-fg-rating">Loading…</div>
+          <div class="fg-rating-label" id="brief-fg-rating">불러오는 중…</div>
           <div class="fg-history" id="brief-fg-history"></div>
         </div>
 
@@ -920,7 +920,7 @@
         </div>
       </div>
       <div id="earnings-content">
-        <div class="loading-msg">Loading earnings data...</div>
+        <div class="loading-msg">실적발표 일정을 불러오는 중…</div>
       </div>
     </div>
 
@@ -993,7 +993,7 @@
       <div class="stock-modal-stats" id="sm-stats"></div>
       <div class="stock-modal-news-title">Recent News</div>
       <div class="stock-modal-news" id="sm-news">
-        <div class="sm-news-loading">Loading news…</div>
+        <div class="sm-news-loading">뉴스를 불러오는 중…</div>
       </div>
       <div class="stock-modal-footer">
         <span id="sm-star-wrap"></span>

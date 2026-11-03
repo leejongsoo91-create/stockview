@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-04 | 기능 | 사이트 한글화 1단계(공통): 상단 탭 9개·사이트 제목·공통 로딩/오류 문구, 뉴스 시간 `8m ago`→`8분 전`, 표시용 한글 변환표(섹터 14·업종 147·국가·시장분위기) 추가 | (이번 커밋)
 - 11-04 | 버그 | wmux `apply-layout.ps1` 실행 실패 수정 (wmux.cmd의 stderr 잡음 — UNC 경고·crashpad 로그 — 을 오류로 처리하던 문제) + git 창을 WSL git으로 | (이번 커밋)
 - 11-04 | 문서 | 실행 환경 정정: Windows Python 3.15 알파 → WSL Ubuntu `.venv`(Python 3.12.3). CLAUDE.md·rules/python.md·architecture.md + 스킬 2개(stockview-verify·parallel-work)·wmux-layouts.json 서버 실행 명령 수정 | 6135bc4, (이번 커밋)
 - 11-04 | 기능 | AI 음성 브리핑 끄기 스위치(`VOICE_BRIEFING_ENABLED`, 기본 False) — 시작·24시간 생성 미등록, Brief 탭 "꺼져 있습니다" 표시 | (이번 커밋)

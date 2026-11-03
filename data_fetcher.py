@@ -1990,10 +1990,10 @@ def _time_ago(published_parsed) -> str:
         pub = datetime(*published_parsed[:6], tzinfo=timezone.utc)
         diff = int((datetime.now(timezone.utc) - pub).total_seconds())
         if diff < 3600:
-            return f"{diff // 60}m ago"
+            return f"{diff // 60}분 전"
         if diff < 86400:
-            return f"{diff // 3600}h ago"
-        return f"{diff // 86400}d ago"
+            return f"{diff // 3600}시간 전"
+        return f"{diff // 86400}일 전"
     except Exception:
         return "최근"
 

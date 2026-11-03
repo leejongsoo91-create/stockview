@@ -6,13 +6,14 @@
 ## 🔨 진행 중
 | 항목 | 시작일 | 메모 |
 |------|--------|------|
-| (없음) | | |
+| 사이트 한글화 (A안: 문구 직접 교체, 한/영 전환 없음) | 11-04 | 1단계(공통) 완료. 남은 단계: 2 홈 → 3 종목검색 → 4 히트맵·차트 → 5 뉴스·브리핑·실적발표 → 6 관심종목·포트폴리오. 변환표 `koSector/koIndustry/koCountry/koMood`(main.js)는 3단계부터 적용. 3단계에서 섹터 필터 옵션 `Communication`·`Materials`가 실제 데이터 값(`Telecommunications`·`Basic Materials`)과 달라 결과 0건인 문제 함께 확인 |
 
 ## ⏭️ 다음 (우선순위 높음)
 | 항목 | 설명 |
 |------|------|
 | `scripts/fetch_kr_stocks.py` 새 네이버 API로 교체 | 종목목록·PER 소스(`sise_market_sum.naver`) 폐기로 스크립트가 동작 안 함. 신규 상장·업종 재분류 불가. `m.stock.naver.com/api/stocks/marketValue/{KOSPI\|KOSDAQ}` 등으로 교체 (업종 페이지 `sise_group`도 확인) |
 | ⚠️ 옛 API 키 교체(rotate) — **사용자 작업** | AlphaVantage·Finnhub 키가 과거 커밋 이력에 평문으로 남아 있고 **저장소가 공개(public)** 상태. 09-07에 코드에서는 `api/` 파일로 분리했지만 이력은 그대로 → 각 콘솔에서 새 키 발급 후 `api/alphavantage.txt`, `api/finnhub.txt` 교체 |
+| 국내 뉴스 시간 음수 표시 | 인포스탁데일리 기사가 "-49분 전"처럼 미래 시각으로 표시됨(11-04 발견, 한글화 전부터 있던 문제). 피드 발행시각의 시간대(KST/UTC) 처리 확인 필요 |
 | 과거 미검증 화면 일괄 확인 | 08-18~09-15 작업 다수가 "브라우저 시각 확인 미완료"(당시 도구 없음). 이제 Playwright MCP가 있으니 `stockview-verify`로 Brief 음성 재생, 재무제표, 차트 더미 배너 등 일괄 확인 |
 
 ## 💡 후보 (미착수, 언제든 시작 가능)
