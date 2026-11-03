@@ -62,6 +62,7 @@ async function loadVoiceBriefing() {
     if (!data.turns || !data.turns.length) {
       card.style.display = 'none';
       empty.style.display = '';
+      if (data.disabled) empty.textContent = '🔇 AI 음성 브리핑이 꺼져 있습니다';
       return;
     }
     _vbTurns = data.turns;

@@ -29,6 +29,7 @@
 |------|-----------|------|
 | 국내주식 이전 분기 실적 조회 (공시 탭) | **DART Open API 키** 발급 | 이 주제가 나오면 "DART API 키 있으신가요?"부터 확인 |
 | FinBERT 감성 분석 | **Hugging Face 토큰** 발급 | 로컬 torch 불가 → HF 호스팅 Inference API로 연결하기로 결정(08-25) |
+| AI 음성 브리핑 다시 켜기 | 사용자 요청 | 11-04 꺼둠(`app.py` `VOICE_BRIEFING_ENABLED = False`). 켜기 전 `api/anthropic-key.txt` 교체 필요 — 11-04 호출 시 401 invalid x-api-key |
 | 해외주식(US) 수급 대안 | 사용자 요청 | Brief 탭 별도 섹션으로 관리하기로 결정 → [decisions/002](decisions/002-us-investor-flow.md) |
 | 비정상종목 판별 정규식 JS/Python 이중 유지 | 공용 API화 리팩터링 결정 | 09-15 보류 |
 | KR 함수 네이밍 불일치 (`_calc52wPosKr` vs `_getKrFiltered`) | — | 일괄 리네임 대신 신규 함수부터 통일 |

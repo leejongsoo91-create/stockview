@@ -17,6 +17,11 @@ from cache import Cache
 import data_fetcher as df
 
 PE_EPS_FILE  = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
+
+# AI 음성 브리핑 스위치 — 켜면 서버 시작 270초 뒤 + 24시간마다 Claude API·Google TTS 유료 호출.
+# 다시 쓰려면 True로 바꾸고 서버 재시작. (2026-11-04 꺼둠)
+VOICE_BRIEFING_ENABLED = False
+
 KR_STOCKS_FILE = os.path.join(os.path.dirname(__file__), "data", "kr_stocks.json")
 
 def _load_kr_base() -> list:
@@ -625,10 +630,13 @@ def initial_load():
     threading.Thread(target=_delayed_daily_signals, daemon=True).start()
 
     # AI 음성 브리핑: 뉴스 로드 후 270초 지연해서 시작 (daily_signals 등과 겹치지 않게)
-    def _delayed_voice_briefing():
-        import time as _t; _t.sleep(270)
-        refresh_voice_briefing()
-    threading.Thread(target=_delayed_voice_briefing, daemon=True).start()
+    if VOICE_BRIEFING_ENABLED:
+        def _delayed_voice_briefing():
+            import time as _t; _t.sleep(270)
+            refresh_voice_briefing()
+        threading.Thread(target=_delayed_voice_briefing, daemon=True).start()
+    else:
+        log.info("AI 음성 브리핑: 꺼짐 (VOICE_BRIEFING_ENABLED=False) — 유료 API 호출 안 함")
 
     # 국내주식: 파일 기반 베이스 로드 후 백그라운드 가격 갱신
     kr_base = _load_kr_base()
@@ -660,7 +668,8 @@ _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")
 _scheduler.add_job(refresh_fear_greed,      "interval", minutes=30, id="fear_greed")
 _scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
-_scheduler.add_job(refresh_voice_briefing,  "interval", hours=24,   id="voice_briefing")
+if VOICE_BRIEFING_ENABLED:
+    _scheduler.add_job(refresh_voice_briefing, "interval", hours=24, id="voice_briefing")
 
 
 # ── Flask 라우트 ─────────────────────────────────────────────────────────────
@@ -1088,6 +1097,8 @@ def financials(ticker):
 @app.route("/api/voice-briefing")
 def voice_briefing():
     """오늘의 AI 음성 브리핑 대본+오디오파일 목록. 24시간 배치 캐시(daily_signals와 동일 패턴)."""
+    if not VOICE_BRIEFING_ENABLED:
+        return jsonify({"turns": [], "generated_at": None, "disabled": True})
     data = cache.get("voice_briefing")
     if not data:
         return jsonify({"turns": [], "generated_at": None})

@@ -60,7 +60,7 @@
 | `refresh_av_news` | 12시간 | |
 | `refresh_pe_eps`, `refresh_kr_per` | 24시간 | KR PER은 시작 300초 후 |
 | `refresh_daily_signals` | 24시간 | 시작 240초 후. **그 전까지 신호 관련 API는 비어 있음(정상)** |
-| `refresh_voice_briefing` | 24시간 | 시작 270초 후, 오늘 생성분 있으면 재사용 |
+| `refresh_voice_briefing` | 24시간 | **기본 꺼짐** (`VOICE_BRIEFING_ENABLED = False`, 꺼지면 등록 자체를 안 함). 켜면 시작 270초 후, 오늘 생성분 있으면 재사용 |
 | `refresh_dynamic_indices` | 1주 | |
 
 서버 시작 시 `initial_load()`가 작업들을 2~4초 간격으로 시차 실행한다.
