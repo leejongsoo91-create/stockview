@@ -49,3 +49,6 @@ data/kr_per_cache.json
 
 # Claude 작업용 임시 폴더
 $SCRATCH/
+
+# 서버가 주 1회 네이버에서 받아 덮어쓰는 미국 종목 한글명 (런타임 상태)
+data/us_names_ko.json

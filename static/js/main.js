@@ -1523,7 +1523,8 @@ function _gsSearch(q) {
   const matchUs = usStocks.filter(s =>
     s.ticker.toLowerCase().startsWith(q) ||
     s.ticker.toLowerCase().includes(q)   ||
-    (s.name || '').toLowerCase().includes(q)
+    (s.name || '').toLowerCase().includes(q) ||
+    (s.name_ko || '').includes(q)
   ).sort(_gsTickerRank(q, s => s.ticker)).slice(0, 4).map(s => ({ ...s, _isKr: false }));
 
   const matchKr = krStocks.filter(s =>
@@ -1549,7 +1550,7 @@ function _gsSearch(q) {
       : '';
     return `<div class="gs-item" onclick="_gsSelect('${s.ticker}')">
       ${badge}<span class="gs-ticker">${disp}</span>
-      <span class="gs-name">${s.name || ''}</span>
+      <span class="gs-name">${(s._isKr ? s.name : (s.name_ko || s.name)) || ''}</span>
       <span class="gs-pct ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
     </div>`;
   }).join('');

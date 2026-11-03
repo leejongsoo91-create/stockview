@@ -929,6 +929,9 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .td-ticker   { font-weight: 700; color: var(--accent); }
 .td-name     { max-width: 240px; line-height: 1.3; white-space: normal; }
 .td-name-ko  { font-size: 11px; color: var(--muted); margin-left: 3px; }
+/* 종목검색: 한글명은 영어명 아래 줄, 칸보다 길면 … (표 전체 nowrap 때문에 옆 칸으로 넘치던 문제) */
+#screener-table td.td-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+#screener-table .td-name-ko { display: block; margin-left: 0; overflow: hidden; text-overflow: ellipsis; }
 .td-industry { font-size: 11.5px; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .td-country  { text-align: center; }
 .sc-no       { color: var(--muted); font-size: 11px; text-align: right; padding-right: 8px; width: 36px; }

@@ -241,6 +241,30 @@ def refresh_kr_per(force: bool = False):
         log.error(f"refresh_kr_per 실패: {e}")
 
 
+def refresh_us_names_ko(force: bool = False):
+    """미국 종목 한글명 주 1회 재수집 (네이버 해외주식 목록) → data/us_names_ko.json.
+    6일 이내 캐시면 건너뛴다. 받은 뒤 지금 캐시의 종목 행에도 바로 반영한다."""
+    try:
+        saved = df.load_us_names_ko()
+        if not force and time.time() - (saved.get("updated_at") or 0) < 6 * 86400:
+            return
+        names = df.fetch_us_names_ko_naver()
+        if len(names) < 3000:   # 대량 실패(차단·개편) 시 기존 파일을 덮어쓰지 않음
+            log.warning(f"refresh_us_names_ko: 한글명 {len(names)}개만 수집 — 저장 안 함")
+            return
+        with open(df.US_NAMES_KO_FILE, "w", encoding="utf-8") as f:
+            json.dump({"updated_at": int(time.time()), "data": names}, f, ensure_ascii=False)
+        df.set_us_names_ko(names)
+        for key in ("stocks_base", "stocks"):
+            rows = cache.get(key)
+            if rows:
+                ttl = 3600 if key == "stocks_base" else 300
+                cache.set(key, [{**s, "name_ko": df.name_ko(s["ticker"]) or s.get("name_ko", "")} for s in rows], ttl=ttl)
+        log.info(f"미국 종목 한글명 갱신: {len(names)}개")
+    except Exception as e:
+        log.error(f"refresh_us_names_ko 실패: {e}")
+
+
 def refresh_pe_eps():
     """Yahoo Finance 종목 페이지 HTML 파싱으로 PE/EPS 수집 (1일 1회).
     이미 있는 종목은 건너뛰고 누락 종목부터 시총 상위 순으로 처리.
@@ -577,7 +601,7 @@ def initial_load():
     2) 백그라운드에서 S&P500 503개 목록 로드 + 실시간 가격 갱신
     """
     # 즉시 서빙용 60개 더미 초기화
-    base60 = [{**s, "name_ko": df.NAME_KO.get(s["ticker"], s.get("name_ko", ""))} for s in STOCKS]
+    base60 = [{**s, "name_ko": df.name_ko(s["ticker"]) or s.get("name_ko", "")} for s in STOCKS]
     cache.set("stocks_base", base60, ttl=86400)
     cache.set("stocks",      base60, ttl=300)
     cache.set("news",    NEWS,    ttl=600)
@@ -607,6 +631,7 @@ def initial_load():
     _start_after(16, refresh_earnings)
     _start_after(20, refresh_av_news)
     _start_after(24, refresh_dynamic_indices)
+    _start_after(28, refresh_us_names_ko)    # 한글명(6일 이내 파일이면 스킵, 첫 수집 약 30초)
     # extra_fields는 stocks 로드 후 실행 — 약간 지연해서 시작
     def _delayed_extra():
         import time as _t; _t.sleep(30)
@@ -663,6 +688,7 @@ _scheduler.add_job(refresh_market_caps,     "interval", hours=6,    id="market_c
 _scheduler.add_job(refresh_extra_fields,    "interval", hours=6,    id="extra_fields")
 _scheduler.add_job(refresh_pe_eps,          "interval", hours=24,   id="pe_eps")
 _scheduler.add_job(refresh_kr_per,          "interval", hours=24,   id="kr_per")
+_scheduler.add_job(refresh_us_names_ko,     "interval", hours=24,   id="us_names_ko")  # 6일 지난 경우만 실제 수집
 _scheduler.add_job(refresh_av_news,         "interval", hours=12,   id="av_news")
 _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_news")
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")

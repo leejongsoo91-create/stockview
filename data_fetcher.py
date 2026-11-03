@@ -288,6 +288,75 @@ NAME_KO: dict[str, str] = {
 
 TICKER_SET = set(NAME_KO.keys())
 
+# ── 미국 종목 한글명 (네이버 해외주식 목록) ───────────────────────────────────
+# NAME_KO는 손으로 적은 373개뿐이라, 네이버 해외주식 시총 목록(약 7,000종목)의 한글명을 우선 쓴다.
+# app.refresh_us_names_ko()가 주 1회 받아 data/us_names_ko.json에 저장 → 서버 시작 시 여기서 읽는다.
+# 네이버에 없거나 이름이 영어 그대로인 종목만 NAME_KO로 채운다.
+US_NAMES_KO_FILE = os.path.join(os.path.dirname(__file__), "data", "us_names_ko.json")
+_HANGUL_RE = re.compile(r"[가-힣]")
+_us_names_ko: dict[str, str] = {}
+
+
+def _norm_us_ticker(t: str) -> str:
+    """티커 표기 통일: 우리 BRK/B·BRK-B ↔ 네이버 "BRK B" → 모두 BRK/B."""
+    return re.sub(r"[ .\-]", "/", (t or "").strip().upper())
+
+
+def set_us_names_ko(names: dict[str, str]) -> None:
+    global _us_names_ko
+    _us_names_ko = {_norm_us_ticker(k): v for k, v in (names or {}).items() if v}
+
+
+def load_us_names_ko() -> dict:
+    """{"updated_at": 유닉스초, "data": {ticker: 한글명}} — 없거나 깨졌으면 {}."""
+    try:
+        if os.path.exists(US_NAMES_KO_FILE):
+            with open(US_NAMES_KO_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        log.warning(f"us_names_ko.json 로드 실패: {e}")
+    return {}
+
+
+def name_ko(ticker: str) -> str:
+    """미국 종목 한글명: 네이버 → 수동 사전(NAME_KO) → 빈칸."""
+    return _us_names_ko.get(_norm_us_ticker(ticker)) or NAME_KO.get(ticker, "")
+
+
+def fetch_us_names_ko_naver() -> dict[str, str]:
+    """네이버 해외주식 시총 목록(NASDAQ·NYSE·AMEX)에서 한글명 수집. 반환: {티커(BRK/B 표기): 한글명}.
+    국내 수급·PER과 같은 api.stock.naver.com 계열(무료·키 없음). 이름이 영어 그대로인 종목은 뺀다.
+    페이지 하나라도 실패하면 그 거래소는 거기까지만 — 호출부가 개수로 저장 여부를 판단한다."""
+    session = requests.Session()
+    session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    result: dict[str, str] = {}
+    t0 = time.time()
+    for ex in ("NASDAQ", "NYSE", "AMEX"):
+        page = 1
+        while page <= 100:   # 안전장치 (NASDAQ 약 40페이지)
+            try:
+                r = session.get(f"https://api.stock.naver.com/stock/exchange/{ex}/marketValue",
+                                params={"page": page, "pageSize": 100}, timeout=15)
+                r.raise_for_status()
+                d = r.json()
+            except Exception as e:
+                log.warning(f"fetch_us_names_ko_naver {ex} {page}페이지 실패: {e}")
+                break
+            stocks = d.get("stocks") or []
+            for s in stocks:
+                sym, ko = (s.get("symbolCode") or "").strip(), (s.get("stockName") or "").strip()
+                if sym and _HANGUL_RE.search(ko):
+                    result.setdefault(_norm_us_ticker(sym), ko)
+            if not stocks or page * 100 >= (d.get("totalCount") or 0):
+                break
+            page += 1
+            time.sleep(0.3)
+    log.info(f"fetch_us_names_ko_naver: 한글명 {len(result)}개, {time.time() - t0:.0f}초")
+    return result
+
+
+set_us_names_ko(load_us_names_ko().get("data") or {})
+
 # Wikipedia GICS 섹터명 → 앱 내부 섹터명 매핑
 _SECTOR_MAP: dict[str, str] = {
     "Information Technology":  "Technology",
@@ -657,7 +726,7 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
         result.append({
             "ticker":      ticker,
             "name":        name,
-            "name_ko":     NAME_KO.get(ticker, ""),
+            "name_ko":     name_ko(ticker),
             "sector":      sector,
             "industry":    industry,
             "country":     country,
@@ -754,7 +823,7 @@ def fetch_sp500_list() -> list[dict]:
             result.append({
                 "ticker":      ticker,
                 "name":        name,
-                "name_ko":     NAME_KO.get(ticker, ""),
+                "name_ko":     name_ko(ticker),
                 "sector":      sector,
                 "price":       None,
                 "change":      0.0,

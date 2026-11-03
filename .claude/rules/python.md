@@ -32,5 +32,5 @@ paths:
 ## data/ 폴더
 - 직접 편집 금지 — 스크립트 또는 서버가 생성
 - `pe_eps_cache.json`(추적됨)은 **기능 커밋에 섞지 않는다**. 필요할 때만 별도 `chore: PE/EPS 캐시 갱신` 커밋
-- `kr_per_cache.json`, `signal_history.json`, `voice_briefing.json`, `audio/`는 런타임 상태 → gitignore
+- `kr_per_cache.json`, `us_names_ko.json`, `signal_history.json`, `voice_briefing.json`, `audio/`는 런타임 상태 → gitignore
 - 음성 브리핑 재생성은 **유료**(Claude API + TTS). 테스트 시 `data/voice_briefing.json` 재사용 로직을 우회하지 않는다

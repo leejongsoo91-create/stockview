@@ -43,6 +43,7 @@
 | `data/kr_stocks.json` | KR | 국내주식 기본 데이터 (`fetch_kr_stocks.py` 생성, **현재 소스 폐기로 재생성 불가** → ROADMAP) |
 | `data/pe_eps_cache.json` | US | PE/EPS 캐시 (서버가 24h마다 갱신, git 추적) |
 | `data/kr_per_cache.json` | KR | KR PER/EPS (서버가 24h마다 갱신, gitignore) |
+| `data/us_names_ko.json` | US | 미국 종목 한글명 (네이버 해외주식 목록, 서버가 주 1회 갱신, gitignore). 표시 우선순위: 네이버 → `NAME_KO` 수동 사전 → 빈칸 (`df.name_ko()`) |
 | `data/signal_history.json`, `voice_briefing.json`, `audio/` | 공통 | 서버 런타임 상태 (gitignore) |
 | `api/` | — | API 키 파일 (gitignore, **절대 커밋 금지**) |
 
@@ -59,6 +60,7 @@
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |
 | `refresh_av_news` | 12시간 | |
 | `refresh_pe_eps`, `refresh_kr_per` | 24시간 | KR PER은 시작 300초 후 |
+| `refresh_us_names_ko` | 24시간 확인, 6일 지났을 때만 수집 | 시작 28초 후. 3,000개 미만이면 저장 안 함 |
 | `refresh_daily_signals` | 24시간 | 시작 240초 후. **그 전까지 신호 관련 API는 비어 있음(정상)** |
 | `refresh_voice_briefing` | 24시간 | **기본 꺼짐** (`VOICE_BRIEFING_ENABLED = False`, 꺼지면 등록 자체를 안 함). 켜면 시작 270초 후, 오늘 생성분 있으면 재사용 |
 | `refresh_dynamic_indices` | 1주 | |
