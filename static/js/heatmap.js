@@ -305,7 +305,7 @@ function renderHeatmap() {
 
         tooltip.style.display = 'block';
         tooltip.innerHTML = `
-          <strong style="font-size:14px;color:#fff">${sector.data.name}</strong><br>
+          <strong style="font-size:14px;color:#fff">${koSector(sector.data.name)}</strong><br>
           <span style="color:${sAvgChg >= 0 ? '#4ade80' : '#f87171'};font-size:16px;font-weight:700">
             ${sAvgChg >= 0 ? '+' : ''}${sAvgChg.toFixed(2)}%
           </span>
@@ -347,7 +347,7 @@ function renderHeatmap() {
       .attr('font-size', '11px')
       .attr('font-weight', '700')
       .attr('pointer-events', 'none')
-      .text(sector.data.name.toUpperCase());
+      .text(koSector(sector.data.name));
   });
 
   // ── 업종(industry) 레이어 (depth=2) ──────────────────────────────────────
@@ -388,8 +388,8 @@ function renderHeatmap() {
 
         tooltip.style.display = 'block';
         tooltip.innerHTML = `
-          <strong style="font-size:13px;color:#fff">${ind.data.name}</strong>
-          <span style="color:#6e7681;font-size:11px;margin-left:4px">${ind.data.sector}</span><br>
+          <strong style="font-size:13px;color:#fff">${koIndustry(ind.data.name)}</strong>
+          <span style="color:#6e7681;font-size:11px;margin-left:4px">${koSector(ind.data.sector)}</span><br>
           <span style="color:${iAvgChg >= 0 ? '#4ade80' : '#f87171'};font-size:15px;font-weight:700">
             ${iAvgChg >= 0 ? '+' : ''}${iAvgChg.toFixed(2)}%
           </span>
@@ -433,7 +433,7 @@ function renderHeatmap() {
         .attr('font-size', '10px')
         .attr('font-weight', '600')
         .attr('pointer-events', 'none')
-        .text(ind.data.name);
+        .text(koIndustry(ind.data.name));
     }
   });
 
@@ -470,7 +470,7 @@ function renderHeatmap() {
         Price: <strong>${fmt$(d.data.price)}</strong>&nbsp;
         <strong class="${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</strong>
         <span style="color:#6e7681;font-size:10px;margin-left:4px">(${periodLabel})</span><br>
-        <span style="color:#8b949e;font-size:11px">${d.data.industry || d.data.sector} · ${fmtCap(d.data.market_cap)}</span>
+        <span style="color:#8b949e;font-size:11px">${d.data.industry ? koIndustry(d.data.industry) : koSector(d.data.sector)} · ${fmtCap(d.data.market_cap)}</span>
         ${sigHtml}
       `;
     })
@@ -596,21 +596,21 @@ function renderKrHeatmap() {
   const countEl = document.getElementById('hm-kr-count-label');
   if (countEl) {
     if (_krHmFilter === 'kospi') {
-      countEl.textContent = `KOSPI ${stocks.length}개`;
+      countEl.textContent = `코스피 ${stocks.length}개`;
     } else if (_krHmFilter === 'kosdaq') {
-      countEl.textContent = `KOSDAQ ${stocks.length}개`;
+      countEl.textContent = `코스닥 ${stocks.length}개`;
     } else if (_krHmFilter === 'kospi200') {
-      countEl.textContent = `KOSPI 200 (시총 상위 ${stocks.length}개)`;
+      countEl.textContent = `코스피 200 (시총 상위 ${stocks.length}개)`;
     } else if (_krHmFilter === 'kosdaq150') {
-      countEl.textContent = `KOSDAQ 150 (시총 상위 ${stocks.length}개)`;
+      countEl.textContent = `코스닥 150 (시총 상위 ${stocks.length}개)`;
     } else if (_krHmFilter === 'watchlist') {
-      countEl.textContent = `내 워치리스트 ${stocks.length}개`;
+      countEl.textContent = `내 관심종목 ${stocks.length}개`;
     } else if (_krHmFilter === 'portfolio') {
       countEl.textContent = `내 포트폴리오 ${stocks.length}개`;
     } else {
       const kospi  = stocks.filter(s => s.market === 'KOSPI').length;
       const kosdaq = stocks.filter(s => s.market === 'KOSDAQ').length;
-      countEl.textContent = `KOSPI ${kospi}개 · KOSDAQ ${kosdaq}개`;
+      countEl.textContent = `코스피 ${kospi}개 · 코스닥 ${kosdaq}개`;
     }
   }
 
@@ -677,7 +677,7 @@ function renderKrHeatmap() {
       .attr('fill', isKosdaq ? '#fbbf24' : '#818cf8')
       .attr('font-size', '12px').attr('font-weight', '800')
       .attr('pointer-events', 'none')
-      .text(mkt.data.name);
+      .text(mkt.data.name === 'KOSDAQ' ? '코스닥' : mkt.data.name === 'KOSPI' ? '코스피' : mkt.data.name);
   });
 
   // ── 업종 레이어 (depth=2) ─────────────────────────────────────────
@@ -751,7 +751,7 @@ function renderKrHeatmap() {
         tooltip.innerHTML =
           `<strong style="font-size:14px">${d.data.label}</strong>
            <span style="color:#8b949e;font-size:12px;margin-left:5px">${d.data.code}</span><br>
-           <span style="color:#6e7681;font-size:11px">${d.data.market} · ${d.data.sector || '—'}</span><br>
+           <span style="color:#6e7681;font-size:11px">${d.data.market === 'KOSDAQ' ? '코스닥' : d.data.market === 'KOSPI' ? '코스피' : d.data.market} · ${d.data.sector || '—'}</span><br>
            현재가: <strong>₩${Math.round(d.data.price).toLocaleString('ko-KR')}</strong>
            <strong style="margin-left:6px;color:${pct >= 0 ? '#4ade80' : '#f87171'}">
              ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%

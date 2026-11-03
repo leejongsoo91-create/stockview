@@ -1861,7 +1861,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   font-size: 11.5px;
   padding: 2px 0;
 }
-.sc-label { color: var(--muted); width: 36px; flex-shrink: 0; }
+.sc-label { color: var(--muted); width: 58px; flex-shrink: 0; white-space: nowrap; }
 .sc-val   { color: var(--text); flex: 1; }
 .sc-sig   { font-weight: 600; font-size: 11px; }
 .sc-trend-row { background: rgba(255,255,255,0.03); border-radius: 4px; padding: 3px 4px; }

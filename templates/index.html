@@ -290,38 +290,38 @@
     <div id="view-heatmap" class="view">
       <!-- 시장 탭 (US / KR) -->
       <div class="hm-market-bar">
-        <button class="hm-mkt-btn active" data-hmmarket="us">🇺🇸 US</button>
-        <button class="hm-mkt-btn" data-hmmarket="kr">🇰🇷 KR</button>
+        <button class="hm-mkt-btn active" data-hmmarket="us">🇺🇸 미국</button>
+        <button class="hm-mkt-btn" data-hmmarket="kr">🇰🇷 국내</button>
       </div>
       <!-- 인덱스 탭 (US 전용) -->
       <div class="hm-index-bar" id="hm-index-bar">
-        <button class="hm-idx-btn active" data-index="all">All</button>
+        <button class="hm-idx-btn active" data-index="all">전체</button>
         <button class="hm-idx-btn" data-index="sp500">S&amp;P 500</button>
-        <button class="hm-idx-btn" data-index="nasdaq100">Nasdaq 100</button>
-        <button class="hm-idx-btn" data-index="dow30">Dow 30</button>
-        <button class="hm-idx-btn" data-index="russell2000">Russell 2000</button>
-        <button class="hm-idx-btn" data-index="watchlist">⭐ 내 워치리스트</button>
+        <button class="hm-idx-btn" data-index="nasdaq100">나스닥 100</button>
+        <button class="hm-idx-btn" data-index="dow30">다우 30</button>
+        <button class="hm-idx-btn" data-index="russell2000">러셀 2000</button>
+        <button class="hm-idx-btn" data-index="watchlist">⭐ 내 관심종목</button>
         <button class="hm-idx-btn" data-index="portfolio">💼 내 포트폴리오</button>
         <span id="hm-count-label" class="hm-count-label"></span>
       </div>
       <!-- 인덱스 탭 (KR 전용) -->
       <div class="hm-index-bar" id="hm-kr-index-bar" style="display:none">
         <button class="hm-kr-idx-btn active" data-krindex="all">전체</button>
-        <button class="hm-kr-idx-btn" data-krindex="kospi">KOSPI</button>
-        <button class="hm-kr-idx-btn" data-krindex="kosdaq">KOSDAQ</button>
-        <button class="hm-kr-idx-btn" data-krindex="kospi200">KOSPI 200</button>
-        <button class="hm-kr-idx-btn" data-krindex="kosdaq150">KOSDAQ 150</button>
-        <button class="hm-kr-idx-btn" data-krindex="watchlist">⭐ 내 워치리스트</button>
+        <button class="hm-kr-idx-btn" data-krindex="kospi">코스피</button>
+        <button class="hm-kr-idx-btn" data-krindex="kosdaq">코스닥</button>
+        <button class="hm-kr-idx-btn" data-krindex="kospi200">코스피 200</button>
+        <button class="hm-kr-idx-btn" data-krindex="kosdaq150">코스닥 150</button>
+        <button class="hm-kr-idx-btn" data-krindex="watchlist">⭐ 내 관심종목</button>
         <button class="hm-kr-idx-btn" data-krindex="portfolio">💼 내 포트폴리오</button>
         <span id="hm-kr-count-label" class="hm-count-label"></span>
         <span class="heatmap-filter-group hm-kr-period-group">
           <span class="quick-label">기간:</span>
-          <button class="hm-kr-period-btn active" data-period="1d">1D</button>
-          <button class="hm-kr-period-btn" data-period="1w">1W</button>
-          <button class="hm-kr-period-btn" data-period="1m">1M</button>
-          <button class="hm-kr-period-btn" data-period="3m">3M</button>
-          <button class="hm-kr-period-btn" data-period="6m">6M</button>
-          <button class="hm-kr-period-btn" data-period="ytd">YTD</button>
+          <button class="hm-kr-period-btn active" data-period="1d">1일</button>
+          <button class="hm-kr-period-btn" data-period="1w">1주</button>
+          <button class="hm-kr-period-btn" data-period="1m">1개월</button>
+          <button class="hm-kr-period-btn" data-period="3m">3개월</button>
+          <button class="hm-kr-period-btn" data-period="6m">6개월</button>
+          <button class="hm-kr-period-btn" data-period="ytd">올해</button>
         </span>
       </div>
       <div class="heatmap-toolbar">
@@ -336,19 +336,19 @@
         </div>
         <div class="heatmap-filter-group">
           <span class="quick-label">표시:</span>
-          <button class="hm-top-btn" data-top="200">Top 200</button>
-          <button class="hm-top-btn active" data-top="500">Top 500</button>
-          <button class="hm-top-btn" data-top="1000">Top 1000</button>
+          <button class="hm-top-btn" data-top="200">상위 200</button>
+          <button class="hm-top-btn active" data-top="500">상위 500</button>
+          <button class="hm-top-btn" data-top="1000">상위 1000</button>
           <button class="hm-top-btn" data-top="0">전체</button>
         </div>
         <div class="heatmap-filter-group">
           <span class="quick-label">기간:</span>
-          <button class="hm-period-btn active" data-period="1d">1D</button>
-          <button class="hm-period-btn" data-period="1w">1W</button>
-          <button class="hm-period-btn" data-period="1m">1M</button>
-          <button class="hm-period-btn" data-period="3m">3M</button>
-          <button class="hm-period-btn" data-period="6m">6M</button>
-          <button class="hm-period-btn" data-period="ytd">YTD</button>
+          <button class="hm-period-btn active" data-period="1d">1일</button>
+          <button class="hm-period-btn" data-period="1w">1주</button>
+          <button class="hm-period-btn" data-period="1m">1개월</button>
+          <button class="hm-period-btn" data-period="3m">3개월</button>
+          <button class="hm-period-btn" data-period="6m">6개월</button>
+          <button class="hm-period-btn" data-period="ytd">올해</button>
         </div>
         <span class="heatmap-hint">셀 클릭 시 차트 이동</span>
       </div>
@@ -361,20 +361,20 @@
       <div class="chart-toolbar">
         <div class="chart-search-row">
           <div class="chart-mkt-toggle">
-            <button class="chart-mkt-btn active" data-mkt="us">🇺🇸 US</button>
-            <button class="chart-mkt-btn" data-mkt="kr">🇰🇷 KR</button>
+            <button class="chart-mkt-btn active" data-mkt="us">🇺🇸 미국</button>
+            <button class="chart-mkt-btn" data-mkt="kr">🇰🇷 국내</button>
           </div>
           <div class="chart-search-wrap" id="chart-search-wrap">
-            <input id="chart-input" type="text" placeholder="티커 또는 종목명 (e.g. AAPL)" autocomplete="off">
+            <input id="chart-input" type="text" placeholder="티커 또는 종목명 (예: AAPL)" autocomplete="off">
             <div id="chart-search-dropdown" class="global-search-dropdown"></div>
           </div>
-          <button id="chart-go-btn">Go</button>
+          <button id="chart-go-btn">조회</button>
           <button id="chart-cmp-toggle" class="chart-cmp-toggle">⇌ 비교</button>
         </div>
         <div class="chart-compare-row" id="chart-compare-row" style="display:none">
           <span class="quick-label">비교 종목:</span>
-          <input id="chart-cmp-input" type="text" placeholder="e.g. MSFT">
-          <button id="chart-cmp-go" class="chart-cmp-go">Go</button>
+          <input id="chart-cmp-input" type="text" placeholder="예: MSFT">
+          <button id="chart-cmp-go" class="chart-cmp-go">조회</button>
           <button id="chart-cmp-clear" class="chart-cmp-clear">✕ 비교 종료</button>
         </div>
         <div class="cmp-legend" id="cmp-legend" style="display:none">
@@ -389,17 +389,17 @@
           <span class="cmp-leg-note">※ 시작일 = 100 기준 정규화</span>
         </div>
         <div class="quick-tickers">
-          <span class="quick-label">Indices:</span>
+          <span class="quick-label">지수:</span>
           <button class="quick-btn idx-btn" data-ticker="^GSPC">S&amp;P 500</button>
-          <button class="quick-btn idx-btn" data-ticker="^IXIC">NASDAQ</button>
-          <button class="quick-btn idx-btn" data-ticker="^DJI">DOW</button>
-          <button class="quick-btn idx-btn" data-ticker="^RUT">RUT</button>
+          <button class="quick-btn idx-btn" data-ticker="^IXIC">나스닥</button>
+          <button class="quick-btn idx-btn" data-ticker="^DJI">다우</button>
+          <button class="quick-btn idx-btn" data-ticker="^RUT">러셀</button>
           <button class="quick-btn idx-btn" data-ticker="^VIX">VIX</button>
-          <button class="quick-btn idx-btn" data-ticker="CL=F">OIL</button>
-          <button class="quick-btn idx-btn" data-ticker="GC=F">GOLD</button>
+          <button class="quick-btn idx-btn" data-ticker="CL=F">원유</button>
+          <button class="quick-btn idx-btn" data-ticker="GC=F">금</button>
         </div>
         <div class="quick-tickers">
-          <span class="quick-label">Stocks:</span>
+          <span class="quick-label">종목:</span>
           <button class="quick-btn" data-ticker="AAPL">AAPL</button>
           <button class="quick-btn" data-ticker="NVDA">NVDA</button>
           <button class="quick-btn" data-ticker="MSFT">MSFT</button>
@@ -409,33 +409,33 @@
           <button class="quick-btn" data-ticker="LLY">LLY</button>
         </div>
         <div class="chart-interval-row">
-          <span class="quick-label">Interval:</span>
-          <button class="interval-btn" data-interval="1m">1m</button>
-          <button class="interval-btn" data-interval="5m">5m</button>
-          <button class="interval-btn" data-interval="15m">15m</button>
-          <button class="interval-btn" data-interval="30m">30m</button>
-          <button class="interval-btn" data-interval="60m">1H</button>
-          <button class="interval-btn active" data-interval="1d">1D</button>
+          <span class="quick-label">봉:</span>
+          <button class="interval-btn" data-interval="1m">1분</button>
+          <button class="interval-btn" data-interval="5m">5분</button>
+          <button class="interval-btn" data-interval="15m">15분</button>
+          <button class="interval-btn" data-interval="30m">30분</button>
+          <button class="interval-btn" data-interval="60m">1시간</button>
+          <button class="interval-btn active" data-interval="1d">일봉</button>
           <button class="interval-btn" data-interval="mo">월봉</button>
           <button class="interval-btn" data-interval="yr">연봉</button>
           <span class="chart-sep">|</span>
           <span id="period-group">
-            <button class="period-btn" data-period="1mo">1M</button>
-            <button class="period-btn" data-period="3mo">3M</button>
-            <button class="period-btn" data-period="6mo">6M</button>
-            <button class="period-btn active" data-period="1y">1Y</button>
-            <button class="period-btn" data-period="2y">2Y</button>
+            <button class="period-btn" data-period="1mo">1개월</button>
+            <button class="period-btn" data-period="3mo">3개월</button>
+            <button class="period-btn" data-period="6mo">6개월</button>
+            <button class="period-btn active" data-period="1y">1년</button>
+            <button class="period-btn" data-period="2y">2년</button>
           </span>
           <span class="chart-years-group">
             <input id="chart-years-input" class="chart-years-input" type="number" min="1" max="30" placeholder="년수">
             <button id="chart-years-go-btn" class="chart-years-go-btn">조회</button>
           </span>
-          <span id="chart-live-badge" class="chart-live-badge" style="display:none">● LIVE</span>
+          <span id="chart-live-badge" class="chart-live-badge" style="display:none">● 실시간</span>
           <span id="chart-updated-at" class="chart-updated-at"></span>
           <span class="chart-zoom-hint" title="차트 위에서 왼쪽 마우스 버튼으로 드래그하세요">좌→우 드래그: 확대 · 우→좌 드래그: 전체보기 · 더블클릭: 이전 화면</span>
         </div>
         <div class="chart-indicator-row">
-          <span class="quick-label">Indicators:</span>
+          <span class="quick-label">지표:</span>
           <button class="ind-btn ind-ma5"    data-ind="ma5">MA 5</button>
           <button class="ind-btn ind-ma20"   data-ind="ma20">MA 20</button>
           <button class="ind-btn ind-ma60"   data-ind="ma60">MA 60</button>
@@ -445,10 +445,10 @@
           <button class="ind-btn ind-rsi"    data-ind="rsi">RSI</button>
           <button class="ind-btn ind-macd"   data-ind="macd">MACD</button>
           <button class="ind-btn ind-sto"    data-ind="sto">STO</button>
-          <button class="ind-btn ind-volma"  data-ind="volma">Vol MA</button>
+          <button class="ind-btn ind-volma"  data-ind="volma">거래량 MA</button>
         </div>
         <div class="chart-draw-row">
-          <span class="quick-label">Draw:</span>
+          <span class="quick-label">그리기:</span>
           <button class="draw-tool-btn" data-tool="trend" title="추세선: 두 점 클릭">📈 추세선</button>
           <button class="draw-tool-btn" data-tool="hline" title="수평선: 한 점 클릭">➖ 수평선</button>
           <button class="draw-tool-btn" data-tool="vline" title="수직선: 한 점 클릭">┃ 수직선</button>
@@ -495,7 +495,7 @@
             <div id="macd-chart"></div>
           </div>
           <div id="sto-panel" style="display:none">
-            <div class="rsi-panel-label">Stochastic (14, 3)</div>
+            <div class="rsi-panel-label">스토캐스틱 (14, 3)</div>
             <div id="sto-chart"></div>
           </div>
         </div>
@@ -508,7 +508,7 @@
           <div id="stock-analysis-card" style="display:none"></div>
           <div id="financials-card" style="display:none"></div>
           <div id="stock-info-panel">
-            <div class="info-placeholder">Select a ticker to view chart</div>
+            <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>
           </div>
         </aside>
       </div>

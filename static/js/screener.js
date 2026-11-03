@@ -897,16 +897,17 @@ function exportScreenerCSV() {
   const list = _getFilteredStocks();
   if (!list.length) return;
 
-  const headers = ['No','Ticker','Name','Sector','Industry','Country',
-    'Price','Change%','Volume','MarketCap(B)','PE','EPS','52W_High','52W_Low'];
+  const headers = ['번호','티커','종목명','섹터','업종','국가',
+    '현재가($)','등락률(%)','거래량','시가총액($B)','PER','EPS($)','52주 최고($)','52주 최저($)'];
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
   const rows = list.map((s, i) => [
     i + 1,
     s.ticker,
     `"${(s.name || '').replace(/"/g, '""')}"`,
-    s.sector   || '',
-    s.industry || '',
-    s.country  || '',
+    q(s.sector   ? koSector(s.sector)     : ''),
+    q(s.industry ? koIndustry(s.industry) : ''),
+    q(s.country  ? koCountry(s.country)   : ''),
     s.price       != null ? s.price       : '',
     s.change_pct  != null ? s.change_pct  : '',
     s.volume      != null ? s.volume      : '',
@@ -922,7 +923,7 @@ function exportScreenerCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `종목검색_미국_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1293,12 +1294,12 @@ function exportKrCSV() {
   const list = _getKrFiltered();
   if (!list.length) return;
 
-  const headers = ['No','종목코드','종목명','시장','업종','현재가(₩)','등락률(%)','거래량','시가총액(억)','P/E','EPS(₩)','52W고','52W저'];
+  const headers = ['번호','종목코드','종목명','시장','업종','현재가(₩)','등락률(%)','거래량','시가총액(억)','PER','EPS(₩)','52주 최고(₩)','52주 최저(₩)'];
   const rows = list.map((s, i) => [
     i + 1,
     s.code,
     `"${(s.name || '').replace(/"/g, '""')}"`,
-    s.market   || '',
+    s.market === 'KOSPI' ? '코스피' : s.market === 'KOSDAQ' ? '코스닥' : (s.market || ''),
     `"${(s.sector || '').replace(/"/g, '""')}"`,
     s.price       != null ? Math.round(s.price)      : '',
     s.change_pct  != null ? s.change_pct.toFixed(2)  : '',
@@ -1315,7 +1316,7 @@ function exportKrCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `kr_screener_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `종목검색_국내_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

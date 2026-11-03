@@ -49,14 +49,14 @@ const _CANDLE_REFRESH = {
 
 // 지수 심볼 → 표시 이름 매핑
 const _INDEX_NAMES = {
-  '^GSPC': 'S&P 500 Index',
-  '^IXIC': 'NASDAQ Composite',
-  '^DJI':  'Dow Jones Industrial',
-  '^RUT':  'Russell 2000 Index',
-  '^SOX':  'PHLX Semiconductor Index',
-  '^VIX':  'CBOE Volatility Index',
-  'CL=F':  'WTI Crude Oil Futures',
-  'GC=F':  'Gold Futures',
+  '^GSPC': 'S&P 500 지수',
+  '^IXIC': '나스닥 종합지수',
+  '^DJI':  '다우존스 산업평균지수',
+  '^RUT':  '러셀 2000 지수',
+  '^SOX':  '필라델피아 반도체 지수',
+  '^VIX':  'CBOE 변동성 지수(VIX)',
+  'CL=F':  'WTI 원유 선물',
+  'GC=F':  '금 선물',
 };
 
 function _isIndex(ticker) {
@@ -963,7 +963,7 @@ async function loadChart(ticker) {
   document.getElementById('chart-ticker-label').textContent  = ticker;
   document.getElementById('chart-company-label').textContent = '…';
   document.getElementById('chart-price-badge').innerHTML     = '';
-  document.getElementById('stock-info-panel').innerHTML      = '<div class="info-placeholder">Loading…</div>';
+  document.getElementById('stock-info-panel').innerHTML      = '<div class="info-placeholder">불러오는 중…</div>';
   _setUpdatedAt('');
 
   // 기존 타이머 정지
@@ -1579,14 +1579,14 @@ function _applySignalMarkers() {
         time: times[i], position: 'belowBar',
         color: s >= 3 ? '#3fb950' : '#58a6ff',
         shape: 'arrowUp', size: s >= 3 ? 3 : 1.5,
-        text: (s >= 3 ? 'BUY ' : 'buy ') + price,
+        text: (s >= 3 ? '강력매수 ' : '매수 ') + price,
       });
     } else if (s <= -threshold) {
       markers.push({
         time: times[i], position: 'aboveBar',
         color: s <= -3 ? '#f85149' : '#ffa64d',
         shape: 'arrowDown', size: s <= -3 ? 3 : 1.5,
-        text: (s <= -3 ? 'SELL ' : 'sell ') + price,
+        text: (s <= -3 ? '강력매도 ' : '매도 ') + price,
       });
     }
   }
@@ -1679,11 +1679,11 @@ function _renderSignalCard() {
                  : patArr[n - 2] !== 0 ? patArr[n - 2]
                  : patArr[n - 3] !== 0 ? patArr[n - 3] : 0;
   const patName  = patScore > 0
-    ? (patArr[n-1] !== 0 ? 'Hammer' : 'Bullish Eng.')
+    ? (patArr[n-1] !== 0 ? '망치형' : '상승 장악형')
     : patScore < 0
-    ? (patArr[n-1] !== 0 ? 'Shooting Star' : 'Bearish Eng.')
+    ? (patArr[n-1] !== 0 ? '유성형' : '하락 장악형')
     : '—';
-  rows.push({ label: 'CANDLE', score: 0, detail: patName, infoOnly: true });
+  rows.push({ label: 'CANDLE', score: 0, detail: patName, infoOnly: true, tone: patScore });
 
   // MA50 추세 방향 계산
   const ma50arr   = _calcMA(closes, 50);
@@ -1727,9 +1727,9 @@ function _renderSignalCard() {
   }
 
   const scoreColor = finalTotal > 0 ? 'var(--green)' : finalTotal < 0 ? 'var(--red)' : 'var(--muted)';
-  const scoreLabel = finalTotal >= 3 ? 'STRONG BUY'  : finalTotal === 2  ? 'BUY'
-                   : finalTotal <= -3 ? 'STRONG SELL' : finalTotal === -2 ? 'SELL'
-                   : finalTotal === 1 ? 'Weak Buy'    : finalTotal === -1 ? 'Weak Sell' : 'Neutral';
+  const scoreLabel = finalTotal >= 3 ? '강력 매수'  : finalTotal === 2  ? '매수'
+                   : finalTotal <= -3 ? '강력 매도' : finalTotal === -2 ? '매도'
+                   : finalTotal === 1 ? '약한 매수'  : finalTotal === -1 ? '약한 매도' : '중립';
 
   const trendColor = trendUp ? 'var(--green)' : trendDown ? 'var(--red)' : 'var(--muted)';
   const trendLabel = trendUp ? '▲ 상승 추세' : trendDown ? '▼ 하락 추세' : '— 중립';
@@ -1746,7 +1746,7 @@ function _renderSignalCard() {
   const wTrendColor = wTrendNow ===  1 ? 'var(--green)' : wTrendNow === -1 ? 'var(--red)' : 'var(--muted)';
   const wTrendLabel = wTrendNow ===  1 ? '▲ 주봉 상승' : wTrendNow === -1 ? '▼ 주봉 하락' : '— 중립';
   const weeklyRow  = `<div class="sc-row sc-trend-row">
-    <span class="sc-label">W.MA13</span>
+    <span class="sc-label">주봉 MA13</span>
     <span class="sc-val">주봉</span>
     <span class="sc-sig" style="color:${wTrendColor}">${wTrendLabel}</span>
   </div>`;
@@ -1779,9 +1779,9 @@ function _renderSignalCard() {
 
   const rowsHtml = rows.map(r => {
     if (r.infoOnly) {
-      const ic = r.detail === '—' ? 'var(--muted)' : r.detail.startsWith('B') ? 'var(--accent)' : '#ffa64d';
+      const ic = r.detail === '—' ? 'var(--muted)' : r.tone > 0 ? 'var(--accent)' : '#ffa64d';
       return `<div class="sc-row">
-        <span class="sc-label">${r.label}</span>
+        <span class="sc-label">${r.label === 'CANDLE' ? '캔들' : r.label}</span>
         <span class="sc-val" style="color:${ic}">${r.detail}</span>
         <span class="sc-sig" style="color:var(--muted);opacity:.7">참고</span>
       </div>`;
@@ -1806,7 +1806,7 @@ function _renderSignalCard() {
                 : 'rgba(139,148,158,0.08)';
   card.innerHTML = `
     <div class="sc-banner" style="background:${scoreBg};border-left-color:${scoreColor}">
-      <div class="sc-title">SIGNAL</div>
+      <div class="sc-title">종합 신호</div>
       <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
       <div class="sc-score-num" style="color:${scoreColor}">${finalTotal > 0 ? '+' : ''}${finalTotal} / ${totalSlots}</div>
     </div>
@@ -2414,30 +2414,30 @@ function renderStockInfo(s) {
     : '—';
 
   document.getElementById('stock-info-panel').innerHTML = `
-    <div class="info-section-title">Key Statistics</div>
+    <div class="info-section-title">주요 지표</div>
     <div class="info-row">
-      <span class="info-label">Price</span>
+      <span class="info-label">현재가</span>
       <span class="info-val">${s.price ? fmtP(s.price) : '—'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Change</span>
+      <span class="info-label">변동</span>
       <span class="info-val ${cls}">${s.change != null ? (s.change >= 0 ? '+' : '') + fmtP(Math.abs(s.change)) : '—'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Change %</span>
+      <span class="info-label">등락률</span>
       <span class="info-val ${cls}">${s.change_pct != null ? fmtPct(s.change_pct) : '—'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Volume</span>
+      <span class="info-label">거래량</span>
       <span class="info-val">${s.volume ? fmtVol(s.volume) : '—'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Mkt Cap</span>
+      <span class="info-label">시가총액</span>
       <span class="info-val">${capStr}</span>
     </div>
-    <div class="info-section-title" style="margin-top:4px">Valuation</div>
+    <div class="info-section-title" style="margin-top:4px">가치 평가</div>
     <div class="info-row">
-      <span class="info-label">P/E Ratio</span>
+      <span class="info-label">PER</span>
       <span class="info-val">${peStr}</span>
     </div>
     <div class="info-row">
@@ -2445,20 +2445,20 @@ function renderStockInfo(s) {
       <span class="info-val">${epsStr}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">${isKr ? '업종' : 'Sector'}</span>
-      <span class="info-val info-sector-badge" style="font-size:11px">${s.sector || '—'}</span>
+      <span class="info-label">${isKr ? '업종' : '섹터'}</span>
+      <span class="info-val info-sector-badge" style="font-size:11px">${s.sector ? (isKr ? s.sector : koSector(s.sector)) : '—'}</span>
     </div>
-    <div class="info-section-title" style="margin-top:4px">52-Week Range</div>
+    <div class="info-section-title" style="margin-top:4px">52주 범위</div>
     <div class="info-row">
-      <span class="info-label">High</span>
+      <span class="info-label">최고</span>
       <span class="info-val up">${s.week52_high ? fmtP(s.week52_high) : '—'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Low</span>
+      <span class="info-label">최저</span>
       <span class="info-val down">${s.week52_low ? fmtP(s.week52_low) : '—'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">vs 52W High</span>
+      <span class="info-label">52주 최고 대비</span>
       <span class="info-val ${colorCls(s.price && s.week52_high ? s.price/s.week52_high*100-100 : 0)}">
         ${hiPct}
       </span>
@@ -2474,7 +2474,7 @@ async function _loadKrInvestor(ticker) {
   if (!section) return;
   const code = ticker.replace(/\.(KS|KQ)$/, '');
   section.innerHTML = `<div class="info-section-title" style="margin-top:10px">수급 동향 (최근 5일)</div>
-    <div style="color:var(--muted);font-size:11px;padding:4px 0">Loading…</div>`;
+    <div style="color:var(--muted);font-size:11px;padding:4px 0">불러오는 중…</div>`;
   try {
     const rows = await api(`/api/kr-investor/${code}`);
     if (!rows || !rows.length) {
@@ -2507,16 +2507,16 @@ async function _loadKrInvestor(ticker) {
 async function _loadStockNews(ticker) {
   const section = document.getElementById('stock-news-section');
   if (!section) return;
-  section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
-    <div style="color:var(--muted);font-size:11px;padding:4px 0">Loading…</div>`;
+  section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>
+    <div style="color:var(--muted);font-size:11px;padding:4px 0">불러오는 중…</div>`;
   try {
     const url = _isKrStock(ticker)
       ? `/api/kr-news/${encodeURIComponent(ticker)}`
       : `/api/stock-news/${encodeURIComponent(ticker)}`;
     const news = await api(url);
     if (!news || !news.length) {
-      section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>
-        <div style="color:var(--muted);font-size:11px;padding:4px 0">No recent news</div>`;
+      section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>
+        <div style="color:var(--muted);font-size:11px;padding:4px 0">최근 뉴스가 없습니다</div>`;
       return;
     }
     const items = news.slice(0, 8).map(n => {
@@ -2527,7 +2527,7 @@ async function _loadStockNews(ticker) {
         <div class="stock-news-meta">${n.source} · ${n.time}</div>
       </div>`;
     }).join('');
-    section.innerHTML = `<div class="info-section-title" style="margin-top:10px">Related News</div>${items}`;
+    section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>${items}`;
   } catch {
     section.innerHTML = '';
   }

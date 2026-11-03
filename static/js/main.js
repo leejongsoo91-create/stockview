@@ -16,7 +16,7 @@ const SECTOR_KO = {
   'Basic Materials': '소재', 'Materials': '소재', 'Consumer Disc.': '경기소비재', 'Consumer Staples': '필수소비재',
   'Energy': '에너지', 'Finance': '금융', 'Healthcare': '헬스케어', 'Industrial': '산업재',
   'Real Estate': '부동산', 'Technology': '기술', 'Telecommunications': '통신', 'Communication': '통신',
-  'Utilities': '유틸리티', 'Other': '기타',
+  'Utilities': '유틸리티', 'Other': '기타', 'Index': '지수',
 };
 const INDUSTRY_KO = {
   'Accident &Health Insurance': '상해·건강보험', 'Advertising': '광고', 'Aerospace': '항공우주',
