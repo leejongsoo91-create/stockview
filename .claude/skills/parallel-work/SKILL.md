@@ -40,7 +40,9 @@ cp data/kr_per_cache.json ../finviz-app-wt/<이름>/data/ 2>/dev/null   # 없으
 - 수동으로 할 때 — wmux 단축키: `Ctrl+D` 오른쪽 분할 / `Ctrl+Shift+D` 아래 분할 / `Ctrl+N` 새 워크스페이스 / `Ctrl+I` 알림
 - 각 창에서 해당 worktree 폴더로 이동해 `claude` 실행 → 작업 지시
 - 서버 확인이 필요하면 그 창에서 포트를 바꿔 실행:
-  PowerShell `$env:PORT=5002; python app.py` / bash `PORT=5002 python app.py`
+  WSL bash(worktree 폴더에서) `PORT=5002 /root/stockview/.venv/bin/python app.py`
+  / Windows 셸 `wsl -d Ubuntu -u root -- bash -lc 'cd /root/finviz-app-wt/<이름> && PORT=5002 /root/stockview/.venv/bin/python app.py'`
+  (메인의 `.venv`를 같이 쓴다. Windows `python`으로 띄우지 않는다)
 - 검증은 `stockview-verify` 스킬을 쓰되 URL의 포트를 배정 포트로 바꾼다
 - wmux MCP(`wmux`)가 연결돼 있으면 창 분할·다른 창 터미널 확인·창 간 메시지를 도구로 할 수 있다. wmux 자체 "Multi Task" 기능(프롬프트 하나를 최대 8개 worktree로 쪼갬)도 있으나, 이 프로젝트는 작업계획서 승인 절차 때문에 위 수동 절차를 기본으로 한다.
 

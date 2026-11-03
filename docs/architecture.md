@@ -100,6 +100,7 @@
 - 포트 5001: Claude가 띄운 서버와 사용자가 띄운 서버가 동시에 돌면 충돌. 병렬 작업은 5002+ (`parallel-work` 스킬)
 
 ## 8. 환경 제약
-- Python **3.15.0a7** 알파: numpy·pandas·torch·grpc 계열 설치 불가 → `requests`로 직접 호출 (`yfinance` 미사용)
-- `scripts/screener_api.py`(FastAPI+pandas)는 현재 환경에서 실행 불가
+- 실행 환경: WSL Ubuntu `/root/stockview/.venv` (Python **3.12.3**). Windows 쪽 Python 3.14/3.15는 서버와 무관
+- numpy·pandas 미설치 → `requests`로 직접 호출 (`yfinance` 미사용). 예전 Python 3.15.0a7 알파에서 설치가 안 돼 생긴 구조를 유지
+- `scripts/screener_api.py`(FastAPI+pandas)는 `.venv`에 pandas가 없어 현재 실행 불가
 - 설치된 주요 패키지: flask, flask-socketio, feedparser, vaderSentiment, APScheduler, requests, google-auth, anthropic

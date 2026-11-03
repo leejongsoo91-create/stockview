@@ -10,10 +10,14 @@ description: StockView 작업 후 실제 동작 검증 — 서버 기동 확인,
 ## 1. 서버 상태
 
 - `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/` → 200이면 실행 중
-- 실행 중이 아니면 `python app.py`를 백그라운드로 실행(루트 디렉토리에서), 200 응답까지 2초 간격 대기
+- 실행 중이 아니면 WSL `.venv`로 백그라운드 실행, 200 응답까지 2초 간격 대기:
+  `wsl -d Ubuntu -u root -- bash -lc 'cd /root/stockview && .venv/bin/python app.py'`
+  (Windows의 `python app.py`는 Windows Python 3.14로 떠서 실제 환경과 다르다 — 쓰지 않는다)
 - **재시작 필요 여부**: `app.py`·`data_fetcher.py`·`cache.py`·`templates/index.html`(Jinja 캐시) 변경 → 재시작 필요.
   `static/js`·`static/css`만 변경 → 재시작 불필요, 브라우저 새로고침만
-- 재시작: 5001 포트를 점유한 프로세스를 PowerShell `Get-NetTCPConnection -LocalPort 5001 -State Listen`으로 찾아 종료 후 재실행
+- 재시작: Windows 쪽에서 5001을 잡고 있는 건 `wslrelay.exe`(WSL 중계)라 그걸 끄면 안 된다. WSL 안에서 확인·종료 후 위 명령으로 재실행:
+  확인 `wsl -d Ubuntu -u root -- ss -ltnp "sport = :5001"` / 종료 `wsl -d Ubuntu -u root -- fuser -k 5001/tcp`
+  (5001은 사용자 메인 서버 — 종료 전 사용자에게 확인)
 
 ## 2. API 점검 (변경과 관련된 것 위주)
 

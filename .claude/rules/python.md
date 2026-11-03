@@ -14,10 +14,11 @@ paths:
 | `app.py` | 라우트는 관련 라우트 그룹 근처에 삽입 (파일 끝 금지). 스케줄러 작업은 `_scheduler.add_job` 블록에. `socketio.run`의 host는 `127.0.0.1` 유지 — `0.0.0.0`은 `RENDER` 환경변수일 때만 |
 | `scripts/*.py` | 독립 실행 전용, **`app.py`에서 import 금지**. 항상 **루트에서** 실행: `python scripts/collect_pe_eps.py` (scripts 폴더 안에서 실행 금지) |
 
-## 환경 제약 (Python 3.15.0a7 알파)
-- numpy·pandas·torch·grpc 계열 설치 불가 → `yfinance` 대신 `requests`로 Yahoo 직접 호출
-- 새 패키지는 순수 파이썬 또는 abi3 휠인지 먼저 확인 (`google-auth`, `anthropic`은 설치 확인됨)
-- `scripts/screener_api.py`(pandas 필요)는 현재 실행 불가
+## 실행 환경 (WSL Ubuntu `.venv`, Python 3.12.3)
+- 서버·스크립트는 `/root/stockview/.venv/bin/python`으로 실행. 패키지 설치도 `.venv/bin/python -m pip install ...` (Windows `pip`·`py -3.15`에 설치해도 서버에 반영 안 됨)
+- numpy·pandas·yfinance는 미설치 → 예전 3.15 알파 시절 구조 그대로 `requests`로 Yahoo 직접 호출. 새 의존성 추가는 먼저 사용자에게 묻는다
+- `.venv`에 requirements.txt 전부 설치·import 확인됨(`anthropic` 2.4.0 포함, 2026-11-04)
+- `scripts/screener_api.py`(pandas 필요)는 `.venv`에 pandas가 없어 현재 실행 불가
 
 ## 신호 로직 이중 구현
 `data_fetcher.py` `compute_today_signal()` ↔ `static/js/chart.js` `_calcSignals()`/`_applySignalMarkers()`는 같은 로직이다. **한쪽을 고치면 다른 쪽도 고친다** (07-17 `|score|>=2` 게이트 누락 사고 → docs/decisions/003).
