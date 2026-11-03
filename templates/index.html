@@ -143,83 +143,73 @@
         <!-- 필터 1행 -->
         <div class="sc-filter-row">
           <div class="filter-group">
-            <label>Sector</label>
+            <label>섹터</label>
             <select id="filter-sector">
-              <option value="all">All Sectors</option>
-              <option value="Technology">Technology</option>
-              <option value="Finance">Finance</option>
-              <option value="Healthcare">Healthcare</option>
-              <option value="Energy">Energy</option>
-              <option value="Consumer Disc.">Consumer Disc.</option>
-              <option value="Consumer Staples">Consumer Staples</option>
-              <option value="Industrial">Industrial</option>
-              <option value="Communication">Communication</option>
-              <option value="Real Estate">Real Estate</option>
-              <option value="Materials">Materials</option>
-              <option value="Utilities">Utilities</option>
+              <!-- 옵션은 screener.js _usSectorOptionsHtml()이 실제 데이터 섹터 값으로 채움 -->
+              <option value="all">전체 섹터</option>
             </select>
           </div>
           <div class="filter-group">
-            <label>Industry</label>
+            <label>업종</label>
             <select id="filter-industry">
-              <option value="all">All Industries</option>
+              <option value="all">전체 업종</option>
             </select>
           </div>
           <div class="filter-group">
-            <label>Country</label>
+            <label>국가</label>
             <select id="filter-country">
-              <option value="all">All Countries</option>
+              <option value="all">전체 국가</option>
             </select>
           </div>
           <div class="filter-group">
-            <label>Market Cap</label>
+            <label>시가총액</label>
             <select id="filter-cap">
-              <option value="all">Any</option>
-              <option value="mega">Mega (&gt;$500B)</option>
-              <option value="large">Large ($100–500B)</option>
-              <option value="mid">Mid ($10–100B)</option>
-              <option value="small">Small (&lt;$10B)</option>
+              <option value="all">전체</option>
+              <option value="mega">초대형 ($500B 초과)</option>
+              <option value="large">대형 ($100–500B)</option>
+              <option value="mid">중형 ($10–100B)</option>
+              <option value="small">소형 ($10B 미만)</option>
             </select>
           </div>
           <div class="filter-group">
-            <label>P/E Ratio</label>
+            <label>PER</label>
             <select id="filter-pe">
-              <option value="all">Any</option>
-              <option value="has">Has P/E</option>
-              <option value="u15">Under 15</option>
-              <option value="u20">Under 20</option>
-              <option value="u30">Under 30</option>
-              <option value="o30">Over 30</option>
-              <option value="neg">Negative</option>
+              <option value="all">전체</option>
+              <option value="has">PER 있음</option>
+              <option value="u15">15 미만</option>
+              <option value="u20">20 미만</option>
+              <option value="u30">30 미만</option>
+              <option value="o30">30 이상</option>
+              <option value="neg">적자(음수)</option>
             </select>
           </div>
         </div>
         <!-- 필터 2행 -->
         <div class="sc-filter-row sc-filter-row2">
           <div class="filter-group">
-            <label>Change %</label>
+            <label>등락률</label>
             <select id="filter-change">
-              <option value="all">Any</option>
-              <option value="up5">+5% or more</option>
-              <option value="up2">+2% or more</option>
-              <option value="up0">Positive</option>
-              <option value="down0">Negative</option>
-              <option value="down2">-2% or less</option>
-              <option value="down5">-5% or less</option>
+              <option value="all">전체</option>
+              <option value="up5">+5% 이상</option>
+              <option value="up2">+2% 이상</option>
+              <option value="up0">상승</option>
+              <option value="down0">하락</option>
+              <option value="down2">-2% 이하</option>
+              <option value="down5">-5% 이하</option>
             </select>
           </div>
           <div class="filter-group">
-            <label>52W Position</label>
+            <label>52주 위치</label>
             <select id="filter-52w">
-              <option value="all">Any</option>
-              <option value="near_high">Near High (&gt;80%)</option>
-              <option value="mid">Mid Range (20–80%)</option>
-              <option value="near_low">Near Low (&lt;20%)</option>
+              <option value="all">전체</option>
+              <option value="near_high">고점 근처 (80% 초과)</option>
+              <option value="mid">중간 (20–80%)</option>
+              <option value="near_low">저점 근처 (20% 미만)</option>
             </select>
           </div>
           <div class="filter-group search-group">
-            <label>Search</label>
-            <input type="text" id="filter-search" placeholder="Ticker or name…">
+            <label>검색</label>
+            <input type="text" id="filter-search" placeholder="티커 또는 종목명…">
           </div>
           <div class="filter-group filter-checkbox-group">
             <label class="filter-checkbox-label">
@@ -240,7 +230,7 @@
             </label>
           </div>
           <div class="sc-filter-meta">
-            <span id="filter-count-label" class="sc-result-count">— results</span>
+            <span id="filter-count-label" class="sc-result-count">— 개 종목</span>
             <span id="sc-last-updated" class="sc-last-updated"></span>
             <div class="sc-preset-wrap">
               <select id="sc-preset-select" class="sc-preset-select" title="저장된 필터 불러오기">
@@ -257,21 +247,21 @@
       <!-- 뷰 탭 + 컬럼 설정 -->
       <!-- 마켓 탭 (US / KR) -->
       <div class="sc-market-tabs">
-        <button class="sc-market-btn active" data-market="us">🇺🇸 US</button>
-        <button class="sc-market-btn" data-market="kr">🇰🇷 KR</button>
+        <button class="sc-market-btn active" data-market="us">🇺🇸 미국</button>
+        <button class="sc-market-btn" data-market="kr">🇰🇷 국내</button>
       </div>
       <!-- KR 시장 버튼 (KOSPI / KOSDAQ) — KR 모드에서만 표시 -->
       <div class="sc-kr-mkt-bar" id="sc-kr-mkt-bar" style="display:none">
         <button class="sc-kr-mkt-btn active" data-krmkt="all">전체</button>
-        <button class="sc-kr-mkt-btn" data-krmkt="KOSPI">KOSPI</button>
-        <button class="sc-kr-mkt-btn" data-krmkt="KOSDAQ">KOSDAQ</button>
+        <button class="sc-kr-mkt-btn" data-krmkt="KOSPI">코스피</button>
+        <button class="sc-kr-mkt-btn" data-krmkt="KOSDAQ">코스닥</button>
       </div>
 
       <div class="sc-view-tabs-row">
         <div class="sc-view-tabs">
-          <button class="sc-view-btn active" data-scview="overview">Overview</button>
-          <button class="sc-view-btn" data-scview="fundamental">Fundamental</button>
-          <button class="sc-view-btn" data-scview="performance">Performance</button>
+          <button class="sc-view-btn active" data-scview="overview">개요</button>
+          <button class="sc-view-btn" data-scview="fundamental">재무</button>
+          <button class="sc-view-btn" data-scview="performance">성과</button>
         </div>
         <div class="sc-col-settings-wrap">
           <button class="sc-col-btn" id="sc-col-btn" title="컬럼 표시/숨김 설정">⚙ 컬럼</button>
@@ -991,14 +981,14 @@
         </div>
       </div>
       <div class="stock-modal-stats" id="sm-stats"></div>
-      <div class="stock-modal-news-title">Recent News</div>
+      <div class="stock-modal-news-title">최근 뉴스</div>
       <div class="stock-modal-news" id="sm-news">
         <div class="sm-news-loading">뉴스를 불러오는 중…</div>
       </div>
       <div class="stock-modal-footer">
         <span id="sm-star-wrap"></span>
-        <button class="sm-news-btn" id="sm-news-btn">All News →</button>
-        <button class="sm-chart-btn" id="sm-chart-btn">Full Chart →</button>
+        <button class="sm-news-btn" id="sm-news-btn">뉴스 전체 →</button>
+        <button class="sm-chart-btn" id="sm-chart-btn">차트 크게 보기 →</button>
       </div>
     </div>
   </div>

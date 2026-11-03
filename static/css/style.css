@@ -157,9 +157,20 @@ header {
   font-weight: 500;
   color: var(--muted);
   transition: color .15s, background .15s;
+  white-space: nowrap;   /* 한글 탭 이름이 좁은 폭에서 한 글자씩 세로로 꺾이지 않게 */
+  flex-shrink: 0;
 }
 .nav-btn:hover  { color: var(--text); background: var(--bg-input); }
 .nav-btn.active { color: var(--text); background: var(--bg-input); font-weight: 600; }
+
+/* ── 헤더 반응형(중간 폭) ── 탭 9개가 한 줄에 안 들어가면 여백을 줄이고 탭 줄만 가로 스크롤 */
+@media (max-width: 1200px) {
+  header { gap: 8px; }
+  #main-nav { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; }
+  #main-nav::-webkit-scrollbar { display: none; }
+  .nav-btn { padding: 6px 8px; }
+  .global-search-input { width: 110px; }
+}
 
 /* ── 헤더 반응형(모바일) ───────────────────────────────────────────────────── */
 @media (max-width: 700px) {

@@ -24,45 +24,45 @@ let _scSelected      = new Set();  // 체크박스로 선택한 티커 (일괄 �
 const _VIEWS = {
   overview: [
     { key: null,          label: '',         cls: '',          fixed: true },
-    { key: '_no',         label: 'No',       cls: 'sc-no',     fixed: true },
-    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker', fixed: true },
-    { key: 'name',        label: 'Name',     cls: 'td-name',   fixed: true },
-    { key: 'signal',      label: 'Signal',   cls: '' },
-    { key: 'sector',      label: 'Sector',   cls: 'td-sector' },
-    { key: 'price',       label: 'Price',    cls: 'num' },
-    { key: 'change',      label: 'Change',   cls: 'num' },
-    { key: 'change_pct',  label: 'Chg %',    cls: 'num' },
-    { key: 'volume',      label: 'Volume',   cls: 'num' },
-    { key: 'market_cap',  label: 'Mkt Cap',  cls: 'num' },
+    { key: '_no',         label: '번호',       cls: 'sc-no',     fixed: true },
+    { key: 'ticker',      label: '티커',   cls: 'td-ticker', fixed: true },
+    { key: 'name',        label: '종목명',     cls: 'td-name',   fixed: true },
+    { key: 'signal',      label: '신호',   cls: '' },
+    { key: 'sector',      label: '섹터',   cls: 'td-sector' },
+    { key: 'price',       label: '현재가',    cls: 'num' },
+    { key: 'change',      label: '변동',   cls: 'num' },
+    { key: 'change_pct',  label: '등락률',    cls: 'num' },
+    { key: 'volume',      label: '거래량',   cls: 'num' },
+    { key: 'market_cap',  label: '시가총액',  cls: 'num' },
   ],
   fundamental: [
     { key: null,          label: '',          cls: '',            fixed: true },
-    { key: '_no',         label: 'No',        cls: 'sc-no',       fixed: true },
-    { key: 'ticker',      label: 'Ticker',    cls: 'td-ticker',   fixed: true },
-    { key: 'name',        label: 'Name',      cls: 'td-name',     fixed: true },
-    { key: 'signal',      label: 'Signal',    cls: '' },
-    { key: 'sector',      label: 'Sector',    cls: 'td-sector' },
-    { key: 'industry',    label: 'Industry',  cls: 'td-industry' },
-    { key: 'country',     label: 'Country',   cls: 'td-country' },
-    { key: 'market_cap',  label: 'Mkt Cap',   cls: 'num' },
-    { key: 'pe',          label: 'P/E',       cls: 'num' },
-    { key: 'eps',         label: 'EPS (TTM)', cls: 'num' },
-    { key: 'week52_high', label: '52W High',  cls: 'num' },
-    { key: 'week52_low',  label: '52W Low',   cls: 'num' },
+    { key: '_no',         label: '번호',        cls: 'sc-no',       fixed: true },
+    { key: 'ticker',      label: '티커',    cls: 'td-ticker',   fixed: true },
+    { key: 'name',        label: '종목명',      cls: 'td-name',     fixed: true },
+    { key: 'signal',      label: '신호',    cls: '' },
+    { key: 'sector',      label: '섹터',    cls: 'td-sector' },
+    { key: 'industry',    label: '업종',  cls: 'td-industry' },
+    { key: 'country',     label: '국가',   cls: 'td-country' },
+    { key: 'market_cap',  label: '시가총액',   cls: 'num' },
+    { key: 'pe',          label: 'PER',       cls: 'num' },
+    { key: 'eps',         label: 'EPS(TTM)', cls: 'num' },
+    { key: 'week52_high', label: '52주 최고',  cls: 'num' },
+    { key: 'week52_low',  label: '52주 최저',   cls: 'num' },
   ],
   performance: [
     { key: null,          label: '',         cls: '',          fixed: true },
-    { key: '_no',         label: 'No',       cls: 'sc-no',     fixed: true },
-    { key: 'ticker',      label: 'Ticker',   cls: 'td-ticker', fixed: true },
-    { key: 'name',        label: 'Name',     cls: 'td-name',   fixed: true },
-    { key: 'signal',      label: 'Signal',   cls: '' },
-    { key: 'price',       label: 'Price',    cls: 'num' },
-    { key: 'change_pct',  label: 'Chg %',    cls: 'num' },
-    { key: 'volume',      label: 'Volume',   cls: 'num' },
-    { key: 'market_cap',  label: 'Mkt Cap',  cls: 'num' },
-    { key: 'week52_high', label: '52W High', cls: 'num' },
-    { key: 'week52_low',  label: '52W Low',  cls: 'num' },
-    { key: '_52wpos',     label: '52W Pos',  cls: 'num' },
+    { key: '_no',         label: '번호',       cls: 'sc-no',     fixed: true },
+    { key: 'ticker',      label: '티커',   cls: 'td-ticker', fixed: true },
+    { key: 'name',        label: '종목명',     cls: 'td-name',   fixed: true },
+    { key: 'signal',      label: '신호',   cls: '' },
+    { key: 'price',       label: '현재가',    cls: 'num' },
+    { key: 'change_pct',  label: '등락률',    cls: 'num' },
+    { key: 'volume',      label: '거래량',   cls: 'num' },
+    { key: 'market_cap',  label: '시가총액',  cls: 'num' },
+    { key: 'week52_high', label: '52주 최고', cls: 'num' },
+    { key: 'week52_low',  label: '52주 최저',  cls: 'num' },
+    { key: '_52wpos',     label: '52주 위치',  cls: 'num' },
   ],
 };
 
@@ -121,7 +121,7 @@ async function _applyFilterValues(vals) {
   if (targetMarket !== _scMarket) await _switchScMarket(targetMarket);
 
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('filter-sector',   vals.sector);
+  set('filter-sector',   targetMarket === 'kr' ? vals.sector : (_US_SECTOR_LEGACY[vals.sector] || vals.sector));
   set('filter-country',  vals.country);
   set('filter-cap',      vals.cap);
   set('filter-pe',       vals.pe);
@@ -263,6 +263,7 @@ async function loadScreenerData(showSpinner = false) {
     _scStocks = stocks;
     _scSignalMap = sigMap;
     window._scStocks = _scStocks;
+    _populateUsSectorFilter();
     _populateIndustryFilter();
     _populateCountryFilter();
     renderScreener();
@@ -355,23 +356,44 @@ function _startScAutoRefresh() {
 }
 
 // ── 드롭다운 채우기 ──────────────────────────────────────────────────────────
+// US 섹터 옵션 — 값은 데이터 원문(영어), 글자는 한글. 데이터가 아직 없으면 기본 목록 사용.
+const _US_SECTORS_DEFAULT = ['Technology', 'Finance', 'Healthcare', 'Energy', 'Consumer Disc.', 'Consumer Staples',
+  'Industrial', 'Telecommunications', 'Real Estate', 'Basic Materials', 'Utilities', 'Other'];
+// 예전 옵션 값(실제 데이터에 없던 값)으로 저장된 프리셋 호환
+const _US_SECTOR_LEGACY = { 'Communication': 'Telecommunications', 'Materials': 'Basic Materials' };
+const _byKo = f => (a, b) => f(a).localeCompare(f(b), 'ko');
+
+function _usSectorOptionsHtml(current) {
+  const fromData = [...new Set(_scStocks.map(s => s.sector).filter(Boolean))];
+  const list = (fromData.length ? fromData : _US_SECTORS_DEFAULT).sort(_byKo(koSector));
+  return '<option value="all">전체 섹터</option>' +
+    list.map(v => `<option value="${v}"${v === current ? ' selected' : ''}>${koSector(v)}</option>`).join('');
+}
+
+function _populateUsSectorFilter() {
+  if (_scMarket === 'kr') return;
+  const sel = document.getElementById('filter-sector');
+  // 이미 채워져 있으면 그대로 둔다 (30초 자동 갱신 때 열려 있는 드롭다운이 닫히지 않게)
+  if (sel && sel.options.length <= 1) sel.innerHTML = _usSectorOptionsHtml(sel.value);
+}
+
 function _populateIndustryFilter() {
   const sel = document.getElementById('filter-industry');
   if (!sel) return;
   const current = sel.value;
   const sector = document.getElementById('filter-sector').value;
   const subset = sector === 'all' ? _scStocks : _scStocks.filter(s => s.sector === sector);
-  const industries = [...new Set(subset.map(s => s.industry).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="all">All Industries</option>' +
-    industries.map(i => `<option value="${i}"${i === current ? ' selected' : ''}>${i}</option>`).join('');
+  const industries = [...new Set(subset.map(s => s.industry).filter(Boolean))].sort(_byKo(koIndustry));
+  sel.innerHTML = '<option value="all">전체 업종</option>' +
+    industries.map(i => `<option value="${i}"${i === current ? ' selected' : ''}>${koIndustry(i)}</option>`).join('');
 }
 
 function _populateCountryFilter() {
   const sel = document.getElementById('filter-country');
   if (!sel || sel.options.length > 2) return;  // 이미 채워진 경우 스킵
   const countries = [...new Set(_scStocks.map(s => s.country).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="all">All Countries</option>' +
-    countries.map(c => `<option value="${c}">${c}</option>`).join('');
+  sel.innerHTML = '<option value="all">전체 국가</option>' +
+    countries.map(c => `<option value="${c}">${koCountry(c)}</option>`).join('');
 }
 
 // ── SPAC 워런트/유닛/우선주 등 비정상 종목 판별 ──────────────────────────────
@@ -459,10 +481,13 @@ function _getFilteredStocks() {
   const _cmpCol = (a, b, col, dir) => {
     let av = a[col], bv = b[col];
     if (col === '_52wpos') { av = _calc52wPos(a); bv = _calc52wPos(b); }
+    // 화면에 한글로 보이는 컬럼은 한글 기준으로 정렬
+    const ko = { sector: koSector, industry: koIndustry, country: koCountry }[col];
+    if (ko) { av = av == null ? av : ko(av); bv = bv == null ? bv : ko(bv); }
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
-    if (typeof av === 'string') return av.localeCompare(bv) * dir;
+    if (typeof av === 'string') return av.localeCompare(bv, 'ko') * dir;
     return (av - bv) * dir;
   };
   list.sort((a, b) => {
@@ -514,7 +539,7 @@ function renderScreener(resetPage = false) {
   const start = (_scPage - 1) * _SC_PAGE_SIZE;
   const page  = list.slice(start, start + _SC_PAGE_SIZE);
 
-  document.getElementById('filter-count-label').textContent = `${total.toLocaleString()} results`;
+  document.getElementById('filter-count-label').textContent = `${total.toLocaleString()}개 종목`;
 
   const body = document.getElementById('screener-body');
   if (_scView === 'overview') {
@@ -587,7 +612,7 @@ function _rowOverview(s, no) {
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
     ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
-    ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>`)}
+    ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector ? koSector(s.sector) : '—'}</span></td>`)}
     ${_hd('price',      `<td class="num">${priceCell}</td>`)}
     ${_hd('change',     `<td class="num">${chgCell}</td>`)}
     ${_hd('change_pct', `<td class="num">${price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>`)}
@@ -612,9 +637,9 @@ function _rowFundamental(s, no) {
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
     ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
-    ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector || '—'}</span></td>`)}
-    ${_hd('industry',   `<td class="td-industry">${s.industry || '—'}</td>`)}
-    ${_hd('country',    `<td class="td-country"><span class="sc-country">${s.country || '—'}</span></td>`)}
+    ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector ? koSector(s.sector) : '—'}</span></td>`)}
+    ${_hd('industry',   `<td class="td-industry">${s.industry ? koIndustry(s.industry) : '—'}</td>`)}
+    ${_hd('country',    `<td class="td-country"><span class="sc-country">${s.country ? koCountry(s.country) : '—'}</span></td>`)}
     ${_hd('market_cap', `<td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>`)}
     ${_hd('pe',         `<td class="num">${peStr}</td>`)}
     ${_hd('eps',        `<td class="num">${epsStr}</td>`)}
@@ -657,6 +682,7 @@ function _secKey(sector) {
     'Energy': 'energy', 'Consumer Disc.': 'consd', 'Consumer Staples': 'conss',
     'Industrial': 'ind', 'Communication': 'comm', 'Real Estate': 're',
     'Materials': 'mat', 'Utilities': 'util',
+    'Telecommunications': 'comm', 'Basic Materials': 'mat',
   };
   return map[sector] || 'other';
 }
@@ -724,9 +750,9 @@ function bindScreenerEvents() {
     const sel = document.getElementById('filter-industry');
     if (!sel) return;
     const subset = sector === 'all' ? _scStocks : _scStocks.filter(s => s.sector === sector);
-    const industries = [...new Set(subset.map(s => s.industry).filter(Boolean))].sort();
-    sel.innerHTML = '<option value="all">All Industries</option>' +
-      industries.map(i => `<option value="${i}">${i}</option>`).join('');
+    const industries = [...new Set(subset.map(s => s.industry).filter(Boolean))].sort(_byKo(koIndustry));
+    sel.innerHTML = '<option value="all">전체 업종</option>' +
+      industries.map(i => `<option value="${i}">${koIndustry(i)}</option>`).join('');
     renderScreener();
   });
 
@@ -790,16 +816,16 @@ function openStockModal(ticker) {
   // 통계 그리드
   const pos = _calc52wPos(s);
   const stats = [
-    { label: 'Sector',    value: s.sector   || '—' },
-    { label: 'Industry',  value: s.industry || '—' },
-    { label: 'Country',   value: s.country  || '—' },
-    { label: 'Mkt Cap',   value: s.market_cap ? fmtCap(s.market_cap) : '—' },
-    { label: 'Volume',    value: s.volume     ? fmtVol(s.volume)      : '—' },
-    { label: 'P/E',       value: s.pe  != null ? s.pe.toFixed(1)  : '—' },
-    { label: 'EPS (TTM)', value: s.eps != null ? fmt$(s.eps)       : '—' },
-    { label: '52W High',  value: s.week52_high ? fmt$(s.week52_high) : '—' },
-    { label: '52W Low',   value: s.week52_low  ? fmt$(s.week52_low)  : '—' },
-    { label: '52W Pos',   value: pos !== null ? pos + '%' : '—' },
+    { label: '섹터',    value: s.sector   ? koSector(s.sector)     : '—' },
+    { label: '업종',  value: s.industry ? koIndustry(s.industry) : '—' },
+    { label: '국가',   value: s.country  ? koCountry(s.country)   : '—' },
+    { label: '시가총액',   value: s.market_cap ? fmtCap(s.market_cap) : '—' },
+    { label: '거래량',    value: s.volume     ? fmtVol(s.volume)      : '—' },
+    { label: 'PER',       value: s.pe  != null ? s.pe.toFixed(1)  : '—' },
+    { label: 'EPS(TTM)', value: s.eps != null ? fmt$(s.eps)       : '—' },
+    { label: '52주 최고',  value: s.week52_high ? fmt$(s.week52_high) : '—' },
+    { label: '52주 최저',   value: s.week52_low  ? fmt$(s.week52_low)  : '—' },
+    { label: '52주 위치',   value: pos !== null ? pos + '%' : '—' },
   ];
   document.getElementById('sm-stats').innerHTML = stats.map(st =>
     `<div class="sm-stat"><span class="sm-stat-label">${st.label}</span><span class="sm-stat-value">${st.value}</span></div>`
@@ -836,11 +862,11 @@ function openStockModal(ticker) {
   document.body.style.overflow = 'hidden';
 
   // 뉴스 비동기 로드
-  document.getElementById('sm-news').innerHTML = '<div class="sm-news-loading">Loading…</div>';
+  document.getElementById('sm-news').innerHTML = '<div class="sm-news-loading">뉴스를 불러오는 중…</div>';
   api('/api/stock-news/' + ticker).then(items => {
     const news = (items || []).slice(0, 3);
     if (!news.length) {
-      document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">No recent news.</div>';
+      document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">최근 뉴스가 없습니다.</div>';
       return;
     }
     document.getElementById('sm-news').innerHTML = news.map(n => {
@@ -854,7 +880,7 @@ function openStockModal(ticker) {
       </div>`;
     }).join('');
   }).catch(() => {
-    document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">Failed to load news.</div>';
+    document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">뉴스를 불러오지 못했습니다.</div>';
   });
 }
 
@@ -953,21 +979,9 @@ function _populateKrSectorFilter() {
 function _restoreUsSectorFilter() {
   const sel = document.getElementById('filter-sector');
   if (!sel) return;
-  sel.innerHTML = `
-    <option value="all">All Sectors</option>
-    <option value="Technology">Technology</option>
-    <option value="Finance">Finance</option>
-    <option value="Healthcare">Healthcare</option>
-    <option value="Energy">Energy</option>
-    <option value="Consumer Disc.">Consumer Disc.</option>
-    <option value="Consumer Staples">Consumer Staples</option>
-    <option value="Industrial">Industrial</option>
-    <option value="Communication">Communication</option>
-    <option value="Real Estate">Real Estate</option>
-    <option value="Materials">Materials</option>
-    <option value="Utilities">Utilities</option>`;
+  sel.innerHTML = _usSectorOptionsHtml('all');
   const lbl = sel.closest('.filter-group')?.querySelector('label');
-  if (lbl) lbl.textContent = 'Sector';
+  if (lbl) lbl.textContent = '섹터';
   ['filter-industry', 'filter-country'].forEach(id => {
     const el = document.getElementById(id)?.closest('.filter-group');
     if (el) el.style.display = '';
@@ -1089,7 +1103,7 @@ function renderKrScreener() {
   const colSets = {
     overview: [
       { key: null,         label: '',         cls: '' },
-      { key: '_no',        label: 'No',       cls: 'sc-no' },
+      { key: '_no',        label: '번호',       cls: 'sc-no' },
       { key: 'code',       label: '종목코드', cls: 'td-ticker' },
       { key: 'name',       label: '종목명',   cls: 'td-name' },
       { key: 'signal',     label: '신호',     cls: '' },
@@ -1102,13 +1116,13 @@ function renderKrScreener() {
     ],
     fundamental: [
       { key: null,         label: '',         cls: '' },
-      { key: '_no',        label: 'No',       cls: 'sc-no' },
+      { key: '_no',        label: '번호',       cls: 'sc-no' },
       { key: 'code',       label: '종목코드', cls: 'td-ticker' },
       { key: 'name',       label: '종목명',   cls: 'td-name' },
       { key: 'signal',     label: '신호',     cls: '' },
       { key: 'market',     label: '시장',     cls: '' },
       { key: 'price',      label: '현재가',   cls: 'num' },
-      { key: 'pe',         label: 'P/E',      cls: 'num' },
+      { key: 'pe',         label: 'PER',      cls: 'num' },
       { key: 'eps',        label: 'EPS',      cls: 'num' },
       { key: 'week52_high',label: '52W 고',   cls: 'num' },
       { key: 'week52_low', label: '52W 저',   cls: 'num' },
@@ -1116,7 +1130,7 @@ function renderKrScreener() {
     ],
     performance: [
       { key: null,         label: '',         cls: '' },
-      { key: '_no',        label: 'No',       cls: 'sc-no' },
+      { key: '_no',        label: '번호',       cls: 'sc-no' },
       { key: 'code',       label: '종목코드', cls: 'td-ticker' },
       { key: 'name',       label: '종목명',   cls: 'td-name' },
       { key: 'signal',     label: '신호',     cls: '' },
@@ -1183,7 +1197,7 @@ function renderKrScreener() {
   }).join('');
 
   const countEl = document.getElementById('filter-count-label');
-  if (countEl) countEl.textContent = `${total.toLocaleString()} results`;
+  if (countEl) countEl.textContent = `${total.toLocaleString()}개 종목`;
   _renderPagination(total);
 }
 
@@ -1232,7 +1246,7 @@ function openKrStockModal(ticker) {
     { label: '시장',     value: s.market || '—' },
     { label: '시가총액', value: s.market_cap ? _fmtKrCap(s.market_cap) : '—' },
     { label: '거래량',   value: s.volume ? _fmtKrVol(s.volume) : '—' },
-    { label: 'P/E',      value: s.pe ? s.pe.toFixed(1) : '—' },
+    { label: 'PER',      value: s.pe ? s.pe.toFixed(1) : '—' },
     { label: 'EPS',      value: s.eps ? _fmtKrw(s.eps) : '—' },
     { label: '52W 고',   value: s.week52_high ? _fmtKrw(s.week52_high) : '—' },
     { label: '52W 저',   value: s.week52_low  ? _fmtKrw(s.week52_low)  : '—' },
