@@ -18,6 +18,41 @@ function fmtPrice(v, ticker) { return isKrTicker(ticker) ? fmtKrw(v) : fmt$(v); 
 // 변동액: 부호를 통화 기호 앞에 (+$1.20 / -₩18,000) — 기존 fmt$는 "$-6.56"으로 나왔음
 function fmtChange(v, ticker) { return (v >= 0 ? '+' : '-') + fmtPrice(Math.abs(v), ticker); }
 
+// ── 달러/원 환율 (포트폴리오 원화 환산용) ─────────────────────────────────────
+// 홈 화면 "달러/원"과 같은 값(/api/indices의 USD/KRW, 서버가 30초마다 갱신)을 재사용한다.
+// 받아오지 못하면 마지막으로 받은 값(localStorage)을 쓰고, 그것도 없으면 임시값 + 경고 표시.
+const FX_KEY = 'stockview_fx_usdkrw';   // { rate, ts } — 새 키(기존 저장 데이터와 무관)
+const FX_FALLBACK = 1350;
+let _fx = null;   // { rate, ts, source: 'live' | 'saved' | 'fallback' }
+
+function _setUsdKrwFromIndices(indices) {
+  const r = (indices || []).find(x => x.name === 'USD/KRW');
+  if (!r || !(r.value > 0)) return;
+  _fx = { rate: r.value, ts: Date.now(), source: 'live' };
+  try { localStorage.setItem(FX_KEY, JSON.stringify({ rate: r.value, ts: _fx.ts })); } catch {}
+}
+
+// 동기 조회 (이미 받아둔 값 → 저장된 값 → 임시값)
+function usdKrw() {
+  if (_fx) return _fx;
+  try {
+    const saved = JSON.parse(localStorage.getItem(FX_KEY));
+    if (saved && saved.rate > 0) return (_fx = { ...saved, source: 'saved' });
+  } catch {}
+  return { rate: FX_FALLBACK, ts: 0, source: 'fallback' };
+}
+
+// 1분 이내 값이면 그대로, 아니면 서버에서 새로 받는다
+async function fetchUsdKrw() {
+  if (!_fx || _fx.source !== 'live' || Date.now() - _fx.ts > 60 * 1000) {
+    try { _setUsdKrwFromIndices(await api('/api/indices')); } catch {}
+  }
+  return usdKrw();
+}
+
+// 원화 금액 표시 (부호 옵션: 손익처럼 +/-를 붙일 때)
+function fmtKrwSigned(v, signed) { return (signed ? (v >= 0 ? '+' : '-') : (v < 0 ? '-' : '')) + fmtKrw(Math.abs(v)); }
+
 // ── 한글 표시 변환표 ─────────────────────────────────────────────────────────
 // 데이터 값(필터·정렬·localStorage 기준)은 영어 그대로 두고, 화면에 그릴 때만 한글로 바꾼다.
 // 표에 없는 값은 원래 값을 그대로 보여준다. (KR 종목은 섹터가 이미 한글)
@@ -735,6 +770,7 @@ async function loadHome() {
 
 // ── 티커 테이프 ──────────────────────────────────────────────────────────────
 function buildTickerTape(indices, stocks) {
+  _setUsdKrwFromIndices(indices);   // 포트폴리오 원화 환산용 환율도 같이 갱신
   const tape = document.getElementById('ticker-inner');
   const items = [
     ...indices.map(i => ({ label: koIndex(i.name), value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct })),
@@ -932,14 +968,17 @@ function renderHomePortfolioSummary() {
   }
   const us = window._scStocks || [];
   const kr = window._krStocks || [];
+  // 국내는 원화 그대로, 해외는 달러/원 환율로 원화 환산해 합산 (원·달러가 섞여 더해지던 문제)
+  const rate = usdKrw().rate;
   let totalCost = 0, totalValue = 0, found = 0;
   tickers.forEach(t => {
     const h = data[t];
     const s = us.find(x => x.ticker === t) || kr.find(x => x.ticker === t);
     if (!s || s.price == null) return;
     found++;
-    totalCost  += h.qty * h.avgPrice;
-    totalValue += h.qty * s.price;
+    const fx = isKrTicker(t) ? 1 : rate;
+    totalCost  += h.qty * h.avgPrice * fx;
+    totalValue += h.qty * s.price * fx;
   });
   if (!found) {
     el.innerHTML = `<div class="home-my-empty">데이터 불러오는 중…</div>`;
@@ -961,8 +1000,8 @@ function renderHomePortfolioSummary() {
 
   el.innerHTML = `
     <div class="home-my-count">${tickers.length}개 보유 종목</div>
-    <div class="home-pf-value">${fmt$(totalValue)}</div>
-    <div class="home-pf-pnl ${cls}">${pnl >= 0 ? '+' : '-'}${fmt$(Math.abs(pnl))} (${fmtPct(pnlPct)})</div>
+    <div class="home-pf-value">${fmtKrw(totalValue)}</div>
+    <div class="home-pf-pnl ${cls}">${fmtKrwSigned(pnl, true)} (${fmtPct(pnlPct)})</div>
     ${hitHtml}`;
 }
 

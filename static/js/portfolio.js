@@ -80,7 +80,8 @@ function _fmtPnlPct(n) {
 function _clsPnl(n) { return n == null ? '' : n >= 0 ? 'up' : 'down'; }
 
 // ── 도넛 차트 ─────────────────────────────────────────────────────────────────
-function _drawDonut(svgId, legendId, slices, total) {
+// fmtVal: 툴팁 금액 표시 (보유 도넛은 원화 합계, 지수 섹터 도넛은 시가총액 $B 단위)
+function _drawDonut(svgId, legendId, slices, total, fmtVal = fmtKrw) {
   const W = 180, H = 180, R = 78, r = 50;
   const el = document.getElementById(svgId);
   if (!el || !slices.length) return;
@@ -107,7 +108,7 @@ function _drawDonut(svgId, legendId, slices, total) {
       if (!tooltip) return;
       tooltip.style.display = 'block';
       tooltip.innerHTML = `<strong>${d.data.label}</strong><br>
-        $${d.data.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br>
+        ${fmtVal(d.data.value)}<br>
         <span style="color:#8b949e">${pct}%</span>`;
     })
     .on('mousemove', event => {
@@ -190,7 +191,7 @@ function _drawIndexSectorDonut() {
   const slices = Object.entries(capMap)
     .map(([key, value]) => ({ label: koSector(key), value, color: _SECTOR_COLORS[key] || _SECTOR_COLORS['Other'] }))
     .sort((a, b) => b.value - a.value);
-  _drawDonut('pt-index-sector-donut', 'pt-index-sector-legend', slices, totalCap);
+  _drawDonut('pt-index-sector-donut', 'pt-index-sector-legend', slices, totalCap, fmtCap);
 }
 
 function _drawReturnChart(rows) {
@@ -204,7 +205,7 @@ function _drawReturnChart(rows) {
   const maxAbs = Math.max(...data.map(r => Math.abs(r.pnlPct)), 0.01);
   const BAR_H  = 22;
   const GAP    = 4;
-  const LABEL_W = 48;
+  const LABEL_W = Math.max(48, ...data.map(r => r.ticker.length * 7 + 6));
   const VALUE_W = 46;
   const W = el.clientWidth || 280;
   const barW = W - LABEL_W - VALUE_W - 4;
@@ -243,8 +244,9 @@ function _recordPtSnapshot(totalValue) {
   const last = history[history.length - 1];
   if (last && now - last.ts < 5 * 60 * 1000) {
     last.v = totalValue; // 같은 시간대면 값만 갱신
+    last.cur = 'KRW';
   } else {
-    history.push({ ts: now, v: totalValue });
+    history.push({ ts: now, v: totalValue, cur: 'KRW' });   // 11-06부터 원화 기록 (이전 기록은 cur 없음 = 달러)
   }
   if (history.length > _PT_HISTORY_MAX) history.splice(0, history.length - _PT_HISTORY_MAX);
   localStorage.setItem(_PT_HISTORY_KEY, JSON.stringify(history));
@@ -255,6 +257,9 @@ function _drawHistoryChart() {
   if (!el) return;
   let history = [];
   try { history = JSON.parse(localStorage.getItem(_PT_HISTORY_KEY)) || []; } catch {}
+  // 예전(달러) 기록은 현재 환율로 환산한 근사치로 이어 그린다 — 저장된 값은 건드리지 않음
+  const rate = usdKrw().rate;
+  history = history.map(d => d.cur === 'KRW' ? d : { ...d, v: d.v * rate, cur: 'KRW' });
   if (history.length < 2) {
     el.innerHTML = '<span class="pt-history-empty">데이터가 쌓이면 차트가 표시됩니다 (방문할 때마다 기록됩니다)</span>';
     return;
@@ -306,7 +311,7 @@ function _renderHistorySvg(history, bench) {
 
   const W = el.clientWidth || 600;
   const H = 140;
-  const PAD = { t: 12, r: 10, b: 28, l: 58 };
+  const PAD = { t: 12, r: 92, b: 28, l: 62 };   // r: 오른쪽 끝 현재값·S&P500 글자가 잘리지 않게
   const iW = W - PAD.l - PAD.r;
   const iH = H - PAD.t - PAD.b;
 
@@ -327,7 +332,7 @@ function _renderHistorySvg(history, bench) {
   const areaPath = `M${firstX},${firstY} L${points.split(' ').slice(1).join(' L')} L${lastX},${PAD.t + iH} L${firstX},${PAD.t + iH} Z`;
 
   // Y축 레이블 (최대/최소/현재)
-  const fmt = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmt = v => v >= 1e8 ? (v / 1e8).toFixed(2) + '억' : v >= 1e4 ? Math.round(v / 1e4).toLocaleString('ko-KR') + '만' : fmtKrw(v);
   const curVal = history[history.length - 1].v;
   const isUp = curVal >= history[0].v;
   const lineColor = isUp ? 'var(--green)' : 'var(--red)';
@@ -420,7 +425,8 @@ async function exportPortfolioCSV() {
     }
   } catch {}
 
-  const headers = ['티커', '수량', '평균단가', '종목명', '현재가', '그룹', '메모', '목표가'];
+  const rate    = (await fetchUsdKrw()).rate;
+  const headers = ['티커', '수량', '평균단가', '종목명', '현재가', '그룹', '메모', '목표가', '통화', '평가금액(원)'];
   const rows = tickers.map(t => {
     const { qty, avgPrice } = data[t];
     const s = priceMap[t] || {};
@@ -432,6 +438,8 @@ async function exportPortfolioCSV() {
       _csvCell(PTG.get(t) || ''),
       _csvCell(n.memo || ''),
       n.target ?? '',
+      isKrTicker(t) ? 'KRW' : 'USD',
+      s.price != null ? Math.round(qty * s.price * (isKrTicker(t) ? 1 : rate)) : '',
     ].join(',');
   });
 
@@ -523,21 +531,31 @@ async function renderPortfolio() {
   } catch {}
 
   const data = PT.load();
-  let totalCost = 0, totalValue = 0;
+  // 통화: 국내는 원화 그대로, 해외는 달러/원 환율로 원화 환산 (A안 — 매수·평가 모두 현재 환율)
+  const fx   = await fetchUsdKrw();
+  const rate = fx.rate;
+  let totalCost = 0, totalValue = 0, usdCost = 0, usdValue = 0;
 
   const rows = tickers.map(ticker => {
     const { qty, avgPrice } = data[ticker];
     const stock = priceMap[ticker] || {};
+    const isKr  = isKrTicker(ticker);
+    const mult  = isKr ? 1 : rate;
     const curPrice = stock.price || null;
-    const cost     = qty * avgPrice;
-    const value    = curPrice ? qty * curPrice : null;
-    const pnl      = value != null ? value - cost : null;
-    const pnlPct   = pnl  != null ? (pnl / cost) * 100 : null;
+    // N = 종목 원래 통화(국내 원·해외 달러), cost/value/pnl = 원화
+    const costN  = qty * avgPrice;
+    const valueN = curPrice ? qty * curPrice : null;
+    const pnlN   = valueN != null ? valueN - costN : null;
+    const cost   = costN * mult;
+    const value  = valueN != null ? valueN * mult : null;
+    const pnl    = value != null ? value - cost : null;
+    const pnlPct = pnl  != null ? (pnl / cost) * 100 : null;
 
-    if (value  != null) totalValue += value;
+    if (value != null) totalValue += value;
     totalCost += cost;
+    if (!isKr) { usdCost += costN; if (valueN != null) usdValue += valueN; }
 
-    return { ticker, qty, avgPrice, curPrice, cost, value, pnl, pnlPct, stock };
+    return { ticker, isKr, qty, avgPrice, curPrice, costN, valueN, pnlN, cost, value, pnl, pnlPct, stock };
   });
 
   const totalPnl    = totalValue - totalCost;
@@ -563,20 +581,37 @@ async function renderPortfolio() {
     `<option value="${g}" ${g === current ? 'selected' : ''}>${g || '(없음)'}</option>`
   ).join('') + `<option value="__new__">+ 새 그룹...</option>`;
 
+  // 금액 표시: 국내 ₩, 해외 ₩(달러) — n은 원래 통화 금액
+  const usdSub = (n, signed) => `<span class="pt-usd">(${signed ? (n >= 0 ? '+' : '-') : ''}${fmt$(Math.abs(n))})</span>`;
+  const money  = (r, n, signed = false) => n == null ? '—'
+    : r.isKr ? fmtKrwSigned(n, signed)
+    : `${fmtKrwSigned(n * rate, signed)} ${usdSub(n, signed)}`;
+  const hasUsd = rows.some(r => !r.isKr);
+  const usdNote = n => hasUsd ? `<div class="pt-sum-sub">해외 ${fmt$(n)} 포함</div>` : '';
+  const usdPnlNote = hasUsd && totalValue > 0
+    ? `<div class="pt-sum-sub">해외 ${usdValue - usdCost >= 0 ? '+' : '-'}${fmt$(Math.abs(usdValue - usdCost))}</div>` : '';
+  const fxNote = !hasUsd ? ''
+    : fx.source === 'fallback'
+      ? `<span class="pt-fx pt-fx-warn">⚠ 환율을 불러오지 못해 임시 ${fmtKrw(rate)}/달러 적용</span>`
+      : `<span class="pt-fx">적용 환율 1달러 = ${rate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원 (달러/원${fx.source === 'saved' ? ' · 마지막 저장값' : ' 실시간'})</span>`;
+
   // 요약 카드
   const summaryHtml = `
     <div class="pt-summary">
       <div class="pt-sum-card">
         <div class="pt-sum-label">총 투자금액</div>
-        <div class="pt-sum-val">$${totalCost.toLocaleString('en-US', {minimumFractionDigits:2})}</div>
+        <div class="pt-sum-val">${fmtKrw(totalCost)}</div>
+        ${usdNote(usdCost)}
       </div>
       <div class="pt-sum-card">
         <div class="pt-sum-label">현재 평가금액</div>
-        <div class="pt-sum-val">$${totalValue > 0 ? totalValue.toLocaleString('en-US', {minimumFractionDigits:2}) : '—'}</div>
+        <div class="pt-sum-val">${totalValue > 0 ? fmtKrw(totalValue) : '—'}</div>
+        ${totalValue > 0 ? usdNote(usdValue) : ''}
       </div>
       <div class="pt-sum-card">
         <div class="pt-sum-label">총 손익</div>
-        <div class="pt-sum-val ${_clsPnl(totalPnl)}">${_fmtPnl(totalValue > 0 ? totalPnl : null)}</div>
+        <div class="pt-sum-val ${_clsPnl(totalPnl)}">${totalValue > 0 ? fmtKrwSigned(totalPnl, true) : '—'}</div>
+        ${usdPnlNote}
       </div>
       <div class="pt-sum-card">
         <div class="pt-sum-label">총 수익률</div>
@@ -598,7 +633,7 @@ async function renderPortfolio() {
             <th class="num">수량</th>
             <th class="num">평균단가</th>
             <th class="num">현재가</th>
-            <th class="num">손익($)</th>
+            <th class="num">손익</th>
             <th class="num">수익률(%)</th>
             <th class="num">투자금액</th>
             <th class="num">평가금액</th>
@@ -626,12 +661,12 @@ async function renderPortfolio() {
                 </td>
                 <td>${signalBadgeHtml(r.ticker, sigMap)}</td>
                 <td class="num">${r.qty.toLocaleString()}</td>
-                <td class="num">$${r.avgPrice.toFixed(2)}</td>
-                <td class="num">${r.curPrice ? fmt$(r.curPrice) : '—'}</td>
-                <td class="num ${cls}">${_fmtPnl(r.pnl)}</td>
+                <td class="num">${money(r, r.avgPrice)}</td>
+                <td class="num">${money(r, r.curPrice)}</td>
+                <td class="num ${cls}">${money(r, r.pnlN, true)}</td>
                 <td class="num ${cls}">${_fmtPnlPct(r.pnlPct)}</td>
-                <td class="num">$${r.cost.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-                <td class="num">${r.value != null ? '$' + r.value.toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</td>
+                <td class="num">${money(r, r.costN)}</td>
+                <td class="num">${money(r, r.valueN)}</td>
                 <td onclick="event.stopPropagation()">
                   <input type="text" class="wl-memo-input" placeholder="메모"
                          value="${_wlEsc(PTN.get(r.ticker).memo)}"
@@ -691,6 +726,7 @@ async function renderPortfolio() {
   container.innerHTML = `
     <div class="pt-toolbar">
       <span class="pt-count-label">${tickers.length}개 종목</span>
+      ${fxNote}
       <span class="pt-updated">업데이트: ${updatedAt}</span>
     </div>
     ${summaryHtml}
@@ -751,11 +787,24 @@ function openPtModal(ticker = '', qty = '', avgPrice = '') {
 
   t.value = ticker;
   t.disabled = !!ticker;   // 수정 시 티커 변경 불가
+  _ptUpdatePriceLabel();
+  t.oninput = _ptUpdatePriceLabel;
   q.value = qty;
   p.value = avgPrice;
 
   modal.style.display = 'flex';
   (ticker ? q : t).focus();
+}
+
+// 평균 매수가는 종목 원래 통화로 입력 (국내 원, 해외 달러) — 저장 형식은 그대로
+function _ptUpdatePriceLabel() {
+  const t   = (document.getElementById('pt-modal-ticker').value || '').trim().toUpperCase();
+  const lbl = document.getElementById('pt-modal-price-label');
+  const inp = document.getElementById('pt-modal-price');
+  if (!lbl || !inp) return;
+  const kr = isKrTicker(t) || /^\d{6}$/.test(t);
+  lbl.textContent = !t ? '평균 매수가 (미국: 달러 · 국내: 원)' : kr ? '평균 매수가 (원)' : '평균 매수가 (달러)';
+  inp.placeholder = kr ? '70000' : '150.00';
 }
 
 function closePtModal() {
