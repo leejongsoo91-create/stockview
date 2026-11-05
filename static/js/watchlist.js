@@ -266,11 +266,12 @@ async function renderWatchlist() {
             const pct   = s.change_pct || 0;
             const cls   = pct >= 0 ? 'up' : 'down';
             const bgCls = pct >= 0 ? 'up-bg' : 'down-bg';
-            const price = s.price ? fmt$(s.price) : '—';
-            const chg   = s.change != null ? `${s.change >= 0 ? '+' : ''}${fmt$(s.change)}` : '—';
-            const cap   = s.market_cap ? fmtCap(s.market_cap) : '—';
-            const hi    = s.week52_high ? fmt$(s.week52_high) : '—';
-            const lo    = s.week52_low  ? fmt$(s.week52_low)  : '—';
+            const t     = s.ticker;   // 국내(.KS/.KQ)면 원화·조/억, 미국이면 달러
+            const price = s.price ? fmtPrice(s.price, t) : '—';
+            const chg   = s.change != null ? fmtChange(s.change, t) : '—';
+            const cap   = s.market_cap ? (isKrTicker(t) ? fmtKrCap(s.market_cap) : fmtCap(s.market_cap)) : '—';
+            const hi    = s.week52_high ? fmtPrice(s.week52_high, t) : '—';
+            const lo    = s.week52_low  ? fmtPrice(s.week52_low, t)  : '—';
             return `
               <tr onclick="navigateToChart('${s.ticker}')">
                 <td onclick="event.stopPropagation()" class="sc-check-cell">
@@ -286,7 +287,7 @@ async function renderWatchlist() {
                     ${groupOptionsHtml(WLG.get(s.ticker))}
                   </select>
                 </td>
-                <td class="td-sector">${s.sector ? koSector(s.sector) : '—'}</td>
+                <td class="td-sector" title="${s.sector ? koSector(s.sector) : ''}">${s.sector ? koSector(s.sector) : '—'}</td>
                 <td>${signalBadgeHtml(s.ticker, sigMap)}</td>
                 <td class="num">${price}</td>
                 <td class="num ${cls}">${chg}</td>

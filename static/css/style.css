@@ -2379,7 +2379,9 @@ mark.kw-hl {
 }
 .wl-table tbody tr:hover { background: var(--bg-input); }
 .wl-table tbody td { padding: 10px 12px; }
-.wl-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.wl-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 좁은 화면에서 국내 업종명(반도체와반도체장비 등)이 한 글자씩 세로로 꺾이지 않게 — 한 줄 + … */
+.wl-table tbody td.td-sector { white-space: nowrap; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── PORTFOLIO ─────────────────────────────────────────────────────────────── */
 .pt-nav-btn { color: #7ee787 !important; }

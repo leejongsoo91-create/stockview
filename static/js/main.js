@@ -9,6 +9,15 @@ function fmtVol(n){ if(n >= 1e9) return (n/1e9).toFixed(2)+'B'; if(n >= 1e6) ret
 function fmtCap(n){ if(n >= 1000) return '$'+(n/1000).toFixed(2)+'T'; return '$'+n.toFixed(0)+'B'; }
 function colorCls(n){ return n >= 0 ? 'up' : 'down'; }
 
+// 국내 종목(005930.KS 등)은 가격이 원, 시가총액이 원 단위 — 달러 함수(fmt$/fmtCap)를 쓰면
+// "$201,500.00", "$1838654600000.00T"처럼 나온다. 관심종목처럼 미국·국내가 섞이는 표에서 사용.
+function isKrTicker(t) { return /\.(KS|KQ)$/.test(t || ''); }
+function fmtKrw(v)     { return '₩' + Math.round(v).toLocaleString('ko-KR'); }
+function fmtKrCap(v)   { return v >= 1e12 ? (v / 1e12).toFixed(1) + '조' : v >= 1e8 ? Math.round(v / 1e8) + '억' : '—'; }
+function fmtPrice(v, ticker) { return isKrTicker(ticker) ? fmtKrw(v) : fmt$(v); }
+// 변동액: 부호를 통화 기호 앞에 (+$1.20 / -₩18,000) — 기존 fmt$는 "$-6.56"으로 나왔음
+function fmtChange(v, ticker) { return (v >= 0 ? '+' : '-') + fmtPrice(Math.abs(v), ticker); }
+
 // ── 한글 표시 변환표 ─────────────────────────────────────────────────────────
 // 데이터 값(필터·정렬·localStorage 기준)은 영어 그대로 두고, 화면에 그릴 때만 한글로 바꾼다.
 // 표에 없는 값은 원래 값을 그대로 보여준다. (KR 종목은 섹터가 이미 한글)
