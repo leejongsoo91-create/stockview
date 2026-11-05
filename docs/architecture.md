@@ -51,7 +51,7 @@
 
 | 작업 | 주기 | 비고 |
 |------|------|------|
-| `refresh_indices` | 30초 | 지수 19개, `indices_update` |
+| `refresh_indices` | 30초 | 지수 19개, `indices_update`. 캐시 ttl 90초(갱신 주기보다 길게 — 같으면 순간 더미 값 반환). 달러/원은 포트폴리오 원화 환산에도 사용 |
 | `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update` |
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
