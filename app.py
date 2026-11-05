@@ -407,7 +407,9 @@ def refresh_indices():
     try:
         idx = df.fetch_indices()
         if idx:
-            cache.set("indices", idx, ttl=30)
+            # ttl을 갱신 주기(30초)보다 길게 — 같으면 만료~재수집 사이 1~2초 동안 /api/indices가
+            # 더미 INDICES(달러/원 1,350 등)를 돌려줘 티커 테이프·포트폴리오 환율이 순간 틀렸음
+            cache.set("indices", idx, ttl=90)
             log.info(f"지수 갱신 완료: {len(idx)}개")
             _emit_queue.put(("indices_update", {"count": len(idx)}))
             log.info("indices_update 큐 등록")
