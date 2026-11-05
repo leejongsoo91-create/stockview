@@ -72,6 +72,9 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   letter-spacing: .3px;
 }
 .tape-name  { color: var(--muted); }
+.tape-link  { cursor: pointer; }
+.tape-link:hover { background: var(--bg-input); }
+.tape-link:hover .tape-name { color: var(--text); }
 .tape-val   { color: var(--text); font-weight: 600; }
 .tape-pct.up   { color: var(--green); }
 .tape-pct.down { color: var(--red); }

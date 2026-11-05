@@ -60,11 +60,31 @@ const _INDEX_NAMES = {
 };
 
 function _isIndex(ticker) {
-  return ticker.startsWith('^') || ticker.endsWith('=F');
+  return ticker.startsWith('^') || ticker.endsWith('=F') || ticker.endsWith('=X')
+    || (typeof _INDEX_SYMBOL !== 'undefined' && Object.values(_INDEX_SYMBOL).includes(ticker));
+}
+
+// 차트 심볼 → /api/indices 이름 (main.js _INDEX_SYMBOL의 반대 방향 — 19개 전부. 예전엔 8개만 있어
+// 나머지 지수는 현재가·등락률을 못 찾고 0%로 표시됐음)
+function _indexNameOf(ticker) {
+  if (typeof _INDEX_SYMBOL === 'undefined') return null;
+  return Object.keys(_INDEX_SYMBOL).find(n => _INDEX_SYMBOL[n] === ticker) || null;
 }
 
 function _isKrStock(ticker) {
   return ticker.endsWith('.KS') || ticker.endsWith('.KQ');
+}
+
+// 차트 화면 금액 표시: 지수·환율·금리·비트코인은 통화 기호 없이 숫자(코스피 "$5,383.80"·달러/원 "$1,355.80"으로
+// 나오던 문제), 국내 ₩, 미국 $. 변동액 부호는 기호 앞(-₩16,500 — 국내 하락 금액에 - 가 빠지던 문제)
+function _fmtQuote(v, ticker) {
+  if (v == null) return '—';
+  if (_isIndex(ticker || '')) return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return fmtPrice(v, ticker || '');
+}
+function _fmtQuoteChange(v, ticker) {
+  if (v == null) return '—';
+  return (v >= 0 ? '+' : '-') + _fmtQuote(Math.abs(v), ticker);
 }
 
 function _fmtKrPrice(v) {
@@ -953,14 +973,21 @@ function _buildChartUrl(ticker) {
 }
 
 // ── 차트 데이터 로드 ─────────────────────────────────────────────────────────
+// 차트를 빠르게 바꾸면(시세 띠 연속 클릭 등) 늦게 도착한 이전 종목 응답이 새 종목 화면을 덮어쓰고,
+// 끝난 이전 요청이 자동 갱신 타이머까지 다시 켰음 — 요청 번호로 마지막 요청만 반영한다.
+let _chartReqSeq = 0;
+
 async function loadChart(ticker) {
+  const reqId = ++_chartReqSeq;
+  const stale = () => reqId !== _chartReqSeq;
   ticker = ticker.toUpperCase();
   if (_compareMode) _exitCompare();   // 새 종목 로드 시 비교 모드 종료
   _currentTicker = ticker;
   document.getElementById('chart-input').value = ticker;
 
   // 헤더 초기화
-  document.getElementById('chart-ticker-label').textContent  = ticker;
+  const _idxNm = _isIndex(ticker) ? _indexNameOf(ticker) : null;
+  document.getElementById('chart-ticker-label').textContent  = _INDEX_NAMES[ticker] || (_idxNm ? koIndex(_idxNm) : ticker);
   document.getElementById('chart-company-label').textContent = '…';
   document.getElementById('chart-price-badge').innerHTML     = '';
   document.getElementById('stock-info-panel').innerHTML      = '<div class="info-placeholder">불러오는 중…</div>';
@@ -979,18 +1006,17 @@ async function loadChart(ticker) {
       // 지수: OHLCV만 가져오고, 현재가는 /api/indices에서 추출
       ohlcv = await api(chartUrl);
       const indices = await api('/api/indices');
-      const idx = indices.find(i => {
-        const map = { '^GSPC':'S&P 500','^IXIC':'NASDAQ','^DJI':'Dow Jones',
-                      '^RUT':'Russell 2000','^SOX':'PHLX Semi','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
-        return map[ticker] === i.name;
-      });
+      if (stale()) return;
+      const idxName = _indexNameOf(ticker);
+      const idx = indices.find(i => i.name === idxName);
+      const dispName = _INDEX_NAMES[ticker] || (idxName ? koIndex(idxName) : ticker);
       stockData = idx
-        ? { ticker, name: _INDEX_NAMES[ticker] || ticker, name_ko: '',
+        ? { ticker, name: dispName, name_ko: '',
             sector: 'Index', price: idx.value, change: idx.change,
             change_pct: idx.change_pct, volume: null,
             market_cap: null, pe: null, eps: null,
             week52_high: null, week52_low: null }
-        : { ticker, name: _INDEX_NAMES[ticker] || ticker, name_ko: '',
+        : { ticker, name: dispName, name_ko: '',
             sector: 'Index', price: ohlcv.length ? ohlcv[ohlcv.length-1].close : null,
             change: 0, change_pct: 0, volume: null,
             market_cap: null, pe: null, eps: null,
@@ -1001,6 +1027,7 @@ async function loadChart(ticker) {
         api(`/api/stock/${encodedTicker}`),
       ]);
     }
+    if (stale()) return;
 
     if (!ohlcv.length) throw new Error('No data');
 
@@ -1028,6 +1055,7 @@ async function loadChart(ticker) {
     _startAutoRefresh();
 
   } catch {
+    if (stale()) return;
     document.getElementById('stock-info-panel').innerHTML =
       `<div class="info-placeholder" style="color:var(--red)">Ticker "${ticker}" not found</div>`;
     document.getElementById('chart-ticker-label').textContent  = ticker;
@@ -2160,9 +2188,11 @@ function _bindCompareEvents() {
 }
 
 function _renderHeader(stock) {
-  document.getElementById('chart-ticker-label').textContent  = stock.ticker;
+  const isIdx = _isIndex(stock.ticker || '');
+  // 지수·환율 등은 Yahoo 심볼(^KS11·KRW=X)이 낯설어 큰 제목을 한글 이름으로, 심볼은 옆에 작게
+  document.getElementById('chart-ticker-label').textContent  = isIdx ? stock.name : stock.ticker;
   document.getElementById('chart-company-label').textContent =
-    stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name;
+    isIdx ? stock.ticker : (stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name);
   _updatePriceBadge(stock);
   // 지수(S&P500·VIX 등)는 관심종목 대상이 아니라 ★ 버튼 숨김
   const starWrap = document.getElementById('chart-star-wrap');
@@ -2171,13 +2201,8 @@ function _renderHeader(stock) {
 
 function _updatePriceBadge(stock) {
   const cls  = colorCls(stock.change_pct || 0);
-  const isKr = _isKrStock(stock.ticker || '');
-  const price   = isKr
-    ? _fmtKrPrice(stock.price)
-    : (stock.price ? fmt$(stock.price) : '—');
-  const change  = stock.change != null
-    ? `${stock.change >= 0 ? '+' : ''}${isKr ? _fmtKrPrice(Math.abs(stock.change)) : fmt$(stock.change)}`
-    : '—';
+  const price  = stock.price ? _fmtQuote(stock.price, stock.ticker) : '—';
+  const change = _fmtQuoteChange(stock.change, stock.ticker);
   const pct = stock.change_pct != null ? fmtPct(stock.change_pct) : '—';
   document.getElementById('chart-price-badge').innerHTML = `
     <span class="${cls}" style="font-size:20px;font-weight:800">${price}</span><br>
@@ -2201,13 +2226,12 @@ function _startAutoRefresh() {
     try {
       if (_isIndex(_currentTicker)) {
         const indices = await api('/api/indices');
-        const map = { '^GSPC':'S&P 500','^IXIC':'NASDAQ','^DJI':'Dow Jones',
-                      '^RUT':'Russell 2000','^SOX':'PHLX Semi','^VIX':'VIX','CL=F':'WTI Crude','GC=F':'Gold' };
-        const idx = indices.find(i => map[_currentTicker] === i.name);
+        const idxName = _indexNameOf(_currentTicker);
+        const idx = indices.find(i => i.name === idxName);
         if (idx) {
           const s = { ticker: _currentTicker, price: idx.value,
                       change: idx.change, change_pct: idx.change_pct,
-                      name: _INDEX_NAMES[_currentTicker] || _currentTicker,
+                      name: _INDEX_NAMES[_currentTicker] || koIndex(idxName),
                       name_ko:'', sector:'Index', volume:null,
                       market_cap:null, pe:null, eps:null,
                       week52_high:null, week52_low:null };
@@ -2418,11 +2442,11 @@ function renderStockInfo(s) {
     <div class="info-section-title">주요 지표</div>
     <div class="info-row">
       <span class="info-label">현재가</span>
-      <span class="info-val">${s.price ? fmtP(s.price) : '—'}</span>
+      <span class="info-val">${s.price ? _fmtQuote(s.price, s.ticker) : '—'}</span>
     </div>
     <div class="info-row">
       <span class="info-label">변동</span>
-      <span class="info-val ${cls}">${s.change != null ? (s.change >= 0 ? '+' : '') + fmtP(Math.abs(s.change)) : '—'}</span>
+      <span class="info-val ${cls}">${_fmtQuoteChange(s.change, s.ticker)}</span>
     </div>
     <div class="info-row">
       <span class="info-label">등락률</span>

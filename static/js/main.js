@@ -755,15 +755,17 @@ function buildTickerTape(indices, stocks) {
   _setUsdKrwFromIndices(indices);   // 포트폴리오 원화 환산용 환율도 같이 갱신
   const tape = document.getElementById('ticker-inner');
   const items = [
-    ...indices.map(i => ({ label: koIndex(i.name), value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct })),
+    ...indices.map(i => ({ label: koIndex(i.name), value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct,
+                           sym: _INDEX_SYMBOL[i.name] })),
     ...['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','JPM','LLY','NFLX'].map(t => {
       const s = stocks.find(x => x.ticker === t);
       if (!s) return null;
-      return { label: s.ticker, value: fmt$(s.price), pct: s.change_pct };
+      return { label: s.ticker, value: fmt$(s.price), pct: s.change_pct, sym: s.ticker };
     }).filter(Boolean),
   ];
+  // 항목을 누르면 차트로 (마우스를 올리면 흐름이 멈춰서 누르기 쉬움)
   const html = items.map(i =>
-    `<span class="tape-item">
+    `<span class="tape-item${i.sym ? ' tape-link' : ''}"${i.sym ? ` onclick="navigateToChart('${i.sym}')" title="${i.label} 차트 보기"` : ''}>
        <span class="tape-name">${i.label}</span>
        <span class="tape-val">${i.value}</span>
        <span class="tape-pct ${i.pct >= 0 ? 'up' : 'down'}">${fmtPct(i.pct)}</span>
