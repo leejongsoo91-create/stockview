@@ -14,6 +14,19 @@ function colorCls(n){ return n >= 0 ? 'up' : 'down'; }
 function isKrTicker(t) { return /\.(KS|KQ)$/.test(t || ''); }
 function fmtKrw(v)     { return '₩' + Math.round(v).toLocaleString('ko-KR'); }
 function fmtKrCap(v)   { return v >= 1e12 ? (v / 1e12).toFixed(1) + '조' : v >= 1e8 ? Math.round(v / 1e8) + '억' : '—'; }
+// 종류: 국내는 서버 kind(네이버 주식·ETF·ETN 구분), 미국 섹터 ETF는 sector 'ETF'. 서버 시작 직후 kind가
+// 아직 없으면 국내 업종 '기타'(ETF·ETN이 모여 있음)를 ETF로 추정
+function stockKind(s) {
+  if (!s) return 'stock';
+  if (s.kind) return s.kind;
+  if (s.sector === 'ETF') return 'etf';
+  return (isKrTicker(s.ticker) && s.sector === '기타') ? 'etf' : 'stock';
+}
+function kindBadgeHtml(s) {
+  const k = stockKind(s);
+  return k === 'stock' ? '' : `<span class="kind-badge kind-${k}">${k.toUpperCase()}</span>`;
+}
+
 function fmtPrice(v, ticker) { return isKrTicker(ticker) ? fmtKrw(v) : fmt$(v); }
 // 변동액: 부호를 통화 기호 앞에 (+$1.20 / -₩18,000) — 기존 fmt$는 "$-6.56"으로 나왔음
 function fmtChange(v, ticker) { return (v >= 0 ? '+' : '-') + fmtPrice(Math.abs(v), ticker); }
@@ -1660,7 +1673,7 @@ function _gsSearch(q) {
       : '';
     return `<div class="gs-item" onclick="_gsSelect('${s.ticker}')">
       ${badge}<span class="gs-ticker">${disp}</span>
-      <span class="gs-name">${(s._isKr ? s.name : (s.name_ko || s.name)) || ''}</span>
+      <span class="gs-name">${(s._isKr ? s.name : (s.name_ko || s.name)) || ''}${kindBadgeHtml(s)}</span>
       <span class="gs-pct ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
     </div>`;
   }).join('');

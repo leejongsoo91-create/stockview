@@ -8,7 +8,7 @@ let _hmIndex    = 'all';
 let _hmPeriod   = '1d';
 let _hmPerfData = {};   // { '1w': {ticker: perf_pct}, '1m': {ticker: perf_pct} }
 let _hmMembers  = {};
-let _hmMarket   = 'us';  // 'us' | 'kr'
+let _hmMarket   = 'us';  // 'us' | 'kr'(국내 주식) | 'etf'(국내 ETF·ETN)
 let _krHmStocks = [];
 let _krHmFilter = 'all'; // 'all' | 'kospi200' | 'kosdaq150'
 let _krHmPeriod   = '1d';
@@ -51,9 +51,20 @@ async function initHeatmap() {
       const usIndexBar = document.getElementById('hm-index-bar');
       const krIndexBar = document.getElementById('hm-kr-index-bar');
       const toolbar    = document.querySelector('.heatmap-toolbar');
-      if (_hmMarket === 'kr') {
+      if (_hmMarket === 'kr' || _hmMarket === 'etf') {
         if (usIndexBar) usIndexBar.style.display = 'none';
         if (krIndexBar) krIndexBar.style.display = '';
+        // ETF 탭에서는 코스피·코스닥·코스피200·코스닥150 버튼이 의미 없어 숨김
+        const etfMode = _hmMarket === 'etf';
+        document.querySelectorAll('.hm-kr-idx-btn').forEach(b => {
+          const marketOnly = ['kospi', 'kosdaq', 'kospi200', 'kosdaq150'].includes(b.dataset.krindex);
+          b.style.display = etfMode && marketOnly ? 'none' : '';
+          if (etfMode && marketOnly && b.classList.contains('active')) {
+            b.classList.remove('active');
+            document.querySelector('.hm-kr-idx-btn[data-krindex="all"]')?.classList.add('active');
+            _krHmFilter = 'all';
+          }
+        });
         if (toolbar)    toolbar.style.display    = 'none';
         if (!_krHmStocks.length) {
           document.getElementById('heatmap-container').innerHTML =
@@ -154,7 +165,7 @@ async function initHeatmap() {
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(() => {
       if (document.getElementById('view-heatmap').classList.contains('active')) {
-        if (_hmMarket === 'kr') renderKrHeatmap(); else renderHeatmap();
+        if (_hmMarket !== 'us') renderKrHeatmap(); else renderHeatmap();
       }
     }, 200);
   });
@@ -546,7 +557,10 @@ function renderKrHeatmap() {
   const W = container.clientWidth || window.innerWidth - 40;
   const H = Math.max(window.innerHeight - 240, 480);
 
-  const allStocks = _krHmStocks.filter(s => s.market_cap > 0 && s.price > 0);
+  // 국내 탭은 주식만, '국내 ETF' 탭은 ETF·ETN만 (stockKind: 네이버 주식·ETF·ETN 구분)
+  const etfMode = _hmMarket === 'etf';
+  const allStocks = _krHmStocks.filter(s => s.market_cap > 0 && s.price > 0
+    && (etfMode ? stockKind(s) !== 'stock' : stockKind(s) === 'stock'));
   if (!allStocks.length) {
     container.innerHTML = '<div style="text-align:center;padding:80px;color:var(--muted)">데이터 없음</div>';
     return;
@@ -607,6 +621,9 @@ function renderKrHeatmap() {
       countEl.textContent = `내 관심종목 ${stocks.length}개`;
     } else if (_krHmFilter === 'portfolio') {
       countEl.textContent = `내 포트폴리오 ${stocks.length}개`;
+    } else if (etfMode) {
+      const etn = stocks.filter(s => stockKind(s) === 'etn').length;
+      countEl.textContent = `ETF ${stocks.length - etn}개 · ETN ${etn}개 (운용사별)`;
     } else {
       const kospi  = stocks.filter(s => s.market === 'KOSPI').length;
       const kosdaq = stocks.filter(s => s.market === 'KOSDAQ').length;
@@ -614,11 +631,11 @@ function renderKrHeatmap() {
     }
   }
 
-  // 시장 → 업종 → 종목 3단계 그룹화
+  // 시장 → 업종 → 종목 3단계 그룹화 (ETF 탭: 종류(ETF·ETN) → 운용사 → 상품)
   const byMarket = {};
   for (const s of stocks) {
-    const mkt = s.market || 'KOSPI';
-    const sec = s.sector || '기타';
+    const mkt = etfMode ? stockKind(s).toUpperCase() : (s.market || 'KOSPI');
+    const sec = etfMode ? _etfBrand(s.name) : (s.sector || '기타');
     if (!byMarket[mkt]) byMarket[mkt] = {};
     if (!byMarket[mkt][sec]) byMarket[mkt][sec] = [];
     byMarket[mkt][sec].push(s);
@@ -626,7 +643,7 @@ function renderKrHeatmap() {
 
   const root = d3.hierarchy({
     name: 'root',
-    children: ['KOSPI', 'KOSDAQ'].filter(m => byMarket[m]).map(mkt => ({
+    children: (etfMode ? ['ETF', 'ETN'] : ['KOSPI', 'KOSDAQ']).filter(m => byMarket[m]).map(mkt => ({
       name: mkt,
       children: Object.entries(byMarket[mkt]).map(([sec, items]) => ({
         name:   sec,
@@ -635,8 +652,8 @@ function renderKrHeatmap() {
           code:       s.code,
           ticker:     s.ticker,
           label:      s.name,
-          market:     s.market,
-          sector:     s.sector,
+          market:     etfMode ? stockKind(s).toUpperCase() : s.market,
+          sector:     etfMode ? _etfBrand(s.name) : s.sector,
           market_cap: s.market_cap,
           change_pct: s.change_pct || 0,
           price:      s.price,
@@ -806,6 +823,12 @@ function renderKrHeatmap() {
 }
 
 // 평균 등락률 → 반투명 배경색 (US/KR 히트맵 공용)
+// ETF 운용사 브랜드 = 이름 첫 단어 (KODEX 200 → KODEX, TIGER 미국S&P500 → TIGER)
+function _etfBrand(name) {
+  const m = /^[A-Za-z가-힣]+/.exec((name || '').trim());
+  return m ? m[0] : '기타';
+}
+
 function _avgFill(avgChg, alpha) {
   if (avgChg >=  0.5) return `rgba(22,163,74,${alpha})`;
   if (avgChg >=  0.1) return `rgba(22,163,74,${alpha * 0.55})`;

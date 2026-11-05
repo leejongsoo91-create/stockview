@@ -2193,6 +2193,8 @@ function _renderHeader(stock) {
   document.getElementById('chart-ticker-label').textContent  = isIdx ? stock.name : stock.ticker;
   document.getElementById('chart-company-label').textContent =
     isIdx ? stock.ticker : (stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name);
+  if (!isIdx && stockKind(stock) !== 'stock')
+    document.getElementById('chart-company-label').insertAdjacentHTML('beforeend', ' ' + kindBadgeHtml(stock));
   _updatePriceBadge(stock);
   // 지수(S&P500·VIX 등)는 관심종목 대상이 아니라 ★ 버튼 숨김
   const starWrap = document.getElementById('chart-star-wrap');
@@ -2471,7 +2473,7 @@ function renderStockInfo(s) {
     </div>
     <div class="info-row">
       <span class="info-label">${isKr ? '업종' : '섹터'}</span>
-      <span class="info-val info-sector-badge" style="font-size:11px">${s.sector ? (isKr ? s.sector : koSector(s.sector)) : '—'}</span>
+      <span class="info-val info-sector-badge" style="font-size:11px">${stockKind(s) !== 'stock' ? stockKind(s).toUpperCase() : s.sector ? (isKr ? s.sector : koSector(s.sector)) : '—'}</span>
     </div>
     <div class="info-section-title" style="margin-top:4px">52주 범위</div>
     <div class="info-row">

@@ -734,7 +734,7 @@ function bindScreenerEvents() {
   _bindColSettingsEvents();
 
   // 필터 변경 (US/KR 모드에 따라 분기)
-  ['filter-sector','filter-industry','filter-country','filter-change',
+  ['filter-sector','filter-kind','filter-industry','filter-country','filter-change',
    'filter-cap','filter-pe','filter-52w','filter-normal-only','filter-signal-only','filter-watchlist-only'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
@@ -975,6 +975,8 @@ function _populateKrSectorFilter() {
     const el = document.getElementById(id)?.closest('.filter-group');
     if (el) el.style.display = 'none';
   });
+  const kindGroup = document.getElementById('filter-kind-group');
+  if (kindGroup) kindGroup.style.display = '';
 }
 
 function _restoreUsSectorFilter() {
@@ -987,6 +989,8 @@ function _restoreUsSectorFilter() {
     const el = document.getElementById(id)?.closest('.filter-group');
     if (el) el.style.display = '';
   });
+  const kindGroup = document.getElementById('filter-kind-group');
+  if (kindGroup) kindGroup.style.display = 'none';
 }
 
 function _getKrFiltered() {
@@ -995,6 +999,9 @@ function _getKrFiltered() {
   if (_krMarket !== 'all') {
     list = list.filter(s => s.market === _krMarket);
   }
+  // 종류 필터 (기본 주식 — 11-06: 국내 목록의 약 30%가 ETF·ETN이라 종목과 섞였음)
+  const kind = document.getElementById('filter-kind')?.value || 'stock';
+  if (kind !== 'all') list = list.filter(s => stockKind(s) === kind);
   // 업종 필터
   const sec = document.getElementById('filter-sector')?.value || 'all';
   if (sec !== 'all') {
@@ -1178,10 +1185,10 @@ function renderKrScreener() {
       switch (c.key) {
         case '_no':        return `<td class="sc-no">${no}</td>`;
         case 'code':       return `<td class="td-ticker">${s.code}</td>`;
-        case 'name':       return `<td class="td-name">${s.name}</td>`;
+        case 'name':       return `<td class="td-name">${s.name}${kindBadgeHtml(s)}</td>`;
         case 'signal':     return `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`;
         case 'market':     return `<td>${_mktBadge(s.market)}</td>`;
-        case 'sector':     return `<td class="td-name" style="font-size:11px;color:var(--muted)">${s.sector || '—'}</td>`;
+        case 'sector':     return `<td class="td-name" style="font-size:11px;color:var(--muted)">${stockKind(s) !== 'stock' ? stockKind(s).toUpperCase() : (s.sector || '—')}</td>`;
         case 'price':      return `<td class="num">${_fmtKrw(s.price)}</td>`;
         case 'change_pct': return `<td class="num ${cls}">${s.price && s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>`;
         case 'volume':     return `<td class="num">${_fmtKrVol(s.volume)}</td>`;

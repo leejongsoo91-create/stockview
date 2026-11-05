@@ -1135,6 +1135,7 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                     "change_pct": _naver_num(s.get("fluctuationsRatio")) or 0.0,
                     "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
                     "market_cap": int(mv * 1e8) if mv else None,
+                    "kind":       s.get("stockEndType") or "stock",   # 주식·ETF·ETN 구분 (11-06: ETF 856·ETN 324개가 섞여 있었음)
                 }
             if not stocks or page * 100 >= (d.get("totalCount") or 0):
                 break

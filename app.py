@@ -243,7 +243,7 @@ def refresh_us_quotes(force: bool = False):
 
 
 # ── 국내 종목 실시간 시세 (네이버) ────────────────────────────────────────────
-_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "market_cap")
+_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "market_cap", "kind")
 _kr_quotes_ts = 0.0     # 마지막 네이버 국내 시세 수신 시각
 _kr_yahoo_last = 0.0    # 마지막 Yahoo 국내 갱신 시작 시각
 
