@@ -1043,7 +1043,7 @@ async function loadChart(ticker) {
     document.getElementById('chart-alert-panel').style.display = 'none';
 
     if (!_isIndex(ticker)) _loadStockNews(ticker);
-    if (!_isIndex(ticker) && stockData?.sector !== 'ETF') {
+    if (!_isIndex(ticker) && stockKind(stockData) === 'stock') {
       renderStockAnalysis(ticker);
       renderFinancials(ticker);
     } else {

@@ -20,7 +20,9 @@ function stockKind(s) {
   if (!s) return 'stock';
   if (s.kind) return s.kind;
   if (s.sector === 'ETF') return 'etf';
-  return (isKrTicker(s.ticker) && s.sector === '기타') ? 'etf' : 'stock';
+  // 네이버 목록에 없는 국내 98개 중 업종 '기타' 65개는 만기·상장폐지 추정 ETF·ETN (11-06 확인)
+  if (isKrTicker(s.ticker) && s.sector === '기타') return /ETN/.test(s.name || '') ? 'etn' : 'etf';
+  return 'stock';
 }
 function kindBadgeHtml(s) {
   const k = stockKind(s);
