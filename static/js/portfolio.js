@@ -6,6 +6,8 @@ const PT_KEY = 'stockview_portfolio';
 
 // ── 포트폴리오 저장소 ─────────────────────────────────────────────────────────
 // 구조: { "AAPL": { qty: 10, avgPrice: 150.00 }, ... }
+// 미국 종목을 원화로 입력하면 { qty, avgPrice: 202000, avgCur: 'KRW' } — avgPrice가 원화 매입가.
+// avgCur가 없으면 예전처럼 종목 원래 통화(국내 원·해외 달러) — 기존 데이터 호환
 const PT = {
   _data: null,
 
@@ -18,8 +20,10 @@ const PT = {
 
   save() { localStorage.setItem(PT_KEY, JSON.stringify(this._data)); },
 
-  set(ticker, qty, avgPrice) {
-    this.load()[ticker] = { qty: parseFloat(qty), avgPrice: parseFloat(avgPrice) };
+  set(ticker, qty, avgPrice, avgCur) {
+    const h = { qty: parseFloat(qty), avgPrice: parseFloat(avgPrice) };
+    if (avgCur === 'KRW' && !isKrTicker(ticker)) h.avgCur = 'KRW';   // 국내 종목은 원래 원화라 표시 불필요
+    this.load()[ticker] = h;
     this.save();
   },
 
@@ -426,9 +430,9 @@ async function exportPortfolioCSV() {
   } catch {}
 
   const rate    = (await fetchUsdKrw()).rate;
-  const headers = ['티커', '수량', '평균단가', '종목명', '현재가', '그룹', '메모', '목표가', '통화', '평가금액(원)'];
+  const headers = ['티커', '수량', '평균단가', '종목명', '현재가', '그룹', '메모', '목표가', '통화', '평가금액(원)', '매수통화'];
   const rows = tickers.map(t => {
-    const { qty, avgPrice } = data[t];
+    const { qty, avgPrice, avgCur } = data[t];
     const s = priceMap[t] || {};
     const n = PTN.get(t);
     return [
@@ -440,6 +444,7 @@ async function exportPortfolioCSV() {
       n.target ?? '',
       isKrTicker(t) ? 'KRW' : 'USD',
       s.price != null ? Math.round(qty * s.price * (isKrTicker(t) ? 1 : rate)) : '',
+      isKrTicker(t) || avgCur === 'KRW' ? 'KRW' : 'USD',   // 평균단가의 통화
     ].join(',');
   });
 
@@ -470,6 +475,7 @@ function importPortfolioCSV(file) {
       const gIdx      = hasHeader ? _csvColIndex(header, ['그룹', 'group'])        : -1;
       const mIdx      = hasHeader ? _csvColIndex(header, ['메모', 'memo'])         : -1;
       const tgIdx     = hasHeader ? _csvColIndex(header, ['목표가', 'target'])     : -1;
+      const cIdx      = hasHeader ? _csvColIndex(header, ['매수통화', 'avgcur'])   : -1;
       const startIdx  = hasHeader ? 1 : 0;
 
       if (qIdx === -1 || pIdx === -1) { alert('CSV에 수량·평균단가 열이 필요합니다.'); return; }
@@ -481,7 +487,7 @@ function importPortfolioCSV(file) {
         const qty    = parseFloat(cols[qIdx]);
         const price  = parseFloat(cols[pIdx]);
         if (!ticker || !Number.isFinite(qty) || !Number.isFinite(price)) continue;
-        PT.set(ticker, qty, price);
+        PT.set(ticker, qty, price, cIdx !== -1 ? (cols[cIdx] || '').trim().toUpperCase() : undefined);
         if (gIdx  !== -1 && (cols[gIdx]  || '').trim()) PTG.set(ticker, cols[gIdx].trim());
         if (mIdx  !== -1 && (cols[mIdx]  || '').trim()) PTN.setMemo(ticker, cols[mIdx].trim());
         if (tgIdx !== -1 && (cols[tgIdx] || '').trim()) PTN.setTarget(ticker, cols[tgIdx].trim());
@@ -537,25 +543,30 @@ async function renderPortfolio() {
   let totalCost = 0, totalValue = 0, usdCost = 0, usdValue = 0;
 
   const rows = tickers.map(ticker => {
-    const { qty, avgPrice } = data[ticker];
+    const { qty, avgPrice, avgCur } = data[ticker];
     const stock = priceMap[ticker] || {};
     const isKr  = isKrTicker(ticker);
-    const mult  = isKr ? 1 : rate;
+    const krwIn = !isKr && avgCur === 'KRW';   // 미국 종목을 원화 매입가로 입력
     const curPrice = stock.price || null;
-    // N = 종목 원래 통화(국내 원·해외 달러), cost/value/pnl = 원화
-    const costN  = qty * avgPrice;
-    const valueN = curPrice ? qty * curPrice : null;
-    const pnlN   = valueN != null ? valueN - costN : null;
-    const cost   = costN * mult;
-    const value  = valueN != null ? valueN * mult : null;
-    const pnl    = value != null ? value - cost : null;
-    const pnlPct = pnl  != null ? (pnl / cost) * 100 : null;
+    // K = 원화, U = 달러(국내 종목은 null). 원화 입력 종목의 달러 매입가·투자금액은 현재 환율 환산 근사치(≈)
+    const avgK   = isKr || krwIn ? avgPrice : avgPrice * rate;
+    const avgU   = isKr ? null : krwIn ? avgPrice / rate : avgPrice;
+    const curK   = curPrice ? (isKr ? curPrice : curPrice * rate) : null;
+    const curU   = isKr ? null : curPrice;
+    const cost   = qty * avgK;
+    const costU  = isKr ? null : qty * avgU;
+    const value  = curK != null ? qty * curK : null;
+    const valueU = !isKr && curPrice ? qty * curPrice : null;
+    const pnl    = value  != null ? value - cost : null;
+    const pnlU   = valueU != null ? valueU - costU : null;
+    const pnlPct = pnl    != null ? (pnl / cost) * 100 : null;
 
     if (value != null) totalValue += value;
     totalCost += cost;
-    if (!isKr) { usdCost += costN; if (valueN != null) usdValue += valueN; }
+    if (!isKr) { usdCost += costU; if (valueU != null) usdValue += valueU; }
 
-    return { ticker, isKr, qty, avgPrice, curPrice, costN, valueN, pnlN, cost, value, pnl, pnlPct, stock };
+    return { ticker, isKr, krwIn, avgCur, qty, avgPrice, curPrice, avgK, avgU, curK, curU,
+             cost, costU, value, valueU, pnl, pnlU, pnlPct, stock };
   });
 
   const totalPnl    = totalValue - totalCost;
@@ -581,15 +592,16 @@ async function renderPortfolio() {
     `<option value="${g}" ${g === current ? 'selected' : ''}>${g || '(없음)'}</option>`
   ).join('') + `<option value="__new__">+ 새 그룹...</option>`;
 
-  // 금액 표시: 국내 ₩, 해외 ₩(달러) — n은 원래 통화 금액
-  const usdSub = (n, signed) => `<span class="pt-usd">(${signed ? (n >= 0 ? '+' : '-') : ''}${fmt$(Math.abs(n))})</span>`;
-  const money  = (r, n, signed = false) => n == null ? '—'
-    : r.isKr ? fmtKrwSigned(n, signed)
-    : `${fmtKrwSigned(n * rate, signed)} ${usdSub(n, signed)}`;
+  // 금액 표시: 국내 ₩, 해외 ₩(달러). approx=true면 달러가 현재 환율 환산 근사치라 ≈ 표시
+  const usdSub = (u, signed, approx) => `<span class="pt-usd">(${approx ? '≈' : ''}${signed ? (u >= 0 ? '+' : '-') : ''}${fmt$(Math.abs(u))})</span>`;
+  const money  = (k, u, signed = false, approx = false) => k == null ? '—'
+    : u == null ? fmtKrwSigned(k, signed)
+    : `${fmtKrwSigned(k, signed)} ${usdSub(u, signed, approx)}`;
   const hasUsd = rows.some(r => !r.isKr);
-  const usdNote = n => hasUsd ? `<div class="pt-sum-sub">해외 ${fmt$(n)} 포함</div>` : '';
+  const anyKrwIn = rows.some(r => r.krwIn);
+  const usdNote = (n, approx) => hasUsd ? `<div class="pt-sum-sub">해외 ${approx ? '≈' : ''}${fmt$(n)} 포함</div>` : '';
   const usdPnlNote = hasUsd && totalValue > 0
-    ? `<div class="pt-sum-sub">해외 ${usdValue - usdCost >= 0 ? '+' : '-'}${fmt$(Math.abs(usdValue - usdCost))}</div>` : '';
+    ? `<div class="pt-sum-sub">해외 ${anyKrwIn ? '≈' : ''}${usdValue - usdCost >= 0 ? '+' : '-'}${fmt$(Math.abs(usdValue - usdCost))}</div>` : '';
   const fxNote = !hasUsd ? ''
     : fx.source === 'fallback'
       ? `<span class="pt-fx pt-fx-warn">⚠ 환율을 불러오지 못해 임시 ${fmtKrw(rate)}/달러 적용</span>`
@@ -601,12 +613,12 @@ async function renderPortfolio() {
       <div class="pt-sum-card">
         <div class="pt-sum-label">총 투자금액</div>
         <div class="pt-sum-val">${fmtKrw(totalCost)}</div>
-        ${usdNote(usdCost)}
+        ${usdNote(usdCost, anyKrwIn)}
       </div>
       <div class="pt-sum-card">
         <div class="pt-sum-label">현재 평가금액</div>
         <div class="pt-sum-val">${totalValue > 0 ? fmtKrw(totalValue) : '—'}</div>
-        ${totalValue > 0 ? usdNote(usdValue) : ''}
+        ${totalValue > 0 ? usdNote(usdValue, false) : ''}
       </div>
       <div class="pt-sum-card">
         <div class="pt-sum-label">총 손익</div>
@@ -661,12 +673,12 @@ async function renderPortfolio() {
                 </td>
                 <td>${signalBadgeHtml(r.ticker, sigMap)}</td>
                 <td class="num">${r.qty.toLocaleString()}</td>
-                <td class="num">${money(r, r.avgPrice)}</td>
-                <td class="num">${money(r, r.curPrice)}</td>
-                <td class="num ${cls}">${money(r, r.pnlN, true)}</td>
+                <td class="num"${r.krwIn ? ' title="원화로 입력한 매입가 — 달러는 현재 환율 환산"' : ''}>${money(r.avgK, r.avgU, false, r.krwIn)}${r.krwIn ? '<span class="pt-cur-tag">원화 입력</span>' : ''}</td>
+                <td class="num">${money(r.curK, r.curU)}</td>
+                <td class="num ${cls}">${money(r.pnl, r.pnlU, true, r.krwIn)}</td>
                 <td class="num ${cls}">${_fmtPnlPct(r.pnlPct)}</td>
-                <td class="num">${money(r, r.costN)}</td>
-                <td class="num">${money(r, r.valueN)}</td>
+                <td class="num">${money(r.cost, r.costU, false, r.krwIn)}</td>
+                <td class="num">${money(r.value, r.valueU)}</td>
                 <td onclick="event.stopPropagation()">
                   <input type="text" class="wl-memo-input" placeholder="메모"
                          value="${_wlEsc(PTN.get(r.ticker).memo)}"
@@ -679,7 +691,7 @@ async function renderPortfolio() {
                   ${_wlTargetStatusHtml(r.curPrice, PTN.get(r.ticker).target)}
                 </td>
                 <td onclick="event.stopPropagation()">
-                  <button class="pt-edit-btn" onclick="openPtModal('${r.ticker}', ${r.qty}, ${r.avgPrice})" title="수정">✎</button>
+                  <button class="pt-edit-btn" onclick="openPtModal('${r.ticker}', ${r.qty}, ${r.avgPrice}, '${r.krwIn ? 'KRW' : ''}')" title="수정">✎</button>
                   <button class="pt-del-btn" onclick="removePtStock('${r.ticker}')" title="삭제">✕</button>
                 </td>
               </tr>`;
@@ -779,7 +791,9 @@ function removePtStock(ticker) {
 }
 
 // ── 종목 추가/수정 모달 ────────────────────────────────────────────────────────
-function openPtModal(ticker = '', qty = '', avgPrice = '') {
+let _ptModalCur = 'USD';   // 미국 종목 평균 매수가 입력 통화 (국내 종목은 항상 원)
+
+function openPtModal(ticker = '', qty = '', avgPrice = '', avgCur = '') {
   const modal = document.getElementById('pt-modal');
   const t     = document.getElementById('pt-modal-ticker');
   const q     = document.getElementById('pt-modal-qty');
@@ -787,24 +801,40 @@ function openPtModal(ticker = '', qty = '', avgPrice = '') {
 
   t.value = ticker;
   t.disabled = !!ticker;   // 수정 시 티커 변경 불가
-  _ptUpdatePriceLabel();
-  t.oninput = _ptUpdatePriceLabel;
   q.value = qty;
   p.value = avgPrice;
+  _ptModalCur = avgCur === 'KRW' ? 'KRW' : 'USD';
+  t.oninput = p.oninput = _ptUpdateModalCur;
+  _ptUpdateModalCur();
 
   modal.style.display = 'flex';
   (ticker ? q : t).focus();
 }
 
-// 평균 매수가는 종목 원래 통화로 입력 (국내 원, 해외 달러) — 저장 형식은 그대로
-function _ptUpdatePriceLabel() {
-  const t   = (document.getElementById('pt-modal-ticker').value || '').trim().toUpperCase();
-  const lbl = document.getElementById('pt-modal-price-label');
-  const inp = document.getElementById('pt-modal-price');
-  if (!lbl || !inp) return;
-  const kr = isKrTicker(t) || /^\d{6}$/.test(t);
-  lbl.textContent = !t ? '평균 매수가 (미국: 달러 · 국내: 원)' : kr ? '평균 매수가 (원)' : '평균 매수가 (달러)';
-  inp.placeholder = kr ? '70000' : '150.00';
+function _ptSetModalCur(cur) {
+  _ptModalCur = cur;
+  _ptUpdateModalCur();
+}
+
+// 통화 버튼 상태 + 다른 통화 미리보기. 국내 종목은 원 고정, 미국 종목은 원/달러 선택
+function _ptUpdateModalCur() {
+  const t    = (document.getElementById('pt-modal-ticker').value || '').trim().toUpperCase();
+  const inp  = document.getElementById('pt-modal-price');
+  const prev = document.getElementById('pt-modal-price-preview');
+  const kr   = isKrTicker(t) || /^\d{6}$/.test(t);
+  const cur  = kr ? 'KRW' : _ptModalCur;
+  document.querySelectorAll('#pt-cur-toggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.cur === cur);
+    b.disabled = kr && b.dataset.cur === 'USD';
+  });
+  inp.placeholder = cur === 'KRW' ? (kr ? '70000' : '200000') : '150.00';
+  const v = parseFloat(inp.value);
+  const { rate, source } = usdKrw();
+  const rateTxt = `현재 환율 ${rate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원${source === 'fallback' ? ', 임시값' : ''}`;
+  prev.textContent = kr ? '국내 종목은 원화로 입력합니다'
+    : !(v > 0) ? (cur === 'KRW' ? '증권사 앱의 원화 매입가를 그대로 입력하세요' : '')
+    : cur === 'KRW' ? `≈ ${fmt$(v / rate)} (${rateTxt})`
+    : `≈ ${fmtKrw(v * rate)} (${rateTxt})`;
 }
 
 function closePtModal() {
@@ -820,7 +850,7 @@ function savePtModal() {
   if (!qty || qty <= 0) { alert('수량을 올바르게 입력하세요'); return; }
   if (!avgPrice || avgPrice <= 0) { alert('평균단가를 올바르게 입력하세요'); return; }
 
-  PT.set(ticker, qty, avgPrice);
+  PT.set(ticker, qty, avgPrice, _ptModalCur);   // 국내 종목이면 PT.set이 무시
   _updatePtCount();
   closePtModal();
   renderPortfolio();

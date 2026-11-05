@@ -977,7 +977,7 @@ function renderHomePortfolioSummary() {
     if (!s || s.price == null) return;
     found++;
     const fx = isKrTicker(t) ? 1 : rate;
-    totalCost  += h.qty * h.avgPrice * fx;
+    totalCost  += h.qty * h.avgPrice * (h.avgCur === 'KRW' ? 1 : fx);   // 원화로 입력한 미국 종목은 원화 그대로
     totalValue += h.qty * s.price * fx;
   });
   if (!found) {

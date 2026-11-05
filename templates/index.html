@@ -928,8 +928,15 @@
           <input id="pt-modal-ticker" class="pt-input" type="text" placeholder="AAPL" autocomplete="off">
           <label class="pt-label">수량 (주)</label>
           <input id="pt-modal-qty" class="pt-input" type="number" placeholder="10" min="0.0001" step="any">
-          <label class="pt-label" id="pt-modal-price-label">평균 매수가 (미국: 달러 · 국내: 원)</label>
-          <input id="pt-modal-price" class="pt-input" type="number" placeholder="150.00" min="0.01" step="any">
+          <label class="pt-label">평균 매수가</label>
+          <div class="pt-price-row">
+            <input id="pt-modal-price" class="pt-input" type="number" placeholder="150.00" min="0.01" step="any">
+            <span id="pt-cur-toggle" class="pt-cur-toggle">
+              <button type="button" data-cur="KRW" onclick="_ptSetModalCur('KRW')">원</button>
+              <button type="button" data-cur="USD" onclick="_ptSetModalCur('USD')">달러</button>
+            </span>
+          </div>
+          <div id="pt-modal-price-preview" class="pt-price-preview"></div>
         </div>
         <div class="pt-modal-footer">
           <button class="pt-modal-cancel" onclick="closePtModal()">취소</button>
