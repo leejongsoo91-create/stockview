@@ -2484,7 +2484,7 @@ mark.kw-hl {
 .pt-chart-inner {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;   /* 16px → 10px: 한글 섹터명(경기소비재 등)이 좁은 카드에서 … 로 잘리던 문제 */
 }
 .pt-legend {
   flex: 1;
@@ -2493,11 +2493,12 @@ mark.kw-hl {
   gap: 5px;
   max-height: 180px;
   overflow-y: auto;
+  scrollbar-width: thin;   /* 스크롤바 폭만큼 범례 글자가 잘리지 않게 */
 }
 .pt-leg-item {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   font-size: 11.5px;
 }
 .pt-leg-dot {
@@ -2517,7 +2518,7 @@ mark.kw-hl {
   color: var(--muted);
   font-size: 11px;
   text-align: right;
-  min-width: 36px;
+  min-width: 32px;
 }
 .pt-chart-tooltip {
   display: none;

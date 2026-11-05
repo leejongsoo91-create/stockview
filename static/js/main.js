@@ -199,6 +199,19 @@ function _csvCell(v) {
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 // 따옴표로 감싼 필드(내부 쉼표 포함) 인식하는 한 줄 파서
+// CSV 가져오기: 머리글 이름 후보(한글·영어) 중 처음 찾은 열 번호, 없으면 -1
+// (예전에 내보낸 영어 머리글 파일도 계속 읽히게)
+function _csvColIndex(header, names) {
+  for (const n of names) { const i = header.indexOf(n.toLowerCase()); if (i !== -1) return i; }
+  return -1;
+}
+
+// 파일 이름용 오늘 날짜 (toISOString은 UTC라 한국 오전 9시 전에는 어제 날짜가 됐음)
+function _localDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function _csvSplitLine(line) {
   const out = [];
   let cur = '', inQ = false;

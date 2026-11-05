@@ -923,7 +923,7 @@ function exportScreenerCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `종목검색_미국_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `종목검색_미국_${_localDateStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1316,7 +1316,7 @@ function exportKrCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `종목검색_국내_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `종목검색_국내_${_localDateStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

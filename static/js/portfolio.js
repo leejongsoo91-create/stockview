@@ -55,8 +55,10 @@ const _SECTOR_COLORS = {
   'Consumer Staples': '#56d364',
   'Industrial':       '#96b9ff',
   'Communication':    '#ffa64d',
+  'Telecommunications': '#ffa64d',   // 실제 데이터 섹터명 (Communication·Materials는 옛 이름 — 회색 '기타'로 칠해지던 문제)
   'Real Estate':      '#ffd400',
   'Materials':        '#a0e6b4',
+  'Basic Materials':  '#a0e6b4',
   'Utilities':        '#8cc8ff',
   'Other':            '#8b949e',
 };
@@ -146,7 +148,7 @@ function _renderCharts(rows, totalValue) {
     sectorMap[sec] = (sectorMap[sec] || 0) + r.value;
   });
   const sectorSlices = Object.entries(sectorMap)
-    .map(([label, value]) => ({ label, value, color: _SECTOR_COLORS[label] || _SECTOR_COLORS['Other'] }))
+    .map(([key, value]) => ({ label: koSector(key), value, color: _SECTOR_COLORS[key] || _SECTOR_COLORS['Other'] }))
     .sort((a, b) => b.value - a.value);
 
   // 종목별 비중 (상위 8 + Others)
@@ -159,7 +161,7 @@ function _renderCharts(rows, totalValue) {
   const rest = sorted.slice(8);
   if (rest.length) {
     holdingSlices.push({
-      label: 'Others',
+      label: '기타',
       value: rest.reduce((s, r) => s + (r.value || 0), 0),
       color: '#8b949e',
     });
@@ -186,7 +188,7 @@ function _drawIndexSectorDonut() {
     totalCap += s.market_cap;
   });
   const slices = Object.entries(capMap)
-    .map(([label, value]) => ({ label, value, color: _SECTOR_COLORS[label] || _SECTOR_COLORS['Other'] }))
+    .map(([key, value]) => ({ label: koSector(key), value, color: _SECTOR_COLORS[key] || _SECTOR_COLORS['Other'] }))
     .sort((a, b) => b.value - a.value);
   _drawDonut('pt-index-sector-donut', 'pt-index-sector-legend', slices, totalCap);
 }
@@ -418,14 +420,14 @@ async function exportPortfolioCSV() {
     }
   } catch {}
 
-  const headers = ['Ticker', 'Qty', 'AvgPrice', 'Name', 'CurrentPrice', 'Group', 'Memo', 'Target'];
+  const headers = ['티커', '수량', '평균단가', '종목명', '현재가', '그룹', '메모', '목표가'];
   const rows = tickers.map(t => {
     const { qty, avgPrice } = data[t];
     const s = priceMap[t] || {};
     const n = PTN.get(t);
     return [
       t, qty, avgPrice,
-      _csvCell(s.name || ''),
+      _csvCell(s.name_ko || s.name || ''),
       s.price != null ? s.price : '',
       _csvCell(PTG.get(t) || ''),
       _csvCell(n.memo || ''),
@@ -438,7 +440,7 @@ async function exportPortfolioCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `portfolio_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `포트폴리오_${_localDateStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -452,16 +454,17 @@ function importPortfolioCSV(file) {
       if (!lines.length) { alert('빈 파일입니다.'); return; }
 
       const header    = _csvSplitLine(lines[0]).map(h => h.trim().toLowerCase());
-      const hasHeader = header.includes('ticker');
-      const tIdx      = hasHeader ? header.indexOf('ticker')    : 0;
-      const qIdx      = hasHeader ? header.indexOf('qty')       : 1;
-      const pIdx      = hasHeader ? header.indexOf('avgprice')  : 2;
-      const gIdx      = hasHeader ? header.indexOf('group')     : -1;
-      const mIdx      = hasHeader ? header.indexOf('memo')      : -1;
-      const tgIdx     = hasHeader ? header.indexOf('target')    : -1;
+      const tCol      = _csvColIndex(header, ['티커', 'ticker']);
+      const hasHeader = tCol !== -1;
+      const tIdx      = hasHeader ? tCol : 0;
+      const qIdx      = hasHeader ? _csvColIndex(header, ['수량', 'qty'])          : 1;
+      const pIdx      = hasHeader ? _csvColIndex(header, ['평균단가', 'avgprice']) : 2;
+      const gIdx      = hasHeader ? _csvColIndex(header, ['그룹', 'group'])        : -1;
+      const mIdx      = hasHeader ? _csvColIndex(header, ['메모', 'memo'])         : -1;
+      const tgIdx     = hasHeader ? _csvColIndex(header, ['목표가', 'target'])     : -1;
       const startIdx  = hasHeader ? 1 : 0;
 
-      if (qIdx === -1 || pIdx === -1) { alert('CSV에 Qty/AvgPrice 컬럼이 필요합니다.'); return; }
+      if (qIdx === -1 || pIdx === -1) { alert('CSV에 수량·평균단가 열이 필요합니다.'); return; }
 
       let added = 0;
       for (let i = startIdx; i < lines.length; i++) {
@@ -588,10 +591,10 @@ async function renderPortfolio() {
         <thead>
           <tr>
             <th></th>
-            <th>Ticker</th>
-            <th>Name</th>
-            <th>Group</th>
-            <th>Signal</th>
+            <th>티커</th>
+            <th>종목명</th>
+            <th>그룹</th>
+            <th>신호</th>
             <th class="num">수량</th>
             <th class="num">평균단가</th>
             <th class="num">현재가</th>

@@ -160,7 +160,7 @@ async function renderWatchlist() {
       <div class="wl-empty">
         <div class="wl-empty-icon">☆</div>
         <div class="wl-empty-text">관심종목이 없습니다</div>
-        <div class="wl-empty-sub">Screener나 Home 화면에서 ☆ 아이콘을 클릭해 추가하세요</div>
+        <div class="wl-empty-sub">종목검색이나 홈 화면에서 ☆ 아이콘을 눌러 추가하세요</div>
       </div>`;
     return;
   }
@@ -246,17 +246,17 @@ async function renderWatchlist() {
         <thead>
           <tr>
             <th></th>
-            <th>Ticker</th>
-            <th>Name</th>
-            <th>Group</th>
-            <th>Sector</th>
-            <th>Signal</th>
-            <th class="num">Price</th>
-            <th class="num">Change</th>
-            <th class="num">Chg %</th>
-            <th class="num">Mkt Cap</th>
-            <th class="num">52W High</th>
-            <th class="num">52W Low</th>
+            <th>티커</th>
+            <th>종목명</th>
+            <th>그룹</th>
+            <th>섹터</th>
+            <th>신호</th>
+            <th class="num">현재가</th>
+            <th class="num">변동</th>
+            <th class="num">등락률</th>
+            <th class="num">시가총액</th>
+            <th class="num">52주 최고</th>
+            <th class="num">52주 최저</th>
             <th>메모</th>
             <th class="num">목표가</th>
           </tr>
@@ -286,7 +286,7 @@ async function renderWatchlist() {
                     ${groupOptionsHtml(WLG.get(s.ticker))}
                   </select>
                 </td>
-                <td class="td-sector">${s.sector || '—'}</td>
+                <td class="td-sector">${s.sector ? koSector(s.sector) : '—'}</td>
                 <td>${signalBadgeHtml(s.ticker, sigMap)}</td>
                 <td class="num">${price}</td>
                 <td class="num ${cls}">${chg}</td>
@@ -331,15 +331,15 @@ async function exportWatchlistCSV() {
     }
   } catch { return; }
 
-  const headers = ['Ticker', 'Name', 'Group', 'Sector', 'Price', 'Change%', 'Memo', 'Target'];
+  const headers = ['티커', '종목명', '그룹', '섹터', '현재가', '등락률(%)', '메모', '목표가'];
   const rows = tickers.map(t => {
     const s = stocks.find(x => x.ticker === t) || {};
     const n = WLN.get(t);
     return [
       t,
-      _csvCell(s.name || ''),
+      _csvCell(s.name_ko || s.name || ''),
       _csvCell(WLG.get(t) || ''),
-      _csvCell(s.sector || ''),
+      _csvCell(s.sector ? koSector(s.sector) : ''),
       s.price != null ? s.price : '',
       s.change_pct != null ? s.change_pct : '',
       _csvCell(n.memo || ''),
@@ -352,7 +352,7 @@ async function exportWatchlistCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `watchlist_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `관심종목_${_localDateStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -366,11 +366,12 @@ function importWatchlistCSV(file) {
       if (!lines.length) { alert('빈 파일입니다.'); return; }
 
       const header    = _csvSplitLine(lines[0]).map(h => h.trim().toLowerCase());
-      const hasHeader = header.includes('ticker');
-      const tIdx      = hasHeader ? header.indexOf('ticker') : 0;
-      const groupIdx  = hasHeader ? header.indexOf('group')  : -1;
-      const memoIdx   = hasHeader ? header.indexOf('memo')   : -1;
-      const targetIdx = hasHeader ? header.indexOf('target') : -1;
+      const tCol      = _csvColIndex(header, ['티커', 'ticker']);
+      const hasHeader = tCol !== -1;
+      const tIdx      = hasHeader ? tCol : 0;
+      const groupIdx  = hasHeader ? _csvColIndex(header, ['그룹', 'group'])   : -1;
+      const memoIdx   = hasHeader ? _csvColIndex(header, ['메모', 'memo'])    : -1;
+      const targetIdx = hasHeader ? _csvColIndex(header, ['목표가', 'target']) : -1;
       const startIdx  = hasHeader ? 1 : 0;
 
       let added = 0;
