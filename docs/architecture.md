@@ -51,8 +51,11 @@
 
 | 작업 | 주기 | 비고 |
 |------|------|------|
-| `refresh_indices` | 30초 | 지수 19개, `indices_update`. 캐시 ttl 90초(갱신 주기보다 길게 — 같으면 순간 더미 값 반환). 달러/원은 포트폴리오 원화 환산에도 사용 |
-| `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update` |
+| `refresh_indices` | 30초 | 지수 19개, `indices_update`. 캐시 ttl 90초(갱신 주기보다 길게 — 같으면 순간 더미 값 반환). 코스피·코스닥은 네이버 실시간 값으로 덮어씀(Yahoo 등락률 오류). 달러/원은 포트폴리오 원화 환산에도 사용 |
+| `_rt_loop` (백그라운드) | **10초** | 화면 종목 실시간: 브라우저가 `rt_subscribe`로 보낸 종목(관심종목·포트폴리오·차트) + 지수(코스피·코스닥·S&P·나스닥·다우)를 네이버 polling으로 받아 캐시에 반영 → `rt_quotes`·`rt_indices`. 장중만 요청, 여러 명이 봐도 한 번만 받음 |
+| `refresh_us_quotes` | 1분 (뉴욕 평일 09:25~16:20만) | 미국 전 종목 가격·등락률·거래량을 네이버 미국 시장 목록(약 70요청, 24초)으로 덮어씀 — **Nasdaq 스크리너 API는 장중에도 전일 종가**. 시가총액은 Nasdaq 값을 가격 비율로만 조정. 시작 15초 후 한 번 |
+| `refresh_kr_quotes` | 1분 (평일 08:55~15:45 KST만) | 국내 전 종목 시세·시가총액을 네이버 국내 시장 목록(약 44요청, 10초)으로. 시작 20초 후 한 번 |
+| `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update`. Nasdaq(섹터·업종 등 기본 정보) 위에 마지막 네이버 시세를 덮어씀. KR Yahoo 갱신은 네이버 시세가 살아 있으면 30분에 한 번만(52주 최고·최저용) |
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
 | `refresh_fear_greed` | 30분 | |

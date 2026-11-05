@@ -323,14 +323,12 @@ def name_ko(ticker: str) -> str:
     return _us_names_ko.get(_norm_us_ticker(ticker)) or NAME_KO.get(ticker, "")
 
 
-def fetch_us_names_ko_naver() -> dict[str, str]:
-    """네이버 해외주식 시총 목록(NASDAQ·NYSE·AMEX)에서 한글명 수집. 반환: {티커(BRK/B 표기): 한글명}.
-    국내 수급·PER과 같은 api.stock.naver.com 계열(무료·키 없음). 이름이 영어 그대로인 종목은 뺀다.
-    페이지 하나라도 실패하면 그 거래소는 거기까지만 — 호출부가 개수로 저장 여부를 판단한다."""
+def _naver_us_market_rows(tag: str, sleep: float = 0.3):
+    """네이버 해외주식 시총 목록(NASDAQ·NYSE·AMEX, 100개씩 약 70페이지)을 한 행씩 돌려준다.
+    국내 수급·PER과 같은 api.stock.naver.com 계열(무료·키 없음, 비공식 — 바뀌거나 막힐 수 있음).
+    페이지 하나라도 실패하면 그 거래소는 거기까지만 — 호출부가 개수로 사용 여부를 판단한다."""
     session = requests.Session()
     session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    result: dict[str, str] = {}
-    t0 = time.time()
     for ex in ("NASDAQ", "NYSE", "AMEX"):
         page = 1
         while page <= 100:   # 안전장치 (NASDAQ 약 40페이지)
@@ -340,18 +338,50 @@ def fetch_us_names_ko_naver() -> dict[str, str]:
                 r.raise_for_status()
                 d = r.json()
             except Exception as e:
-                log.warning(f"fetch_us_names_ko_naver {ex} {page}페이지 실패: {e}")
+                log.warning(f"{tag} {ex} {page}페이지 실패: {e}")
                 break
             stocks = d.get("stocks") or []
-            for s in stocks:
-                sym, ko = (s.get("symbolCode") or "").strip(), (s.get("stockName") or "").strip()
-                if sym and _HANGUL_RE.search(ko):
-                    result.setdefault(_norm_us_ticker(sym), ko)
+            yield from stocks
             if not stocks or page * 100 >= (d.get("totalCount") or 0):
                 break
             page += 1
-            time.sleep(0.3)
+            time.sleep(sleep)
+
+
+def fetch_us_names_ko_naver() -> dict[str, str]:
+    """네이버 해외주식 시총 목록에서 한글명 수집. 반환: {티커(BRK/B 표기): 한글명}. 이름이 영어 그대로인 종목은 뺀다."""
+    result: dict[str, str] = {}
+    t0 = time.time()
+    for s in _naver_us_market_rows("fetch_us_names_ko_naver"):
+        sym, ko = (s.get("symbolCode") or "").strip(), (s.get("stockName") or "").strip()
+        if sym and _HANGUL_RE.search(ko):
+            result.setdefault(_norm_us_ticker(sym), ko)
     log.info(f"fetch_us_names_ko_naver: 한글명 {len(result)}개, {time.time() - t0:.0f}초")
+    return result
+
+
+def fetch_us_quotes_naver() -> dict[str, dict]:
+    """미국 전 종목 현재 시세 (네이버 해외주식 시총 목록). 장중 실시간 값.
+    Nasdaq 스크리너 API(fetch_nasdaq_stocks)는 장중에도 전일 종가를 돌려줘(11-06 확인) 가격·등락률을 이걸로 덮어쓴다.
+    반환: {티커(BRK/B 표기): {price, change, change_pct, volume, market_cap(십억달러), reuters, traded_at}}"""
+    result: dict[str, dict] = {}
+    t0 = time.time()
+    for s in _naver_us_market_rows("fetch_us_quotes_naver", sleep=0.2):
+        sym   = (s.get("symbolCode") or "").strip()
+        price = _naver_num(s.get("closePrice"))
+        if not sym or not price:
+            continue
+        mv = _naver_num(s.get("marketValue"))   # 천 달러 단위 (AAPL 5,017,817,123 = 약 $5.0T)
+        result.setdefault(_norm_us_ticker(sym), {
+            "price":      round(price, 4),
+            "change":     _naver_num(s.get("compareToPreviousClosePrice")) or 0.0,
+            "change_pct": _naver_num(s.get("fluctuationsRatio")) or 0.0,
+            "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
+            "market_cap": round(mv / 1e6, 3) if mv else None,
+            "reuters":    s.get("reutersCode") or "",
+            "traded_at":  s.get("localTradedAt") or "",
+        })
+    log.info(f"fetch_us_quotes_naver: {len(result)}종목, {time.time() - t0:.0f}초")
     return result
 
 
@@ -1071,6 +1101,129 @@ def fetch_kr_prices(base_stocks: list[dict], max_workers: int = 25,
     if fail:
         log.warning(f"fetch_kr_prices: {fail}/{total}개 실패 (기존 값 유지)")
     return rows
+
+
+# ── 국내주식 실시간 시세·지수 (네이버) ──────────────────────────────────────────
+def fetch_kr_quotes_naver() -> dict[str, dict]:
+    """국내 전 종목 현재 시세 (네이버 국내 시총 목록 KOSPI·KOSDAQ, 100개씩 약 44페이지). 장중 실시간 값.
+    Yahoo(fetch_kr_prices)는 3,900여 건 개별 요청이라 한 바퀴가 느리고, 전일 종가·시가총액이 네이버와 달랐음
+    (11-06: 삼성전자 시총 1,838조 vs 실제 약 1,178조). 반환: {종목코드: {price, change, change_pct, volume, market_cap(원)}}"""
+    session = requests.Session()
+    session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    result: dict[str, dict] = {}
+    t0 = time.time()
+    for mkt in ("KOSPI", "KOSDAQ"):
+        page = 1
+        while page <= 60:   # 안전장치 (KOSPI 약 25페이지)
+            try:
+                r = session.get(f"https://m.stock.naver.com/api/stocks/marketValue/{mkt}",
+                                params={"page": page, "pageSize": 100}, timeout=15)   # pageSize는 100까지만 허용
+                r.raise_for_status()
+                d = r.json()
+            except Exception as e:
+                log.warning(f"fetch_kr_quotes_naver {mkt} {page}페이지 실패: {e}")
+                break
+            stocks = d.get("stocks") or []
+            for s in stocks:
+                code, price = s.get("itemCode"), _naver_num(s.get("closePrice"))
+                if not code or not price:
+                    continue
+                mv = _naver_num(s.get("marketValue"))   # 억원 단위 (삼성전자 11,780,251 = 약 1,178조)
+                result[code] = {
+                    "price":      price,
+                    "change":     _naver_num(s.get("compareToPreviousClosePrice")) or 0.0,
+                    "change_pct": _naver_num(s.get("fluctuationsRatio")) or 0.0,
+                    "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
+                    "market_cap": int(mv * 1e8) if mv else None,
+                }
+            if not stocks or page * 100 >= (d.get("totalCount") or 0):
+                break
+            page += 1
+            time.sleep(0.2)
+    log.info(f"fetch_kr_quotes_naver: {len(result)}종목, {time.time() - t0:.0f}초")
+    return result
+
+
+def fetch_kr_indices_naver() -> dict[str, dict]:
+    """코스피·코스닥 실시간 지수 (네이버 polling, 요청 1번). Yahoo ^KS11/^KQ11은 등락률이 틀렸음
+    (11-06 코스닥: Yahoo -3.69% vs 실제 -5.11%). 반환: {"KOSPI": {value, change, change_pct}, ...}, 실패 시 {}"""
+    try:
+        r = requests.get("https://polling.finance.naver.com/api/realtime/domestic/index/KOSPI,KOSDAQ",
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, timeout=8)
+        r.raise_for_status()
+        out = {}
+        for x in r.json().get("datas") or []:
+            v = _naver_num(x.get("closePrice"))
+            if x.get("itemCode") in ("KOSPI", "KOSDAQ") and v:
+                out[x["itemCode"]] = {"value": v,
+                                      "change": _naver_num(x.get("compareToPreviousClosePrice")) or 0.0,
+                                      "change_pct": _naver_num(x.get("fluctuationsRatio")) or 0.0}
+        return out
+    except Exception as e:
+        log.warning(f"fetch_kr_indices_naver 실패: {e}")
+        return {}
+
+
+# ── 화면 종목 실시간 시세 (네이버 polling, 10초) ──────────────────────────────
+_NAVER_RT = "https://polling.finance.naver.com/api/realtime"
+_NAVER_RT_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+
+def _naver_rt_datas(path: str, codes: list[str]) -> list[dict]:
+    """네이버 실시간 시세 — 한 요청에 100개까지 (11-06 확인). 실패한 묶음은 건너뛴다."""
+    out = []
+    for i in range(0, len(codes), 100):
+        try:
+            r = requests.get(f"{_NAVER_RT}/{path}/" + ",".join(codes[i:i + 100]),
+                             headers=_NAVER_RT_HEADERS, timeout=8)
+            r.raise_for_status()
+            out.extend(r.json().get("datas") or [])
+        except Exception as e:
+            log.warning(f"naver realtime {path} 실패: {e}")
+    return out
+
+
+def _naver_rt_quote(x: dict) -> dict | None:
+    price = _naver_num(x.get("closePrice"))
+    if not price:
+        return None
+    return {"price": price,
+            "change": _naver_num(x.get("compareToPreviousClosePrice")) or 0.0,
+            "change_pct": _naver_num(x.get("fluctuationsRatio")) or 0.0,
+            "volume": int(_naver_num(x.get("accumulatedTradingVolume")) or 0)}
+
+
+def fetch_rt_kr(tickers: list[str]) -> dict[str, dict]:
+    """국내 종목(005930.KS 등) 실시간 시세. 반환: {티커: {price, change, change_pct, volume}}"""
+    by_code = {t.split(".")[0]: t for t in tickers}
+    out = {}
+    for x in _naver_rt_datas("domestic/stock", list(by_code)):
+        q, t = _naver_rt_quote(x), by_code.get(x.get("itemCode"))
+        if q and t:
+            out[t] = q
+    return out
+
+
+def fetch_rt_us(reuters_to_ticker: dict[str, str]) -> dict[str, dict]:
+    """미국 종목 실시간 시세. reuters_to_ticker: {"AAPL.O": "AAPL", ...} (로이터 코드는 시장 목록에서 얻은 값)."""
+    out = {}
+    for x in _naver_rt_datas("worldstock/stock", list(reuters_to_ticker)):
+        q, t = _naver_rt_quote(x), reuters_to_ticker.get(x.get("reutersCode"))
+        if q and t:
+            out[t] = q
+    return out
+
+
+def fetch_us_indices_naver() -> dict[str, dict]:
+    """S&P 500·나스닥·다우 실시간 지수. 반환 키는 앱 지수 이름("S&P 500", "NASDAQ", "Dow Jones")."""
+    names = {".INX": "S&P 500", ".IXIC": "NASDAQ", ".DJI": "Dow Jones"}
+    out = {}
+    for x in _naver_rt_datas("worldstock/index", list(names)):
+        v, n = _naver_num(x.get("closePrice")), names.get(x.get("reutersCode"))
+        if v and n:
+            out[n] = {"value": v, "change": _naver_num(x.get("compareToPreviousClosePrice")) or 0.0,
+                      "change_pct": _naver_num(x.get("fluctuationsRatio")) or 0.0}
+    return out
 
 
 # ── 국내주식 PER/EPS (네이버 integration API, 1일 1회) ─────────────────────────

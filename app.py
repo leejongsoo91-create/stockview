@@ -179,7 +179,7 @@ def refresh_stocks():
         nasdaq = df.fetch_nasdaq_stocks(min_market_cap_b=0.0)
         if nasdaq:
             cache.set("stocks_base", nasdaq, ttl=3600)
-            cache.set("stocks",      nasdaq, ttl=300)
+            cache.set("stocks",      _apply_us_quotes(nasdaq), ttl=300)
             cache.set("market_caps",
                       {s["ticker"]: s["market_cap"] for s in nasdaq if s.get("market_cap")},
                       ttl=3600)
@@ -191,12 +191,210 @@ def refresh_stocks():
         _emit_queue.put(("stocks_update", {"count": len(updated)}))
 
 
+# ── 미국 종목 실시간 시세 (네이버) ────────────────────────────────────────────
+# Nasdaq 스크리너 API는 장중에도 전일 종가를 돌려줘(11-06: 앱 AAPL +5.31% = 전일, 실제 -1.27%)
+# 가격·등락률·거래량·시총을 네이버 미국 시장 전체 목록으로 1분마다 덮어쓴다. 섹터·업종 등은 Nasdaq 그대로.
+_US_QUOTE_FIELDS = ("price", "change", "change_pct", "volume")
+
+
+def _apply_us_quotes(rows: list) -> list:
+    """시가총액은 Nasdaq 값(회사 전체 기준)을 가격 변동 비율만큼만 조정 — 네이버 값은 주식 종류별이라
+    BRK/B·GOOGL처럼 종류가 여럿인 회사가 작게 나옴(BRK/B $1,277B → $814B)."""
+    quotes = cache.get("us_quotes") or {}
+    if not quotes:
+        return rows
+    out = []
+    for s in rows:
+        q = quotes.get(df._norm_us_ticker(s.get("ticker", "")))
+        if q:
+            new = {k: q[k] for k in _US_QUOTE_FIELDS if q.get(k) is not None}
+            old_p, cap = s.get("price"), s.get("market_cap")
+            if cap and old_p and q.get("price"):
+                new["market_cap"] = round(cap * q["price"] / old_p, 3)
+            s = {**s, **new}
+        out.append(s)
+    return out
+
+
+def _us_market_window() -> bool:
+    """미국 정규장 앞뒤 여유 포함 (뉴욕 평일 09:25~16:20). 그 밖에는 값이 안 바뀌니 요청하지 않는다."""
+    from zoneinfo import ZoneInfo
+    ny = datetime.now(ZoneInfo("America/New_York"))
+    hm = ny.hour * 60 + ny.minute
+    return ny.weekday() < 5 and 9 * 60 + 25 <= hm <= 16 * 60 + 20
+
+
+def refresh_us_quotes(force: bool = False):
+    """미국 전 종목 시세 1분 갱신 (장중만). force=True면 장 밖에도 한 번 받는다(서버 시작 시 최신 종가 반영)."""
+    try:
+        if not force and not _us_market_window():
+            return
+        quotes = df.fetch_us_quotes_naver()
+        if len(quotes) < 3000:   # 대량 실패(차단·개편) 시 이전 값 유지
+            log.warning(f"refresh_us_quotes: {len(quotes)}종목만 수신 — 반영 안 함")
+            return
+        cache.set("us_quotes", quotes, ttl=6 * 3600)
+        rows = cache.get("stocks")
+        if rows:
+            cache.set("stocks", _apply_us_quotes(rows), ttl=300)
+            _emit_queue.put(("stocks_update", {"count": len(rows)}))
+    except Exception as e:
+        log.error(f"refresh_us_quotes 실패: {e}")
+
+
+# ── 국내 종목 실시간 시세 (네이버) ────────────────────────────────────────────
+_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "market_cap")
+_kr_quotes_ts = 0.0     # 마지막 네이버 국내 시세 수신 시각
+_kr_yahoo_last = 0.0    # 마지막 Yahoo 국내 갱신 시작 시각
+
+
+def _apply_kr_quotes(rows: list) -> list:
+    quotes = cache.get("kr_quotes") or {}
+    if not quotes:
+        return rows
+    out = []
+    for s in rows:
+        q = quotes.get(s.get("code"))
+        if q:
+            s = {**s, **{k: q[k] for k in _KR_QUOTE_FIELDS if q.get(k) is not None}}
+            eps = s.get("eps") or 0
+            if eps > 0:   # PER = 현재가 ÷ EPS (EPS가 앵커, .claude/rules/kr.md)
+                s["pe"] = round(s["price"] / eps, 1)
+        out.append(s)
+    return out
+
+
+def _kr_market_window() -> bool:
+    """국내 정규장 앞뒤 여유 포함 (평일 08:55~15:45 KST)."""
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    hm = now.hour * 60 + now.minute
+    return now.weekday() < 5 and 8 * 60 + 55 <= hm <= 15 * 60 + 45
+
+
+def refresh_kr_quotes(force: bool = False):
+    """국내 전 종목 시세 1분 갱신 (장중만). force=True면 장 밖에도 한 번 (서버 시작 시 최신 종가 반영)."""
+    global _kr_quotes_ts
+    try:
+        if not force and not _kr_market_window():
+            return
+        quotes = df.fetch_kr_quotes_naver()
+        if len(quotes) < 2500:   # 대량 실패 시 이전 값 유지
+            log.warning(f"refresh_kr_quotes: {len(quotes)}종목만 수신 — 반영 안 함")
+            return
+        cache.set("kr_quotes", quotes, ttl=6 * 3600)
+        _kr_quotes_ts = time.time()
+        rows = cache.get("kr_stocks")
+        if rows:
+            cache.set("kr_stocks", _apply_kr_quotes(rows), ttl=300)
+            _emit_queue.put(("kr_stocks_update", {"count": len(rows)}))
+    except Exception as e:
+        log.error(f"refresh_kr_quotes 실패: {e}")
+
+
+# ── 화면 종목 실시간 시세 (10초) ───────────────────────────────────────────────
+# 브라우저가 지금 보는 종목(관심종목·포트폴리오·차트)을 rt_subscribe로 알려주면, 10초마다 네이버 실시간 시세로
+# 그 종목만 서버 캐시에 반영하고 rt_quotes로 보낸다(전체 목록 1.6MB를 다시 받지 않게). 지수도 같은 주기로 rt_indices.
+# 여러 명이 봐도 서버가 한 번만 받아 나눠준다. 장 밖에는 요청하지 않는다.
+RT_INTERVAL = 10
+_rt_subs: dict[str, set] = {}
+_rt_lock = threading.Lock()
+
+
+@socketio.on("rt_subscribe")
+def _on_rt_subscribe(data):
+    tickers = {str(t).upper()[:20] for t in ((data or {}).get("tickers") or [])[:300] if t}
+    with _rt_lock:
+        _rt_subs[request.sid] = tickers
+
+
+@socketio.on("disconnect")
+def _on_rt_disconnect(*_args):
+    with _rt_lock:
+        _rt_subs.pop(request.sid, None)
+
+
+def _rt_patch_rows(key: str, quotes: dict, is_kr: bool):
+    rows = cache.get(key)
+    if not rows:
+        return
+    out, hit = [], False
+    for s in rows:
+        q = quotes.get(s.get("ticker"))
+        if q:
+            hit = True
+            new = dict(q)
+            if is_kr:
+                eps = s.get("eps") or 0
+                if eps > 0:
+                    new["pe"] = round(q["price"] / eps, 1)
+            elif s.get("market_cap") and s.get("price"):
+                new["market_cap"] = round(s["market_cap"] * q["price"] / s["price"], 3)
+            s = {**s, **new}
+        out.append(s)
+    if hit:
+        cache.set(key, out, ttl=300)
+
+
+def _rt_tick():
+    with _rt_lock:
+        tickers = set().union(*_rt_subs.values()) if _rt_subs else set()
+    us_open, kr_open = _us_market_window(), _kr_market_window()
+    quotes_kr, quotes_us = {}, {}
+    if kr_open:
+        kr = [t for t in tickers if t.endswith((".KS", ".KQ"))]
+        if kr:
+            quotes_kr = df.fetch_rt_kr(kr)
+    if us_open:
+        uq = cache.get("us_quotes") or {}
+        pairs = {}
+        for t in tickers:
+            if t.endswith((".KS", ".KQ")) or t.startswith("^") or "=" in t:
+                continue
+            q = uq.get(df._norm_us_ticker(t))
+            if q and q.get("reuters"):
+                pairs[q["reuters"]] = t
+        if pairs:
+            quotes_us = df.fetch_rt_us(pairs)
+    if quotes_kr:
+        _rt_patch_rows("kr_stocks", quotes_kr, is_kr=True)
+    if quotes_us:
+        _rt_patch_rows("stocks", quotes_us, is_kr=False)
+    if quotes_kr or quotes_us:
+        _emit_queue.put(("rt_quotes", {"quotes": {**quotes_us, **quotes_kr}}))
+
+    idx_patch = {}
+    if kr_open:
+        idx_patch.update(df.fetch_kr_indices_naver())
+    if us_open:
+        idx_patch.update(df.fetch_us_indices_naver())
+    idx = cache.get("indices")
+    if idx_patch and idx:
+        idx = [{**x, **idx_patch[x.get("name")]} if x.get("name") in idx_patch else x for x in idx]
+        cache.set("indices", idx, ttl=90)
+        _emit_queue.put(("rt_indices", {"indices": idx}))
+
+
+def _rt_loop():
+    while True:
+        socketio.sleep(RT_INTERVAL)
+        try:
+            _rt_tick()
+        except Exception as e:
+            log.warning(f"실시간 시세 갱신 실패: {e}")
+
+
 def refresh_kr_stocks():
     """국내주식 가격 갱신 (Yahoo Finance). kr_stocks.json 기반.
 
     시총 큰 종목부터 chunk 단위로 갱신하고 chunk마다 캐시에 즉시 반영한다.
     이전 주기에 갱신된 행(updated_at 있음)은 이어서 쓰므로, 다음 주기 도중에 파일의 옛 값으로 되돌아가지 않는다.
     """
+    global _kr_yahoo_last
+    # 네이버 시세(1분)가 살아 있으면 Yahoo 3,900여 건 갱신은 30분에 한 번만 (52주 최고·최저 등 보조 값용)
+    if time.time() - _kr_quotes_ts < 180 and time.time() - _kr_yahoo_last < 1800:
+        return
+    _kr_yahoo_last = time.time()
     base = _load_kr_base()
     if not base:
         return
@@ -206,11 +404,11 @@ def refresh_kr_stocks():
     base = _apply_kr_per(base)
 
     def _publish(rows):
-        cache.set("kr_stocks", rows, ttl=300)
+        cache.set("kr_stocks", _apply_kr_quotes(rows), ttl=300)
 
     updated = df.fetch_kr_prices(base, on_progress=_publish)
     if updated:
-        cache.set("kr_stocks", updated, ttl=300)
+        cache.set("kr_stocks", _apply_kr_quotes(updated), ttl=300)
         _emit_queue.put(("kr_stocks_update", {"count": len(updated)}))
         log.info(f"국내주식 가격 갱신: {len(updated)}개")
 
@@ -407,6 +605,9 @@ def refresh_indices():
     try:
         idx = df.fetch_indices()
         if idx:
+            kr_idx = df.fetch_kr_indices_naver()   # 코스피·코스닥은 네이버 실시간 값으로 (Yahoo 등락률 오류)
+            if kr_idx:
+                idx = [{**x, **kr_idx[x.get("name")]} if x.get("name") in kr_idx else x for x in idx]
             # ttl을 갱신 주기(30초)보다 길게 — 같으면 만료~재수집 사이 1~2초 동안 /api/indices가
             # 더미 INDICES(달러/원 1,350 등)를 돌려줘 티커 테이프·포트폴리오 환율이 순간 틀렸음
             cache.set("indices", idx, ttl=90)
@@ -571,7 +772,7 @@ def _load_sp500_background():
     nasdaq = df.fetch_nasdaq_stocks(min_market_cap_b=0.0)
     if nasdaq:
         cache.set("stocks_base", nasdaq, ttl=3600)
-        cache.set("stocks",      nasdaq, ttl=300)
+        cache.set("stocks",      _apply_us_quotes(nasdaq), ttl=300)
         cache.set("market_caps",
                   {s["ticker"]: s["market_cap"] for s in nasdaq if s.get("market_cap")},
                   ttl=3600)
@@ -612,6 +813,7 @@ def initial_load():
 
     # emit 큐 워커 시작 (socketio 관리 스레드에서 emit 처리)
     socketio.start_background_task(_emit_worker)
+    socketio.start_background_task(_rt_loop)   # 화면 종목·지수 10초 실시간 (장중만 요청)
 
     # 백그라운드 갱신 스레드 시작
     # 느린 서버(0.1 vCPU)에서 시작 직후 한꺼번에 몰리지 않도록 작업을 몇 초씩 나눠 시작한다.
@@ -633,7 +835,8 @@ def initial_load():
     _start_after(16, refresh_earnings)
     _start_after(20, refresh_av_news)
     _start_after(24, refresh_dynamic_indices)
-    _start_after(28, refresh_us_names_ko)    # 한글명(6일 이내 파일이면 스킵, 첫 수집 약 30초)
+    _start_after(28, refresh_us_names_ko)
+    _start_after(15, lambda: refresh_us_quotes(force=True))   # 미국 시세: 시작 시 한 번(장 밖이어도 최신 종가)    # 한글명(6일 이내 파일이면 스킵, 첫 수집 약 30초)
     # extra_fields는 stocks 로드 후 실행 — 약간 지연해서 시작
     def _delayed_extra():
         import time as _t; _t.sleep(30)
@@ -671,6 +874,7 @@ def initial_load():
         cache.set("kr_stocks", _apply_kr_per(kr_base), ttl=300)
         log.info(f"국내주식 파일 캐시 로드: {len(kr_base)}개")
         _start_after(5, refresh_kr_stocks)        # 3,936종목 시세 갱신은 초반 부하를 피해 5초 뒤 시작
+        _start_after(20, lambda: refresh_kr_quotes(force=True))   # 네이버 국내 시세: 시작 시 한 번(장 밖이어도 최신 종가)
         _start_after(300, refresh_kr_per)         # PER/EPS 재수집(캐시 20시간 이내면 스킵) — 음성 브리핑(270초) 뒤
     else:
         log.info("kr_stocks.json 없음 — scripts/fetch_kr_stocks.py 실행 필요")
@@ -680,7 +884,9 @@ def initial_load():
 # 느린 서버에서 30초 주기 작업이 밀릴 때 'missed' 경고가 쌓이지 않도록 1회로 합치고 60초까지 허용
 _scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "misfire_grace_time": 60})
 _scheduler.add_job(refresh_stocks,          "interval", minutes=5,  id="stocks")
-_scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")
+_scheduler.add_job(refresh_us_quotes,       "interval", minutes=1,  id="us_quotes")   # 장중만 실제 수집 (네이버, 약 70요청)
+_scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")   # 네이버 시세가 살아 있으면 30분에 한 번만 실제 실행
+_scheduler.add_job(refresh_kr_quotes,       "interval", minutes=1,  id="kr_quotes")   # 장중만 실제 수집 (네이버, 약 44요청)
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
 _scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")

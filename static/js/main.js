@@ -466,6 +466,7 @@ let _portfolioInited = false;
 let _earningsInited  = false;
 
 function switchView(name) {
+  _currentView = name;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
@@ -488,6 +489,7 @@ function switchView(name) {
   // 워치리스트는 진입할 때마다 최신 데이터로 갱신
   if (name === 'watchlist')  { initWatchlist();  _watchlistInited  = true; }
   if (name === 'portfolio')  { initPortfolio(); _portfolioInited  = true; }
+  _rtSubscribe();   // 탭을 바꾸면 보는 종목도 바로 알려준다
 }
 
 // 차트 탭으로 이동 + 종목 로드 (다른 탭에서 호출)
@@ -1339,6 +1341,50 @@ function renderNews() {
 
 let _currentView = 'home';
 
+// ── 화면 종목 실시간 시세 (10초, 서버 rt_quotes) ─────────────────────────────
+function _rtTickers() {
+  const set = new Set();
+  if (typeof WL !== 'undefined') WL.load().forEach(t => set.add(t));
+  if (typeof PT !== 'undefined') PT.tickers().forEach(t => set.add(t));
+  if (typeof _currentTicker !== 'undefined' && _currentTicker && !/^\^|=/.test(_currentTicker)) set.add(_currentTicker);
+  return [...set].slice(0, 300);
+}
+
+function _rtSubscribe(socket) {
+  try { (socket || window._rtSocket)?.emit('rt_subscribe', { tickers: _rtTickers() }); } catch {}
+}
+
+// 메모·목표가 입력 중이거나 드롭다운을 열어둔 상태 — 이때 표를 다시 그리면 입력이 날아간다
+function _isTypingInTable() {
+  const ae = document.activeElement;
+  return !!(ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.id !== 'global-search');
+}
+
+async function _rtApply(quotes) {
+  if (!quotes || !Object.keys(quotes).length) return;
+  const patch = s => { const q = s && quotes[s.ticker]; if (q) Object.assign(s, q); };
+  (window._scStocks || []).forEach(patch);
+  (window._krStocks || []).forEach(patch);
+  if (typeof _wlCache !== 'undefined' && _wlCache) _wlCache.stocks.forEach(patch);
+  if (typeof _ptCache !== 'undefined' && _ptCache) Object.values(_ptCache.priceMap).forEach(patch);
+
+  if (_isTypingInTable()) return;   // 입력 중엔 값만 바꿔두고 다음 갱신 때 그린다
+
+  // 표 가로 스크롤 위치 유지
+  const keep = async (sel, fn) => {
+    const wrap = document.querySelector(sel);
+    const x = wrap ? wrap.scrollLeft : 0;
+    await fn();
+    const w2 = document.querySelector(sel);
+    if (w2) w2.scrollLeft = x;
+  };
+  if (_currentView === 'watchlist' && typeof renderWatchlist === 'function')
+    await keep('#wl-content .table-wrap', () => renderWatchlist({ cached: true }));
+  if (_currentView === 'portfolio' && typeof renderPortfolio === 'function')
+    await keep('#pt-content .table-wrap', () => renderPortfolio({ cached: true }));
+  if (_currentView === 'home') { renderHomeWatchlistSummary(); renderHomePortfolioSummary(); }
+}
+
 // ── 타임스탬프 ────────────────────────────────────────────────────────────────
 function updateTimestamp() {
   const el = document.getElementById('last-updated');
@@ -1367,11 +1413,11 @@ async function _refreshCurrentView() {
       loadScreenerData(false);
     }
     // 포트폴리오가 열려있으면 갱신
-    if (_currentView === 'portfolio' && typeof renderPortfolio === 'function') {
+    if (_currentView === 'portfolio' && typeof renderPortfolio === 'function' && !_isTypingInTable()) {
       renderPortfolio();
     }
     // 워치리스트가 열려있으면 갱신
-    if (_currentView === 'watchlist' && typeof renderWatchlist === 'function') {
+    if (_currentView === 'watchlist' && typeof renderWatchlist === 'function' && !_isTypingInTable()) {
       renderWatchlist();
     }
     // 가격 알림 확인 — 차트 탭을 안 보고 있어도(다른 탭이거나 다른 티커여도) 동작
@@ -1399,6 +1445,16 @@ function initSocketIO() {
   // 종목 가격 갱신 Push
   socket.on('stocks_update', _refreshCurrentView);
 
+  // 화면 종목 실시간 시세 (10초) — 지금 보는 종목을 서버에 알려주고, 받은 값만 바꿔 다시 그린다
+  socket.on('connect', () => _rtSubscribe(socket));
+  setInterval(() => _rtSubscribe(socket), 30000);   // 관심종목·포트폴리오·차트 종목 변경 반영
+  window._rtSocket = socket;
+  socket.on('rt_quotes', msg => _rtApply((msg || {}).quotes || {}));
+  socket.on('rt_indices', msg => {
+    const indices = (msg || {}).indices;
+    if (indices && indices.length) { _setUsdKrwFromIndices(indices); renderIndices(indices); }
+  });
+
   // 국내주식 가격 갱신 Push
   socket.on('kr_stocks_update', async () => {
     try {
@@ -1407,7 +1463,7 @@ function initSocketIO() {
           && typeof loadKrScreener === 'function') {
         loadKrScreener(false);
       }
-      if (_currentView === 'watchlist' && typeof renderWatchlist === 'function') {
+      if (_currentView === 'watchlist' && typeof renderWatchlist === 'function' && !_isTypingInTable()) {
         renderWatchlist();
       }
       if (typeof _checkAllAlerts === 'function') _checkAllAlerts(krStocks);

@@ -2194,7 +2194,7 @@ function _startAutoRefresh() {
   const liveBadge = document.getElementById('chart-live-badge');
   if (liveBadge) liveBadge.style.display = 'inline';
 
-  // 30초마다 현재가 + 가격 배지 갱신
+  // 10초마다 현재가 + 가격 배지 갱신 (서버가 보는 종목을 10초마다 네이버 실시간 값으로 갱신)
   _priceTimer = setInterval(async () => {
     if (!_currentTicker) return;
     try {
@@ -2221,7 +2221,7 @@ function _startAutoRefresh() {
         _alertCheck(_currentTicker, stock.price);
       }
     } catch {}
-  }, 30_000);
+  }, 10_000);
 
   // interval별 주기로 캔들 업데이트
   const candleMs = _CANDLE_REFRESH[_currentInterval] || 60_000;

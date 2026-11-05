@@ -504,7 +504,10 @@ function importPortfolioCSV(file) {
 }
 
 // ── 포트폴리오 렌더링 ─────────────────────────────────────────────────────────
-async function renderPortfolio() {
+// 10초 실시간 갱신 때 1.6MB 목록을 다시 받지 않고 쓰는 마지막 데이터 (main.js _rtApply가 값만 고침)
+let _ptCache = null;
+
+async function renderPortfolio(opts = {}) {
   const container = document.getElementById('pt-content');
   if (!container) return;
   const tickers = PT.tickers();
@@ -519,11 +522,14 @@ async function renderPortfolio() {
     return;
   }
 
-  container.innerHTML = `<div class="pt-loading">데이터 불러오는 중...</div>`;
-
   // 전체 종목에서 해당 티커 가격 조회
   let priceMap = {};
   let sigMap = {};
+  const cacheKey = tickers.join(',');
+  if (opts.cached && _ptCache && _ptCache.key === cacheKey) {
+    ({ priceMap, sigMap } = _ptCache);
+  } else {
+  container.innerHTML = `<div class="pt-loading">데이터 불러오는 중...</div>`;
   try {
     const [all, sm] = await Promise.all([api('/api/stocks'), loadDailySignalMap()]);
     sigMap = sm;
@@ -535,6 +541,8 @@ async function renderPortfolio() {
       }
     }
   } catch {}
+  _ptCache = { key: cacheKey, priceMap, sigMap };
+  }
 
   const data = PT.load();
   // 통화: 국내는 원화 그대로, 해외는 달러/원 환율로 원화 환산 (A안 — 매수·평가 모두 현재 환율)

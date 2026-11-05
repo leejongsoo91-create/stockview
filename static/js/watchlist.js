@@ -150,7 +150,10 @@ function _startWlRefresh() {
 }
 
 // ── 워치리스트 탭 렌더링 ─────────────────────────────────────────────────────
-async function renderWatchlist() {
+// 10초 실시간 갱신 때 1.6MB 목록을 다시 받지 않고 쓰는 마지막 데이터 (main.js _rtApply가 값만 고침)
+let _wlCache = null;
+
+async function renderWatchlist(opts = {}) {
   const tickers = WL.load();
   const container = document.getElementById('wl-content');
   if (!container) return;
@@ -165,12 +168,15 @@ async function renderWatchlist() {
     return;
   }
 
-  // 로딩 표시
-  container.innerHTML = `<div class="wl-loading">데이터 불러오는 중...</div>`;
-
   // 전체 종목에서 watchlist 종목 필터링
   let stocks = [];
   let sigMap = {};
+  const cacheKey = tickers.join(',');
+  if (opts.cached && _wlCache && _wlCache.key === cacheKey) {
+    ({ stocks, sigMap } = _wlCache);
+  } else {
+  // 로딩 표시
+  container.innerHTML = `<div class="wl-loading">데이터 불러오는 중...</div>`;
   try {
     const [all, sm] = await Promise.all([api('/api/stocks'), loadDailySignalMap()]);
     sigMap = sm;
@@ -192,6 +198,8 @@ async function renderWatchlist() {
   } catch (e) {
     container.innerHTML = `<div class="wl-loading">데이터 로드 실패. 잠시 후 다시 시도하세요.</div>`;
     return;
+  }
+  _wlCache = { key: cacheKey, stocks, sigMap };
   }
 
   // 그룹 필터 탭 구성
