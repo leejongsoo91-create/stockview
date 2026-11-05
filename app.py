@@ -1272,6 +1272,20 @@ def stock_detail(ticker):
     kr_stock = next((s for s in kr_data if s["ticker"] == t), None)
     if kr_stock:
         return jsonify(dict(kr_stock))
+    # 목록(미국 5,000·국내 3,936)에 없는 미국 티커 — ETF 등. Yahoo 현재가로 기본 정보만 만들어 차트가 열리게
+    # (11-06 홈 섹터 ETF 칩 → XLK 차트가 "not found"로 비던 문제)
+    if re.fullmatch(r"[A-Z][A-Z.\-]{0,9}", t):
+        key = f"quote_extra_{t}"
+        hit = cache.get_fresh(key)
+        if hit is None:
+            q = df.fetch_quote(t)
+            etf_name = dict(df.SECTOR_ETFS).get(t)
+            hit = {"ticker": t, "name": f"{etf_name} 섹터 ETF ({t})" if etf_name else t, "name_ko": "",
+                   "sector": "ETF" if etf_name else "", **q,
+                   "market_cap": None, "pe": None, "eps": None, "week52_high": None, "week52_low": None} if q and q.get("price") else {}
+            cache.set(key, hit, ttl=60 if hit else 300)
+        if hit:
+            return jsonify(hit)
     return jsonify({"error": "Not found"}), 404
 
 
@@ -1372,6 +1386,21 @@ def heatmap_perf():
     ttl = (3600 if period == "1w" else 7200) if len(perf) >= len(tickers) * 0.5 else 60
     cache.set(key, perf or {}, ttl=ttl)
     return jsonify(perf or {})
+
+
+@app.route("/api/sector-etf")
+def sector_etf():
+    """홈 섹터 줄: S&P 500 섹터 ETF 11개 등락률 (1d·1w·1m). 요청 11번 — 1분 캐시."""
+    period = request.args.get("period", "1d")
+    if period not in ("1d", "1w", "1m"):
+        period = "1d"
+    key = f"sector_etf_{period}"
+    cached = cache.get_fresh(key)
+    if cached is not None:
+        return jsonify(cached)
+    data = df.fetch_sector_etf_perf(period)
+    cache.set(key, data, ttl=60 if len(data) >= 8 else 15)   # 대부분 실패면 짧게만 캐시
+    return jsonify(data)
 
 
 @app.route("/api/economic-calendar")

@@ -530,43 +530,22 @@ function renderMarketStatus() {
 let _homeStocks   = [];
 let _sectorPeriod = '1d';
 
-function _sectorItemsFrom1D(stocks) {
-  const map = {};
-  for (const s of stocks) {
-    if (!s.sector || s.sector === 'Other' || s.change_pct == null) continue;
-    if (!map[s.sector]) map[s.sector] = { sum: 0, n: 0 };
-    map[s.sector].sum += s.change_pct;
-    map[s.sector].n++;
-  }
-  return Object.entries(map)
-    .map(([name, v]) => ({ name, avg: +(v.sum / v.n).toFixed(2) }))
-    .sort((a, b) => b.avg - a.avg);
-}
 
-function _sectorItemsFromPerf(perfMap, stocks) {
-  const map = {};
-  for (const s of stocks) {
-    if (!s.sector || s.sector === 'Other') continue;
-    const pct = perfMap[s.ticker];
-    if (pct == null) continue;
-    if (!map[s.sector]) map[s.sector] = { sum: 0, n: 0 };
-    map[s.sector].sum += pct;
-    map[s.sector].n++;
-  }
-  return Object.entries(map)
-    .map(([name, v]) => ({ name, avg: +(v.sum / v.n).toFixed(2) }))
-    .sort((a, b) => b.avg - a.avg);
-}
-
+// 11-06: S&P 500 섹터 ETF(SPDR 11개) 등락률로 변경 — /api/sector-etf. 예전 우리 종목 단순평균은
+// 작은 종목이 왜곡했고(통신 +6.40% vs 실제 -0.85%) 1주·1개월은 75초 걸렸음. 칩을 누르면 해당 ETF 차트.
 function renderSectorPerf(items) {
   const el = document.getElementById('sector-perf-grid');
   if (!el) return;
-  el.innerHTML = items.map(({ name, avg }) => {
-    const cls  = avg >= 0 ? 'up' : 'down';
-    const sign = avg >= 0 ? '+' : '';
-    return `<div class="sec-chip ${cls}">
-      <span class="sec-chip-name">${koSector(name)}</span>
-      <span class="sec-chip-pct">${sign}${avg}%</span>
+  if (!items || !items.length) {
+    el.innerHTML = '<span class="sec-chip-empty">섹터 데이터를 불러오지 못했습니다</span>';
+    return;
+  }
+  el.innerHTML = items.map(({ etf, name, pct }) => {
+    const cls  = pct >= 0 ? 'up' : 'down';
+    const sign = pct >= 0 ? '+' : '';
+    return `<div class="sec-chip ${cls}" onclick="navigateToChart('${etf}')" title="${name} 섹터 ETF ${etf} — 눌러서 차트 보기">
+      <span class="sec-chip-name">${name}</span>
+      <span class="sec-chip-pct">${sign}${pct.toFixed(2)}%</span>
     </div>`;
   }).join('');
 }
@@ -577,18 +556,14 @@ async function loadSectorPerf(period, silent = false) {
   document.querySelectorAll('.sp-period-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.period === period);
   });
-  if (period === '1d') {
-    renderSectorPerf(_sectorItemsFrom1D(_homeStocks));
-  } else {
-    const el = document.getElementById('sector-perf-grid');
-    if (el && !silent) el.innerHTML = '<span style="color:var(--muted);font-size:12px">불러오는 중…</span>';
-    try {
-      const perfMap = await api(`/api/heatmap-perf?period=${period}`);
-      if (_sectorPeriod !== period) return;   // 응답 대기 중 다른 기간 버튼을 눌렀으면 덮어쓰지 않음
-      renderSectorPerf(_sectorItemsFromPerf(perfMap, _homeStocks));
-    } catch {
-      if (el && !silent) el.innerHTML = '<span style="color:#f85149;font-size:12px">데이터를 불러오지 못했습니다</span>';
-    }
+  const el = document.getElementById('sector-perf-grid');
+  if (el && !silent && !el.children.length) el.innerHTML = '<span class="sec-chip-empty">불러오는 중…</span>';
+  try {
+    const items = await api(`/api/sector-etf?period=${period}`);
+    if (_sectorPeriod !== period) return;   // 응답 대기 중 다른 기간 버튼을 눌렀으면 덮어쓰지 않음
+    renderSectorPerf(items);
+  } catch {
+    if (el && !silent) el.innerHTML = '<span class="sec-chip-empty">데이터를 불러오지 못했습니다</span>';
   }
 }
 
@@ -761,7 +736,7 @@ async function loadHome() {
   renderIndices(indices);
   renderHomeFearGreed(fg);
   renderMovers(stocks);
-  renderSectorPerf(_sectorItemsFrom1D(stocks));
+  loadSectorPerf(_sectorPeriod, true);
   renderVolumeLeaders(stocks);
   renderHomeNews(news);
   renderMarketStatBar(stocks);

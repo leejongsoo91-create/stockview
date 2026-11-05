@@ -1015,11 +1015,12 @@ async function loadChart(ticker) {
     _updateAlertBadge();
     document.getElementById('chart-alert-panel').style.display = 'none';
 
-    if (!_isIndex(ticker)) {
-      _loadStockNews(ticker);
+    if (!_isIndex(ticker)) _loadStockNews(ticker);
+    if (!_isIndex(ticker) && stockData?.sector !== 'ETF') {
       renderStockAnalysis(ticker);
       renderFinancials(ticker);
     } else {
+      // 지수·ETF(홈 섹터 칩 등)는 종합 진단·재무제표가 없음 — 요청하면 404
       document.getElementById('stock-analysis-card').style.display = 'none';
       document.getElementById('financials-card').style.display = 'none';
     }

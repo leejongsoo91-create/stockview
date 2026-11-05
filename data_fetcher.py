@@ -1814,6 +1814,54 @@ def _fetch_mc_html(ticker: str) -> tuple[str, float | None]:
         return ticker, None
 
 
+# ── 섹터 ETF 등락률 (홈 섹터 줄) ──────────────────────────────────────────────
+# S&P 500 섹터 지수를 따라가는 SPDR ETF 11개 — 뉴스·증권사가 말하는 "섹터 등락"의 표준 기준(시총 가중, GICS 분류).
+# 예전 방식(우리 5,000종목 단순평균)은 작은 종목이 왜곡(11-06 통신 +6.40% vs XLC -0.85%)하고, 1주·1개월은
+# 5,000종목을 Yahoo에 하나씩 요청해 75초 걸렸음. 분류는 GICS라 앱 섹터(Nasdaq 분류)와 다름(구글·메타=커뮤니케이션).
+SECTOR_ETFS = [   # (ETF, 한글 이름)
+    ("XLK", "기술"), ("XLC", "커뮤니케이션"), ("XLY", "경기소비재"), ("XLP", "필수소비재"),
+    ("XLE", "에너지"), ("XLF", "금융"), ("XLV", "헬스케어"), ("XLI", "산업재"),
+    ("XLB", "소재"), ("XLRE", "부동산"), ("XLU", "유틸리티"),
+]
+
+
+def fetch_sector_etf_perf(period: str = "1d") -> list[dict]:
+    """섹터 ETF 등락률. period: 1d(전일 종가 대비) | 1w(7일 전 종가 대비) | 1m(30일 전 종가 대비).
+    기준가는 '그 날짜 이전 마지막 거래일 종가', 현재가는 Yahoo 실시간 값(미국 장중 지연 없음, 11-06 확인).
+    반환: [{etf, name, pct}] (실패한 ETF는 빠짐)"""
+    days = {"1w": 7, "1m": 30}.get(period)
+    rng = "1d" if period == "1d" else "3mo"
+
+    def _one(etf: str, name: str):
+        try:
+            r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{etf}?interval=1d&range={rng}",
+                             headers=YF_HEADERS, timeout=8)
+            r.raise_for_status()
+            res  = r.json()["chart"]["result"][0]
+            meta = res["meta"]
+            cur  = meta.get("regularMarketPrice")
+            if not cur:
+                return None
+            if days is None:
+                base = meta.get("chartPreviousClose") or meta.get("previousClose")
+            else:
+                cutoff = time.time() - days * 86400
+                ts     = res.get("timestamp") or []
+                closes = res["indicators"]["quote"][0].get("close") or []
+                past   = [c for t, c in zip(ts, closes) if c is not None and t <= cutoff]
+                base   = past[-1] if past else None
+            if not base:
+                return None
+            return {"etf": etf, "name": name, "pct": round((cur / base - 1) * 100, 2)}
+        except Exception as e:
+            log.warning(f"fetch_sector_etf_perf({etf}, {period}) 실패: {e}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        out = [x for x in ex.map(lambda p: _one(*p), SECTOR_ETFS) if x]
+    return sorted(out, key=lambda x: -x["pct"])
+
+
 def fetch_heatmap_perf(tickers: list[str], period: str = "1w", max_workers: int = 40) -> dict[str, float]:
     """히트맵 기간 수익률 수집. period: '1w'(5거래일)|'1m'(1개월)|'3m'|'6m'|'ytd'(연초대비)"""
     range_map = {"1w": "5d", "1m": "1mo", "3m": "3mo", "6m": "6mo", "ytd": "ytd"}

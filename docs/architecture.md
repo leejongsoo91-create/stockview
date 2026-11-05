@@ -74,7 +74,7 @@
 
 | 그룹 | 경로 |
 |------|------|
-| 시세 | `/api/stocks`, `/api/kr-stocks`, `/api/indices`, `/api/index-members`, `/api/stock/<ticker>`, `/api/heatmap-perf` |
+| 시세 | `/api/stocks`, `/api/kr-stocks`, `/api/indices`, `/api/index-members`, `/api/stock/<ticker>`(목록에 없는 미국 티커는 Yahoo 현재가로 응답), `/api/heatmap-perf`, `/api/sector-etf?period=1d\|1w\|1m`(홈 섹터 줄, SPDR 섹터 ETF 11개, 1분 캐시) |
 | 차트·분석 | `/api/chart/<ticker>`, `/api/stock-analysis/<ticker>`, `/api/financials/<ticker>` |
 | 뉴스·공시 | `/api/news`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>` |
 | Brief·신호 | `/api/brief`, `/api/daily-signals`, `/api/volume-surges`, `/api/candle-patterns`, `/api/rsi-divergence`, `/api/52w-movers`, `/api/earnings-signals`, `/api/fear-greed`, `/api/voice-briefing`, `/api/voice-briefing/audio/<file>` |
