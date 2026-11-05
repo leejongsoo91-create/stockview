@@ -388,11 +388,10 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .sec-chip.up   .sec-chip-pct { color: var(--green); }
 .sec-chip.down .sec-chip-pct { color: var(--red); }
 
-/* 오른쪽 2×2 그리드 */
+/* 오른쪽 그리드 (11-06 상승·하락 상위를 빼서 거래량 상위·최신 뉴스 1줄 — 2줄 고정이면 아래가 비었음) */
 .home-right-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
   gap: 12px;
 }
 

@@ -875,6 +875,8 @@ function renderIndices(indices) {
 
 // ── Top Gainers / Losers ──────────────────────────────────────────────────────
 function renderMovers(stocks) {
+  // 11-06 홈에서 상승·하락 상위 표를 뺐음 — 표가 없으면 아무것도 안 함 (다시 넣으면 그대로 동작)
+  if (!document.getElementById('gainers-body')) return;
   const sorted = [...stocks].sort((a, b) => b.change_pct - a.change_pct);
   const gainers = sorted.slice(0, 10);
   const losers  = sorted.slice(-10).reverse();
