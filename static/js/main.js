@@ -617,10 +617,15 @@ function renderMarketStatBar(stocks) {
     else if (p < 0) down++;
     else flat++;
   });
+  // 미국 전 종목 중 오늘 오른·내린·변동 없는 종목 수 (종목마다 1개로 셈 — 시총 가중 지수와 다를 수 있음)
+  el.title = '종목검색의 미국 전체 종목 중 오늘 오른 종목·내린 종목·변동 없는 종목 수';
   el.innerHTML =
-    `<span class="msb-up">▲ ${up.toLocaleString()}</span>` +
-    `<span class="msb-down">▼ ${down.toLocaleString()}</span>` +
-    `<span class="msb-flat">— ${flat.toLocaleString()}</span>`;
+    `<span class="msb-label">미국 ${stocks.length.toLocaleString()}종목</span>` +
+    `<span class="msb-up">상승 ${up.toLocaleString()}</span>` +
+    `<span class="msb-sep">·</span>` +
+    `<span class="msb-down">하락 ${down.toLocaleString()}</span>` +
+    `<span class="msb-sep">·</span>` +
+    `<span class="msb-flat">보합 ${flat.toLocaleString()}</span>`;
 }
 
 // ── 홈 Fear & Greed 위젯 ────────────────────────────────────────────────────
