@@ -518,27 +518,27 @@
     <div id="view-news" class="view">
       <!-- 서브탭: News / Reports / 공시 -->
       <div class="news-subtab-bar">
-        <button class="news-subtab active" data-subtab="news">📰 News</button>
-        <button class="news-subtab" data-subtab="reports">📋 Reports</button>
+        <button class="news-subtab active" data-subtab="news">📰 뉴스</button>
+        <button class="news-subtab" data-subtab="reports">📋 리포트</button>
         <button class="news-subtab" data-subtab="disclosures">📢 공시</button>
       </div>
 
       <!-- News 패널 -->
       <div id="news-panel">
         <div class="news-filter-bar">
-          <button class="news-tag active" data-sentiment="all">All</button>
-          <button class="news-tag positive" data-sentiment="positive">Positive</button>
-          <button class="news-tag negative" data-sentiment="negative">Negative</button>
-          <button class="news-tag neutral"  data-sentiment="neutral">Neutral</button>
+          <button class="news-tag active" data-sentiment="all">전체</button>
+          <button class="news-tag positive" data-sentiment="positive">긍정</button>
+          <button class="news-tag negative" data-sentiment="negative">부정</button>
+          <button class="news-tag neutral"  data-sentiment="neutral">중립</button>
           <span class="news-filter-sep"></span>
           <button class="news-market-tag active" data-market="all">전체</button>
           <button class="news-market-tag" data-market="US">🌐 해외</button>
           <button class="news-market-tag" data-market="KR">🇰🇷 국내</button>
           <button id="news-bookmark-toggle" class="news-tag" onclick="_toggleBookmarkFilter()">🔖 북마크</button>
           <select id="news-src-filter">
-            <option value="all">All Sources</option>
+            <option value="all">전체 출처</option>
           </select>
-          <input id="news-kw-search" type="text" class="news-kw-input" placeholder="🔍 Search news…">
+          <input id="news-kw-search" type="text" class="news-kw-input" placeholder="🔍 뉴스 검색…">
           <span id="news-kw-count" class="news-kw-count" style="display:none"></span>
         </div>
         <div id="news-list"></div>
@@ -547,10 +547,10 @@
       <!-- Reports 패널 -->
       <div id="reports-panel" style="display:none">
         <div class="news-filter-bar">
-          <button class="report-tag active" data-rtype="all">All</button>
-          <button class="report-tag" data-rtype="Earnings">📊 Earnings</button>
-          <button class="report-tag" data-rtype="Press Release">📣 Press Release</button>
-          <button class="report-tag" data-rtype="Fed">🏦 Fed</button>
+          <button class="report-tag active" data-rtype="all">전체</button>
+          <button class="report-tag" data-rtype="Earnings">📊 실적</button>
+          <button class="report-tag" data-rtype="Press Release">📣 보도자료</button>
+          <button class="report-tag" data-rtype="Fed">🏦 연준</button>
           <button id="reports-bookmark-toggle" class="news-tag" onclick="_toggleReportsBookmarkFilter()">🔖 북마크</button>
         </div>
         <div id="reports-list"></div>
@@ -559,7 +559,7 @@
       <!-- 공시 패널 -->
       <div id="disclosures-panel" style="display:none">
         <div class="news-filter-bar">
-          <button class="report-tag active" data-dcat="all">All</button>
+          <button class="report-tag active" data-dcat="all">전체</button>
           <button class="report-tag" data-dcat="earnings">📊 실적발표</button>
           <button class="report-tag" data-dcat="company">🏢 기업공시</button>
           <button class="report-tag" data-dcat="market">👁 시장감시</button>
@@ -574,11 +574,11 @@
     <!-- ─── BRIEF ──────────────────────────────────────────────────────── -->
     <div id="view-brief" class="view">
       <div class="brief-header">
-        <h2 class="brief-title">Market Brief</h2>
+        <h2 class="brief-title">시장 브리핑</h2>
         <div class="brief-period-bar">
-          <button class="brief-period-btn active" data-period="daily">Daily</button>
-          <button class="brief-period-btn" data-period="weekly">Weekly</button>
-          <button class="brief-period-btn" data-period="monthly">Monthly</button>
+          <button class="brief-period-btn active" data-period="daily">일간</button>
+          <button class="brief-period-btn" data-period="weekly">주간</button>
+          <button class="brief-period-btn" data-period="monthly">월간</button>
         </div>
         <span id="brief-updated" class="brief-updated"></span>
       </div>
@@ -625,7 +625,7 @@
 
         <!-- 감성 게이지 -->
         <div class="brief-card brief-mood-card">
-          <div class="brief-card-title">📊 Market Mood</div>
+          <div class="brief-card-title">📊 시장 분위기</div>
           <div id="brief-mood-label" class="brief-mood-label">—</div>
           <div class="brief-mood-bar-wrap">
             <div class="brief-mood-bar">
@@ -634,9 +634,9 @@
               <div id="brief-bar-neg"  class="bmb-neg"  style="width:0%"></div>
             </div>
             <div class="brief-mood-legend">
-              <span id="brief-pct-pos"  class="bml-pos">0% Bullish</span>
-              <span id="brief-pct-neut" class="bml-neut">0% Neutral</span>
-              <span id="brief-pct-neg"  class="bml-neg">0% Bearish</span>
+              <span id="brief-pct-pos"  class="bml-pos">0% 강세</span>
+              <span id="brief-pct-neut" class="bml-neut">0% 중립</span>
+              <span id="brief-pct-neg"  class="bml-neg">0% 약세</span>
             </div>
           </div>
           <div id="brief-item-count" class="brief-item-count"></div>
@@ -644,7 +644,7 @@
 
         <!-- Fear & Greed Index -->
         <div class="brief-card brief-fg-card fg-full">
-          <div class="brief-card-title">😨 Fear &amp; Greed Index</div>
+          <div class="brief-card-title">😨 공포·탐욕 지수</div>
           <div class="fg-gauge-wrap">
             <div class="fg-arc"></div>
             <div class="fg-inner"></div>
@@ -657,13 +657,13 @@
 
         <!-- Most Mentioned Stocks -->
         <div class="brief-card">
-          <div class="brief-card-title">🏷️ Most Mentioned</div>
+          <div class="brief-card-title">🏷️ 많이 언급된 종목</div>
           <div id="brief-tickers" class="brief-ticker-wrap"></div>
         </div>
 
         <!-- 오늘의 매수/매도 추천 (US) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🎯 US 추천 종목 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
+          <div class="brief-card-title">🎯 미국 추천 종목 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 매수 추천</div>
@@ -681,7 +681,7 @@
 
         <!-- 오늘의 매수/매도 추천 (KR) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🎯 KR 추천 종목 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
+          <div class="brief-card-title">🎯 국내 추천 종목 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 매수 추천</div>
@@ -699,7 +699,7 @@
 
         <!-- 52주 신고가/신저가 근접 (US) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">📈 US 52주 신고가/신저가 근접</div>
+          <div class="brief-card-title">📈 미국 52주 신고가/신저가 근접</div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 52주 신고가 근접</div>
@@ -714,7 +714,7 @@
 
         <!-- 52주 신고가/신저가 근접 (KR) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">📈 KR 52주 신고가/신저가 근접</div>
+          <div class="brief-card-title">📈 국내 52주 신고가/신저가 근접</div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 52주 신고가 근접</div>
@@ -729,7 +729,7 @@
 
         <!-- 실적 발표 임박 + 매수/매도 신호 결합 (US 전용) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">📅 실적 발표 임박 + 신호 <span class="brief-signals-note">(US 전용, 이번 주·다음 주 · 참고용)</span></div>
+          <div class="brief-card-title">📅 실적 발표 임박 + 신호 <span class="brief-signals-note">(미국 전용, 이번 주·다음 주 · 참고용)</span></div>
           <div id="brief-earnings-signals" class="brief-signals-list"></div>
         </div>
 
@@ -738,11 +738,11 @@
           <div class="brief-card-title">🔥 거래량 급증 종목 <span class="brief-signals-note">(20일 평균 대비 2배 이상 · 참고용)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
-              <div class="brief-signals-col-title neutral">🇺🇸 US</div>
+              <div class="brief-signals-col-title neutral">🇺🇸 미국</div>
               <div id="brief-volume-us" class="brief-signals-list"></div>
             </div>
             <div class="brief-signals-col">
-              <div class="brief-signals-col-title neutral">🇰🇷 KR</div>
+              <div class="brief-signals-col-title neutral">🇰🇷 국내</div>
               <div id="brief-volume-kr" class="brief-signals-list"></div>
             </div>
           </div>
@@ -750,7 +750,7 @@
 
         <!-- 국내 수급(외국인 순매수) 상위 (11번) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🇰🇷 외국인 수급 상위 <span class="brief-signals-note">(전일 순매수 · KR 시총 상위 500종목 대상 · 참고용)</span></div>
+          <div class="brief-card-title">🇰🇷 외국인 수급 상위 <span class="brief-signals-note">(전일 순매수 · 국내 시총 상위 500종목 대상 · 참고용)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 순매수 상위</div>
@@ -765,14 +765,14 @@
 
         <!-- 캔들 패턴 스캐너 (US) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🕯️ US 캔들 패턴 스캐너 <span class="brief-signals-note">(오늘 봉 기준 · 참고용)</span></div>
+          <div class="brief-card-title">🕯️ 미국 캔들 패턴 스캐너 <span class="brief-signals-note">(오늘 봉 기준 · 참고용)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
-              <div class="brief-signals-col-title buy">▲ 상승성 (Hammer/Bullish Engulfing)</div>
+              <div class="brief-signals-col-title buy">▲ 상승성 (망치형/상승 장악형)</div>
               <div id="brief-pattern-us-bullish" class="brief-signals-list"></div>
             </div>
             <div class="brief-signals-col">
-              <div class="brief-signals-col-title sell">▼ 하락성 (Shooting Star/Bearish Engulfing)</div>
+              <div class="brief-signals-col-title sell">▼ 하락성 (유성형/하락 장악형)</div>
               <div id="brief-pattern-us-bearish" class="brief-signals-list"></div>
             </div>
           </div>
@@ -780,14 +780,14 @@
 
         <!-- 캔들 패턴 스캐너 (KR) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🕯️ KR 캔들 패턴 스캐너 <span class="brief-signals-note">(오늘 봉 기준 · 참고용)</span></div>
+          <div class="brief-card-title">🕯️ 국내 캔들 패턴 스캐너 <span class="brief-signals-note">(오늘 봉 기준 · 참고용)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
-              <div class="brief-signals-col-title buy">▲ 상승성 (Hammer/Bullish Engulfing)</div>
+              <div class="brief-signals-col-title buy">▲ 상승성 (망치형/상승 장악형)</div>
               <div id="brief-pattern-kr-bullish" class="brief-signals-list"></div>
             </div>
             <div class="brief-signals-col">
-              <div class="brief-signals-col-title sell">▼ 하락성 (Shooting Star/Bearish Engulfing)</div>
+              <div class="brief-signals-col-title sell">▼ 하락성 (유성형/하락 장악형)</div>
               <div id="brief-pattern-kr-bearish" class="brief-signals-list"></div>
             </div>
           </div>
@@ -795,7 +795,7 @@
 
         <!-- RSI 다이버전스 스캐너 (US) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">📉 US RSI 다이버전스 스캐너 <span class="brief-signals-note">(최근 스윙 기준 · 참고용)</span></div>
+          <div class="brief-card-title">📉 미국 RSI 다이버전스 스캐너 <span class="brief-signals-note">(최근 스윙 기준 · 참고용)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 상승형 (가격 저점↓ · RSI 저점↑)</div>
@@ -810,7 +810,7 @@
 
         <!-- RSI 다이버전스 스캐너 (KR) -->
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">📉 KR RSI 다이버전스 스캐너 <span class="brief-signals-note">(최근 스윙 기준 · 참고용)</span></div>
+          <div class="brief-card-title">📉 국내 RSI 다이버전스 스캐너 <span class="brief-signals-note">(최근 스윙 기준 · 참고용)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 상승형 (가격 저점↓ · RSI 저점↑)</div>
@@ -825,13 +825,13 @@
 
         <!-- Top Stories -->
         <div class="brief-card brief-stories-card">
-          <div class="brief-card-title">📰 Top Stories</div>
+          <div class="brief-card-title">📰 주요 뉴스</div>
           <div id="brief-stories" class="brief-stories-list"></div>
         </div>
 
         <!-- Report Highlights -->
         <div class="brief-card brief-reports-card">
-          <div class="brief-card-title">📋 Report Highlights</div>
+          <div class="brief-card-title">📋 주요 리포트</div>
           <div id="brief-reports" class="brief-stories-list"></div>
         </div>
       </div>
@@ -839,11 +839,11 @@
       <!-- 🎯 신호 전용 뷰: 신규(NEW)/N일째 유지 배지, 20개까지 표시 -->
       <div id="brief-signal-panel" class="brief-grid" style="display:none">
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🏆 신호 유지일수 TOP 10 <span class="brief-signals-note">(US+KR 통합 · 연속 유지일수 기준 · 참고용)</span></div>
+          <div class="brief-card-title">🏆 신호 유지일수 TOP 10 <span class="brief-signals-note">(미국+국내 통합 · 연속 유지일수 기준 · 참고용)</span></div>
           <div id="brief-held-top" class="brief-signals-list"></div>
         </div>
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🇺🇸 US 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
+          <div class="brief-card-title">🇺🇸 미국 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 매수 신호</div>
@@ -856,7 +856,7 @@
           </div>
         </div>
         <div class="brief-card brief-signals-card">
-          <div class="brief-card-title">🇰🇷 KR 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
+          <div class="brief-card-title">🇰🇷 국내 신호 <span class="brief-signals-note">(참고용 · 자동 신호 기반, 투자 조언 아님)</span></div>
           <div class="brief-signals-grid">
             <div class="brief-signals-col">
               <div class="brief-signals-col-title buy">▲ 매수 신호</div>
@@ -879,33 +879,22 @@
     <!-- ─── EARNINGS ─────────────────────────────────────────────────── -->
     <div id="view-earnings" class="view">
       <div class="earnings-header">
-        <h2 class="earnings-title">Earnings Calendar</h2>
+        <h2 class="earnings-title">실적발표 일정</h2>
         <div class="earnings-period-bar">
-          <button class="earn-period-btn active" data-period="week">This Week</button>
-          <button class="earn-period-btn" data-period="next_week">Next Week</button>
-          <button class="earn-period-btn" data-period="today">Today</button>
+          <button class="earn-period-btn active" data-period="week">이번 주</button>
+          <button class="earn-period-btn" data-period="next_week">다음 주</button>
+          <button class="earn-period-btn" data-period="today">오늘</button>
         </div>
         <div class="earnings-filter-bar">
           <select id="earn-filter-sector">
-            <option value="all">All Sectors</option>
-            <option value="Technology">Technology</option>
-            <option value="Finance">Finance</option>
-            <option value="Healthcare">Healthcare</option>
-            <option value="Energy">Energy</option>
-            <option value="Consumer Disc.">Consumer Disc.</option>
-            <option value="Consumer Staples">Consumer Staples</option>
-            <option value="Industrial">Industrial</option>
-            <option value="Communication">Communication</option>
-            <option value="Real Estate">Real Estate</option>
-            <option value="Materials">Materials</option>
-            <option value="Utilities">Utilities</option>
+            <option value="all">전체 섹터</option>
           </select>
           <select id="earn-filter-cap">
-            <option value="all">All Market Cap</option>
-            <option value="mega">Mega ($500B+)</option>
-            <option value="large">Large ($100B-500B)</option>
-            <option value="mid">Mid ($10B-100B)</option>
-            <option value="small">Small (&lt;$10B)</option>
+            <option value="all">전체 시가총액</option>
+            <option value="mega">초대형 ($500B 이상)</option>
+            <option value="large">대형 ($100B~500B)</option>
+            <option value="mid">중형 ($10B~100B)</option>
+            <option value="small">소형 ($10B 미만)</option>
           </select>
         </div>
       </div>

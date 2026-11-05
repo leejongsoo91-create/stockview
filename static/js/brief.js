@@ -198,7 +198,7 @@ function _renderPatternList(elId, items, label) {
   }
   el.innerHTML = items.map(s => `
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
-      <span class="brief-signal-term term-pattern">${label || s.pattern}</span>
+      <span class="brief-signal-term term-pattern">${label || koPattern(s.pattern)}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
       <span class="brief-signal-name">${s.name || ''}</span>
       ${_fmtSignalPct(s.change_pct)}
@@ -208,10 +208,10 @@ function _renderPatternList(elId, items, label) {
 async function loadRsiDivergence() {
   try {
     const data = await api('/api/rsi-divergence');
-    _renderPatternList('brief-rsidiv-us-bullish', data.us?.bullish, '상승 DIV');
-    _renderPatternList('brief-rsidiv-us-bearish', data.us?.bearish, '하락 DIV');
-    _renderPatternList('brief-rsidiv-kr-bullish', data.kr?.bullish, '상승 DIV');
-    _renderPatternList('brief-rsidiv-kr-bearish', data.kr?.bearish, '하락 DIV');
+    _renderPatternList('brief-rsidiv-us-bullish', data.us?.bullish, '상승형');
+    _renderPatternList('brief-rsidiv-us-bearish', data.us?.bearish, '하락형');
+    _renderPatternList('brief-rsidiv-kr-bullish', data.kr?.bullish, '상승형');
+    _renderPatternList('brief-rsidiv-kr-bearish', data.kr?.bearish, '하락형');
   } catch {}
 }
 
@@ -258,7 +258,7 @@ function renderEarningsSignals(items) {
     const dirLabel = s.direction === 'buy' ? '▲매수' : '▼매도';
     return `
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
-      <span class="brief-signal-date">${s.date} ${s.time}</span>
+      <span class="brief-signal-date">${s.date} ${koEarnTime(s.time)}</span>
       <span class="brief-signal-term term-${s.term}">${s.term}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
       <span class="brief-signal-name">${s.name || ''}</span>
@@ -429,58 +429,58 @@ function renderBriefFearGreed(data) {
   const ratingEl = document.getElementById('brief-fg-rating');
   const rCls = _fgCls(rating);
   if (scoreEl)  { scoreEl.textContent = score;  scoreEl.className  = 'fg-score-big '    + rCls; }
-  if (ratingEl) { ratingEl.textContent = rating; ratingEl.className = 'fg-rating-label ' + rCls; }
+  if (ratingEl) { ratingEl.textContent = koFg(rating); ratingEl.className = 'fg-rating-label ' + rCls; }
 
   // 과거 비교
   const histEl = document.getElementById('brief-fg-history');
   if (!histEl) return;
   const rows = [
-    ['Yesterday',  prev_close],
-    ['Last Week',  prev_1w],
-    ['Last Month', prev_1m],
-    ['Last Year',  prev_1y],
+    ['어제',     prev_close],
+    ['1주 전',   prev_1w],
+    ['1개월 전', prev_1m],
+    ['1년 전',   prev_1y],
   ];
   histEl.innerHTML = rows.map(([label, val]) => {
     const r = _fgScoreToRating(val);
     return `<div class="fg-hist-row">
       <span class="fg-hist-label">${label}</span>
       <span class="fg-hist-val ${_fgCls(r)}">${val}</span>
-      <span class="fg-hist-rating">${r}</span>
+      <span class="fg-hist-rating">${koFg(r)}</span>
     </div>`;
   }).join('');
 }
 
 async function loadBrief() {
   const el = document.getElementById('brief-stories');
-  if (el) el.innerHTML = '<div class="brief-loading">Loading...</div>';
+  if (el) el.innerHTML = '<div class="brief-loading">불러오는 중…</div>';
 
   try {
     const data = await api('/api/brief?period=' + _briefPeriod);
     renderBrief(data);
   } catch (e) {
-    if (el) el.innerHTML = '<div class="brief-loading">Failed to load.</div>';
+    if (el) el.innerHTML = '<div class="brief-loading">불러오지 못했습니다.</div>';
   }
 }
 
 function renderBrief(data) {
   // ─ Mood bar
   const m = data.mood || {};
-  document.getElementById('brief-mood-label').textContent = m.label || '—';
+  document.getElementById('brief-mood-label').textContent = m.label ? koMood(m.label) : '—';
   document.getElementById('brief-bar-pos').style.width  = (m.positive || 0) + '%';
   document.getElementById('brief-bar-neut').style.width = (m.neutral  || 0) + '%';
   document.getElementById('brief-bar-neg').style.width  = (m.negative || 0) + '%';
-  document.getElementById('brief-pct-pos').textContent  = (m.positive || 0) + '% Bullish';
-  document.getElementById('brief-pct-neut').textContent = (m.neutral  || 0) + '% Neutral';
-  document.getElementById('brief-pct-neg').textContent  = (m.negative || 0) + '% Bearish';
+  document.getElementById('brief-pct-pos').textContent  = (m.positive || 0) + '% 강세';
+  document.getElementById('brief-pct-neut').textContent = (m.neutral  || 0) + '% 중립';
+  document.getElementById('brief-pct-neg').textContent  = (m.negative || 0) + '% 약세';
   document.getElementById('brief-item-count').textContent =
-    `${data.total_items} items (${data.news_count} news, ${data.report_count} reports)`;
+    `${data.total_items}건 (뉴스 ${data.news_count} · 리포트 ${data.report_count})`;
   document.getElementById('brief-updated').textContent =
     new Date().toLocaleTimeString('ko-KR');
 
   // ─ Most Mentioned Tickers
   const tickerWrap = document.getElementById('brief-tickers');
   if (!data.top_tickers || !data.top_tickers.length) {
-    tickerWrap.innerHTML = '<span class="brief-empty">No data</span>';
+    tickerWrap.innerHTML = '<span class="brief-empty">데이터가 없습니다.</span>';
   } else {
     tickerWrap.innerHTML = data.top_tickers.map(t =>
       `<span class="brief-ticker-tag" onclick="navigateToChart('${t.ticker}')">
@@ -499,13 +499,13 @@ function renderBrief(data) {
 function renderBriefStories(elId, items) {
   const el = document.getElementById(elId);
   if (!items || !items.length) {
-    el.innerHTML = '<div class="brief-empty">No items in this period.</div>';
+    el.innerHTML = '<div class="brief-empty">이 기간에 해당하는 항목이 없습니다.</div>';
     return;
   }
   const sentColor = s => s === 'positive' ? 'var(--up)' : s === 'negative' ? 'var(--down)' : 'var(--muted)';
   el.innerHTML = items.map(item => {
     const badge = item.report_type
-      ? `<span class="brief-rtype-badge">${item.report_type}</span>` : '';
+      ? `<span class="brief-rtype-badge">${koReportType(item.report_type)}</span>` : '';
     const tickerBadge = item.ticker
       ? `<span class="brief-ticker-inline" onclick="event.stopPropagation();navigateToChart('${item.ticker}')">${item.ticker}</span>`
       : '';

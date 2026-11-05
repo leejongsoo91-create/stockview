@@ -75,6 +75,14 @@ function koMood(v)     { return MOOD_KO[v]     || v; }
 
 // 공포·탐욕 등급 (CSS 클래스는 영어 등급으로 만들고, 글자만 한글로)
 const FG_KO = { 'Extreme Fear': '극단적 공포', 'Fear': '공포', 'Neutral': '중립', 'Greed': '탐욕', 'Extreme Greed': '극단적 탐욕' };
+// 리포트 종류·실적 발표 시점·캔들 패턴 (데이터 값·CSS 클래스는 영어 그대로, 글자만 한글로)
+const REPORT_TYPE_KO = { 'Earnings': '실적', 'Press Release': '보도자료', 'Fed': '연준' };
+const EARN_TIME_KO   = { 'Before Open': '장 시작 전', 'After Close': '장 마감 후' };
+const PATTERN_KO     = { 'Hammer': '망치형', 'Bullish Engulfing': '상승 장악형',
+                         'Shooting Star': '유성형', 'Bearish Engulfing': '하락 장악형' };
+function koReportType(v) { return REPORT_TYPE_KO[v] || v; }
+function koEarnTime(v)   { return EARN_TIME_KO[v]   || v; }
+function koPattern(v)    { return PATTERN_KO[v]     || v; }
 function koFg(v) { if (!v) return v; const k = Object.keys(FG_KO).find(x => x.toLowerCase() === String(v).toLowerCase()); return k ? FG_KO[k] : v; }
 
 // 지수·선물·환율 표시 이름 (데이터 키·차트 심볼은 영어 이름 그대로)
@@ -996,7 +1004,7 @@ function _populateSourceFilter(news) {
   if (!sel) return;
   const sources = [...new Set(news.map(n => n.source).filter(Boolean))].sort();
   const cur = sel.value;
-  sel.innerHTML = '<option value="all">All Sources</option>' +
+  sel.innerHTML = '<option value="all">전체 출처</option>' +
     sources.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
 }
 
@@ -1184,7 +1192,7 @@ function renderReports(rtype) {
     : (rtype === 'all' ? _allReports : _allReports.filter(r => r.report_type === rtype));
   const el = document.getElementById('reports-list');
   if (!list.length) {
-    const emptyMsg = _showReportsBookmarkedOnly ? '북마크한 리포트가 없습니다.' : 'No reports available.';
+    const emptyMsg = _showReportsBookmarkedOnly ? '북마크한 리포트가 없습니다.' : '리포트가 없습니다.';
     el.innerHTML = `<div style="color:var(--muted);padding:20px 0">${emptyMsg}</div>`;
     return;
   }
@@ -1196,7 +1204,7 @@ function renderReports(rtype) {
     const bookmarked = NB.has(r.url);
     return `
       <div class="report-card" onclick="window.open('${r.url}','_blank')">
-        <span class="report-type-badge ${badgeClass(r.report_type)}">${r.report_type}</span>
+        <span class="report-type-badge ${badgeClass(r.report_type)}">${koReportType(r.report_type)}</span>
         <div class="news-body">
           <div class="news-title">${r.title}</div>
           <div class="news-meta">
@@ -1227,12 +1235,13 @@ function renderNews() {
   // 결과 수 표시
   const countEl = document.getElementById('news-kw-count');
   if (countEl) {
-    countEl.textContent = kw ? `${list.length} results` : '';
+    countEl.textContent = kw ? `${list.length}건` : '';
     countEl.style.display = kw ? 'inline' : 'none';
   }
 
   if (!list.length) {
-    const emptyMsg = _showBookmarkedOnly ? '북마크한 뉴스가 없습니다.' : `No news found${kw ? ` for "<b>${_escHtml(kw)}</b>"` : ''}.`;
+    const emptyMsg = _showBookmarkedOnly ? '북마크한 뉴스가 없습니다.'
+      : kw ? `"<b>${_escHtml(kw)}</b>"에 해당하는 뉴스가 없습니다.` : '뉴스가 없습니다.';
     el.innerHTML = `<div style="color:var(--muted);padding:20px 0;text-align:center">${emptyMsg}</div>`;
     return;
   }
