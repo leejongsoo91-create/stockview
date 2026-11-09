@@ -99,7 +99,9 @@ KR_RSS_FEEDS = [
     {"url": "https://www.asiae.co.kr/rss/economy.htm",                            "source": "아시아경제"},
     {"url": "https://www.sedaily.com/rss/finance",                                "source": "서울경제 금융"},
     {"url": "https://kr.investing.com/rss/news.rss",                              "source": "Investing.com 한국"},
-    {"url": "https://www.infostockdaily.co.kr/rss/allArticle.xml",                "source": "인포스탁데일리"},
+    # naive_tz: 발행 시각에 시간대 표시가 없을 때의 기준 시각. 인포스탁은 "2026-11-09 17:11:16"(KST)을 줘서
+    # feedparser가 UTC로 읽으면 9시간 미래 → "-4시간 전" 표시(11-09 수정). Investing.com 한국은 시간대 없이 UTC라 그대로.
+    {"url": "https://www.infostockdaily.co.kr/rss/allArticle.xml",                "source": "인포스탁데일리", "naive_tz": "KST"},
 ]
 
 REPORT_FEEDS = [
@@ -2254,12 +2256,32 @@ def _to_timestamp(published_parsed) -> int:
         return int(time.time())
 
 
+_NAIVE_TIME_RE = re.compile(r"^\s*\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(:\d{2})?\s*$")
+
+
+def _entry_published_utc(entry, feed_info: dict):
+    """feedparser published_parsed를 UTC struct_time으로. 피드에 naive_tz="KST"가 있고 발행 시각 문자열에
+    시간대 표시가 없으면(예: "2026-11-09 17:11:16") 한국 시각으로 보고 9시간을 뺀다.
+    문자열에 +0900 등이 붙어 오면 feedparser가 이미 맞게 변환하므로 건드리지 않는다(이중 보정 방지)."""
+    pp = entry.get("published_parsed")
+    if not pp or feed_info.get("naive_tz") != "KST":
+        return pp
+    if not _NAIVE_TIME_RE.match(entry.get("published", "") or ""):
+        return pp
+    try:
+        return time.gmtime(calendar.timegm(pp) - 9 * 3600)
+    except Exception:
+        return pp
+
+
 def _time_ago(published_parsed) -> str:
     if not published_parsed:
         return "최근"
     try:
         pub = datetime(*published_parsed[:6], tzinfo=timezone.utc)
         diff = int((datetime.now(timezone.utc) - pub).total_seconds())
+        if diff < 60:   # 미래 시각(피드 시간대 오류)이면 음수 대신 "방금"
+            return "방금"
         if diff < 3600:
             return f"{diff // 60}분 전"
         if diff < 86400:
@@ -2352,13 +2374,14 @@ def fetch_kr_market_news() -> list[dict]:
             if not title or title in seen:
                 continue
             seen.add(title)
+            pp = _entry_published_utc(entry, feed_info)
 
             results.append({
                 "id":        len(results) + 1,
                 "title":     title,
                 "source":    feed_info["source"],
-                "time":      _time_ago(entry.get("published_parsed")),
-                "timestamp": _to_timestamp(entry.get("published_parsed")),
+                "time":      _time_ago(pp),
+                "timestamp": min(_to_timestamp(pp), int(time.time())),   # 미래 시각이 정렬 맨 위로 가지 않게
                 "ticker":    None,
                 "sentiment": "neutral",
                 "score":     0,
