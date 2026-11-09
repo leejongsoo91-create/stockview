@@ -42,7 +42,7 @@
 | 실행 | WSL Ubuntu `/root/stockview`에서 `.venv/bin/python app.py` → http://127.0.0.1:5001 (터미널 창을 띄워두는 방식). Windows 셸에서는 `wsl -d Ubuntu -u root -- bash -lc 'cd /root/stockview && .venv/bin/python app.py'` — Windows의 `python`(3.14/3.15)으로 띄우지 않는다 |
 | 스택 | Flask + flask-socketio + APScheduler / Vanilla JS + D3.js + Lightweight Charts |
 | 환경 | **Python 3.12.3** (WSL Ubuntu `.venv` 가상환경). numpy·pandas·yfinance 미설치 — 예전 3.15 알파 시절부터 `requests`로 직접 호출하는 구조를 유지 |
-| 규모 | 9탭 (Home·Screener·Heatmap·Chart·News·Brief·Watchlist·Portfolio·Earnings), US 5,000 · KR 약 3,940종목 |
+| 규모 | 9탭 (Home·Screener·Heatmap·Chart·News·Brief·Watchlist·Portfolio·Earnings), US 5,000 · KR 4,318종목(주식·ETF·ETN) |
 | 저장소 | GitHub **공개(public)** — 키·개인정보를 코드·문서에 쓰지 않는다 |
 
 ## 문서 지도 — 필요할 때만 읽는다

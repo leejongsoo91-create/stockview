@@ -40,7 +40,7 @@
 | `static/js/earnings.js` | US | 실적 캘린더 |
 | `static/css/style.css` | 공통 | 다크/라이트 테마 전체 (섹션 순서 규칙은 `.claude/rules/css.md`) |
 | `scripts/*.py` | — | 수동 실행 도구 (수집·백테스트). **app.py에서 import 금지** |
-| `data/kr_stocks.json` | KR | 국내주식 기본 데이터 (`fetch_kr_stocks.py` 생성, **현재 소스 폐기로 재생성 불가** → ROADMAP) |
+| `data/kr_stocks.json` | KR | 국내주식 기본 데이터 4,318종목(주식·ETF·ETN, 11-09 생성). `scripts/fetch_kr_stocks.py`(약 2~3분, `--dry-run`은 비교만)로 재생성 — 목록·시총 네이버 `marketValue`, 업종 네이버 `industry`, PER/EPS `integration`, 52주 Yahoo. 종목코드는 영문 섞인 신규 코드(`0126Z0`) 포함 → 코드 추출은 `df.kr_code()` |
 | `data/pe_eps_cache.json` | US | PE/EPS 캐시 (서버가 24h마다 갱신, git 추적) |
 | `data/kr_per_cache.json` | KR | KR PER/EPS (서버가 24h마다 갱신, gitignore) |
 | `data/us_names_ko.json` | US | 미국 종목 한글명 (네이버 해외주식 목록, 서버가 주 1회 갱신, gitignore). 표시 우선순위: 네이버 → `NAME_KO` 수동 사전 → 빈칸 (`df.name_ko()`) |

@@ -1230,6 +1230,12 @@ def fetch_us_indices_naver() -> dict[str, dict]:
 
 
 # ── 국내주식 PER/EPS (네이버 integration API, 1일 1회) ─────────────────────────
+def kr_code(s) -> str:
+    """국내 티커·코드 → 6자리 종목코드 ("005930.KS" → "005930", "0126z0" → "0126Z0").
+    2024년부터 KRX 신규 상장은 영문이 섞인 코드(삼성에피스홀딩스 0126Z0 등)라 숫자만 남기면 안 된다(11-09)."""
+    return re.sub(r"[^0-9A-Z]", "", str(s or "").split(".")[0].upper())[:6]
+
+
 def _naver_num(s) -> float | None:
     """네이버 표시값("22,292원", "9.89배", "N/A", "-")을 숫자로. 파싱 불가면 None."""
     m = re.search(r"-?[\d,]+(?:\.\d+)?", str(s or ""))
@@ -1327,7 +1333,7 @@ def get_kr_investor_leaders(pool: list[dict], limit: int = 15, max_workers: int 
     """11번: KR 시총 상위 풀(pool)에서 외국인 순매수/순매도 상위 종목 스캔.
     종목당 네이버 페이지 1회 조회 — 배치 규모라 워커 수를 보수적으로 제한."""
     def _one(stock: dict) -> dict | None:
-        code = re.sub(r"[^0-9]", "", stock["ticker"])[:6]
+        code = kr_code(stock["ticker"])
         if not code:
             return None
         rows = fetch_kr_investor(code)

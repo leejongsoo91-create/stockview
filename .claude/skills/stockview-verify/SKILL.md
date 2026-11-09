@@ -25,7 +25,7 @@ description: StockView 작업 후 실제 동작 검증 — 서버 기동 확인,
 |------|-----------|------------|
 | 공통 | `/api/cache/status` | 캐시 키별 상태 |
 | 홈 | `/api/indices`, `/api/stocks`, `/api/fear-greed` | 지수 19개, 종목 5,000개 내외 |
-| KR | `/api/kr-stocks`, `/api/kr-investor/005930` | 3,936개, PER/EPS 값, 수급 5일치 |
+| KR | `/api/kr-stocks`, `/api/kr-investor/005930` | 4,318개(11-09 기준), PER/EPS 값, 수급 5일치 |
 | 차트 | `/api/chart/AAPL`, `/api/stock-analysis/AAPL` | 첫 봉에 `_dummy` 없음(있으면 가짜 데이터) |
 | 뉴스 | `/api/news` | `market` 필드 US/KR 분리 |
 | Brief | `/api/daily-signals`, `/api/heatmap-perf?period=1w` | 서버 시작 후 240초 지나야 채워짐 |

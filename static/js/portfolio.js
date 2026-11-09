@@ -829,7 +829,7 @@ function _ptUpdateModalCur() {
   const t    = (document.getElementById('pt-modal-ticker').value || '').trim().toUpperCase();
   const inp  = document.getElementById('pt-modal-price');
   const prev = document.getElementById('pt-modal-price-preview');
-  const kr   = isKrTicker(t) || /^\d{6}$/.test(t);
+  const kr   = isKrTicker(t) || /^\d[0-9A-Z]{5}$/.test(t);   // 영문 섞인 신규 코드(0126Z0)도 국내
   const cur  = kr ? 'KRW' : _ptModalCur;
   document.querySelectorAll('#pt-cur-toggle button').forEach(b => {
     b.classList.toggle('active', b.dataset.cur === cur);

@@ -11,9 +11,9 @@
 | 항목 | 설명 |
 |------|------|
 | 홈 화면 개편 (진행 중) | 11-06 지수·선물·금리 표, 상승·하락 상위, 관심종목·포트폴리오 요약 삭제 + 섹터 줄 ETF 기준 변경 완료. 이어서: 상승·하락 종목 수 위치 이동 등 사용자 요청대로 |
-| `scripts/fetch_kr_stocks.py` 새 네이버 API로 교체 | 종목목록·PER 소스(`sise_market_sum.naver`) 폐기로 스크립트가 동작 안 함. 신규 상장·업종 재분류 불가. `m.stock.naver.com/api/stocks/marketValue/{KOSPI\|KOSDAQ}` 등으로 교체 (업종 페이지 `sise_group`도 확인) |
+| 국내 재무제표 카드 복구 | `fetch_kr_financials()`가 접속 불가한 `finance.naver.com/item/main.naver`를 써서 **모든 국내 종목**(005930 포함) `/api/financials/*.KS`가 "Not found"(11-09 발견). `m.stock.naver.com/api/stock/{code}/finance/...` 등 모바일 API로 교체 |
+| Playwright MCP 크롬 실행 실패 | 11-09 `browser_navigate`가 `spawn UNKNOWN`(사용자 폴더 한글 경로 추정). 임시로 wmux 내장 브라우저로 DOM 확인(스크린샷은 작업 공간이 앞에 있어야 가능) |
 | ⚠️ 옛 API 키 교체(rotate) — **사용자 작업** | AlphaVantage·Finnhub 키가 과거 커밋 이력에 평문으로 남아 있고 **저장소가 공개(public)** 상태. 09-07에 코드에서는 `api/` 파일로 분리했지만 이력은 그대로 → 각 콘솔에서 새 키 발급 후 `api/alphavantage.txt`, `api/finnhub.txt` 교체 |
-| 국내 뉴스 시간 음수 표시 | 인포스탁데일리 기사가 "-49분 전"처럼 미래 시각으로 표시됨(11-04 발견, 한글화 전부터 있던 문제). 피드 발행시각의 시간대(KST/UTC) 처리 확인 필요 |
 | 과거 미검증 화면 일괄 확인 | 08-18~09-15 작업 다수가 "브라우저 시각 확인 미완료"(당시 도구 없음). 이제 Playwright MCP가 있으니 `stockview-verify`로 Brief 음성 재생, 재무제표, 차트 더미 배너 등 일괄 확인 |
 
 ## 💡 후보 (미착수, 언제든 시작 가능)

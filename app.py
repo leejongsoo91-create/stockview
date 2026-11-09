@@ -984,7 +984,7 @@ def kr_stocks():
 @app.route("/api/kr-investor/<code>")
 def kr_investor(code: str):
     """국내주식 수급 동향: 외국인·기관·개인 최근 5일 (Naver, 1시간 lazy 캐시)"""
-    code = re.sub(r"[^0-9]", "", code)[:6]
+    code = df.kr_code(code)
     if not code:
         return jsonify([])
     key = f"kr_investor_{code}"
@@ -1011,7 +1011,7 @@ def kr_disclosures():
 @app.route("/api/kr-news/<code>")
 def kr_news(code: str):
     """국내주식 종목별 뉴스 (Naver Finance, 30분 lazy 캐시)"""
-    code = re.sub(r"[^0-9]", "", code)[:6]
+    code = df.kr_code(code)
     if not code:
         return jsonify([])
     key    = f"kr_news_{code}"
@@ -1329,7 +1329,7 @@ def financials(ticker):
         return jsonify(cached)
 
     if t.endswith((".KS", ".KQ")):
-        code = re.sub(r"[^0-9]", "", t)[:6]
+        code = df.kr_code(t)
         result = df.fetch_kr_financials(code) if code else None
     else:
         result = df.fetch_us_financials(t)
