@@ -11,8 +11,8 @@
 | 항목 | 설명 |
 |------|------|
 | 홈 화면 개편 (진행 중) | 11-06 지수·선물·금리 표, 상승·하락 상위, 관심종목·포트폴리오 요약 삭제 + 섹터 줄 ETF 기준 변경 완료. 이어서: 상승·하락 종목 수 위치 이동 등 사용자 요청대로 |
-| 국내 재무제표 카드 복구 | `fetch_kr_financials()`가 접속 불가한 `finance.naver.com/item/main.naver`를 써서 **모든 국내 종목**(005930 포함) `/api/financials/*.KS`가 "Not found"(11-09 발견). `m.stock.naver.com/api/stock/{code}/finance/...` 등 모바일 API로 교체 |
-| Playwright MCP 크롬 실행 실패 | 11-09 `browser_navigate`가 `spawn UNKNOWN`(사용자 폴더 한글 경로 추정). 임시로 wmux 내장 브라우저로 DOM 확인(스크린샷은 작업 공간이 앞에 있어야 가능) |
+| Playwright MCP Edge 전환 확인 | 11-09 `spawn UNKNOWN` 원인 = Windows **스마트 앱 컨트롤**이 새로 받은 `chromium-1252` 실행 차단. `~/.claude.json` Playwright 인자를 `--browser msedge`로 변경 — Claude Code 재시작 후 `stockview-verify` 캡처가 되는지 확인. 스마트 앱 컨트롤은 끄지 않음(재설치 전엔 다시 못 켬) |
+| 목록에서 빠진 국내 98종목 관심종목·포트폴리오 대조 — **사용자 확인** | 11-09 재생성으로 상장폐지·만기 종목 98개(주식 33·ETF 12·ETN 53, 네이버도 조회 불가) 제외. 사용자 브라우저 콘솔에서 대조 스크립트 실행 필요, 있으면 삭제 안내 |
 | ⚠️ 옛 API 키 교체(rotate) — **사용자 작업** | AlphaVantage·Finnhub 키가 과거 커밋 이력에 평문으로 남아 있고 **저장소가 공개(public)** 상태. 09-07에 코드에서는 `api/` 파일로 분리했지만 이력은 그대로 → 각 콘솔에서 새 키 발급 후 `api/alphavantage.txt`, `api/finnhub.txt` 교체 |
 | 과거 미검증 화면 일괄 확인 | 08-18~09-15 작업 다수가 "브라우저 시각 확인 미완료"(당시 도구 없음). 이제 Playwright MCP가 있으니 `stockview-verify`로 Brief 음성 재생, 재무제표, 차트 더미 배너 등 일괄 확인 |
 

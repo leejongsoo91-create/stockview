@@ -1530,7 +1530,8 @@ _KR_FIN_ROWS = [
     ("영업이익률", "%"), ("순이익률", "%"), ("ROE(지배주주)", "%"),
     ("부채비율", "%"), ("유보율", "%"),
     ("EPS(원)", "원"), ("PER(배)", "배"), ("BPS(원)", "원"), ("PBR(배)", "배"),
-    ("주당배당금(원)", "원"), ("시가배당률(%)", "%"), ("배당성향(%)", "%"),
+    ("주당배당금(원)", "원"),
+    # 시가배당률·배당성향은 11-09 모바일 재무 API 교체 후 제공되지 않아 제외 (항상 빈칸이었음)
 ]
 
 _US_GAAP_TAGS = {
@@ -1634,54 +1635,43 @@ def fetch_us_financials(ticker: str) -> dict | None:
     }
 
 
+# 네이버 모바일 재무 API 행 제목 → _KR_FIN_ROWS 라벨 (라벨과 제목이 같은 항목은 생략)
+_KR_FIN_API_TITLE = {"ROE(지배주주)": "ROE", "EPS(원)": "EPS", "PER(배)": "PER", "BPS(원)": "BPS",
+                     "PBR(배)": "PBR", "주당배당금(원)": "주당배당금"}
+
+
 def fetch_kr_financials(code: str) -> dict | None:
-    """네이버 금융 '기업실적분석' 표 스크래핑 -- 연간 4개(최근3년+컨센서스)·분기 6개."""
-    import html as _html
+    """국내 재무 요약 -- 연간 4개(최근3년+컨센서스)·분기 6개.
+    네이버 모바일 API m.stock.naver.com/api/stock/{code}/finance/{annual|quarter} (11-09 교체).
+    예전 finance.naver.com/item/main.naver 표 스크래핑은 302(stock.naver.com 개편)로 전 종목 실패했음."""
+    session = requests.Session()
+    session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+    def _get(kind: str, n: int) -> tuple[list, dict]:
+        """(기간 라벨 목록, {행 제목: [값...]}) — 최근 n개 기간. 예상치는 "2026.12(E)"."""
+        r = session.get(f"https://m.stock.naver.com/api/stock/{code}/finance/{kind}", timeout=8)
+        if r.status_code != 200 or "json" not in r.headers.get("content-type", ""):
+            return [], {}
+        info = (r.json() or {}).get("financeInfo") or {}
+        titles = (info.get("trTitleList") or [])[-n:]
+        keys = [t.get("key") for t in titles]
+        periods = [(t.get("title") or "").rstrip(".") + ("(E)" if t.get("isConsensus") == "Y" else "")
+                   for t in titles]
+        rows = {}
+        for row in info.get("rowList") or []:
+            cols = row.get("columns") or {}
+            rows[row.get("title")] = [_naver_num((cols.get(k) or {}).get("value")) for k in keys]
+        return periods, rows
+
     try:
-        url = f"https://finance.naver.com/item/main.naver?code={code}"
-        resp = requests.get(url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://finance.naver.com",
-        }, timeout=8)
-        resp.encoding = "utf-8"  # main.naver는 UTF-8 (frgn.naver/news_news.naver와 달리 EUC-KR 아님)
-        html_text = resp.text
-
-        table_m = re.search(r'<table[^>]*class="tb_type1 tb_num tb_type1_ifrs"[^>]*>(.*?)</table>',
-                             html_text, re.DOTALL)
-        if not table_m:
-            return None
-        table = table_m.group(1)
-
-        thead_m = re.search(r'<thead>(.*?)</thead>', table, re.DOTALL)
-        period_ths = re.findall(r'<th scope="col"[^>]*>(.*?)</th>', thead_m.group(1), re.DOTALL) if thead_m else []
-        periods = []
-        for th in period_ths:
-            t = _html.unescape(re.sub(r"<[^>]+>", "", th)).strip()
-            t = re.sub(r"\s+", "", t)
-            if re.match(r"^\d{4}\.\d{2}", t):  # "최근 연간/분기 실적" 그룹헤더(scope=col) 제외, 날짜만
-                periods.append(t)
-        annual_periods, quarterly_periods = periods[:4], periods[4:10]
-
-        def clean_num(cell: str) -> float | None:
-            t = re.sub(r"<[^>]+>", "", cell).strip().replace(",", "").replace("\xa0", "")
-            if not t or t in ("-", "N/A"):
-                return None
-            try:
-                return float(t)
-            except ValueError:
-                return None
-
-        def row_values(label: str) -> tuple[list, list]:
-            m = re.search(rf'<strong>{re.escape(label)}</strong></th>(.*?)</tr>', table, re.DOTALL)
-            if not m:
-                return [None] * 4, [None] * 6
-            cells = re.findall(r'<td[^>]*>(.*?)</td>', m.group(1), re.DOTALL)
-            vals = [clean_num(c) for c in cells]
-            return vals[:4], vals[4:10]
+        annual_periods, ann_rows = _get("annual", 4)
+        quarterly_periods, qtr_rows = _get("quarter", 6)
 
         rows = []
         for label, unit in _KR_FIN_ROWS:
-            ann, qtr = row_values(label)
+            title = _KR_FIN_API_TITLE.get(label, label)
+            ann = ann_rows.get(title) or [None] * len(annual_periods)
+            qtr = qtr_rows.get(title) or [None] * len(quarterly_periods)
             rows.append({"label": label, "unit": unit, "annual": ann, "quarterly": qtr})
 
         if not annual_periods or all(v is None for r in rows for v in r["annual"]):

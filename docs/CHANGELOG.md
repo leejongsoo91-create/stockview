@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-09 | 버그 | 국내 재무제표 카드 복구: `fetch_kr_financials()`가 쓰던 `finance.naver.com/item/main.naver`가 302(stock.naver.com 개편)라 **전 종목** "Not found" → 네이버 모바일 `m.stock.naver.com/api/stock/{code}/finance/{annual,quarter}`로 교체(연간 4·분기 6, 예상치 "(E)", 영문 코드 0126Z0 포함). API에 없는 시가배당률·배당성향 줄 제외 | (이번 커밋)
 - 11-09 | 데이터·기능 | `scripts/fetch_kr_stocks.py`를 네이버 모바일 API로 교체(옛 `sise_market_sum`·`sise_group` 접속 불가): 목록·시총 `marketValue`, 업종 `industry`(79개), PER/EPS `integration`, 52주 Yahoo, `--dry-run` 비교 모드. `kr_stocks.json` 3,936 → 4,318종목(신규 480·상장폐지 등 98 제외, 07-02 이후 첫 재생성). **영문 섞인 신규 종목코드**(삼성에피스홀딩스 0126Z0 등 424개) 지원: `df.kr_code()`로 수급·뉴스·재무 API 코드 추출, 포트폴리오 입력 판별 | (이번 커밋)
 - 11-09 | 버그 | 국내 뉴스 시간 음수 수정: 인포스탁데일리 RSS가 시간대 없는 한국 시각("2026-11-09 17:11:16")이라 UTC로 읽혀 "-4시간 전"·정렬 맨 위 → 피드별 `naive_tz: "KST"` 보정, 미래 시각은 "방금"·정렬은 현재 시각으로 제한 | (이번 커밋)
 - 11-06 | 기능 | 국내 주식·ETF·ETN 구분: 네이버 국내 목록 `stockEndType`으로 종류 부여(주식 2,658·ETF 856·ETN 324, 목록에 없는 업종 '기타' 65개는 이름으로 ETF·ETN 추정). 히트맵 국내 탭은 주식만 + 새 "📦 국내 ETF" 탭(ETF·ETN → 운용사별). 종목검색 국내 "종류" 필터(기본 주식), ETF/ETN 배지(종목검색·상단 검색·관심종목·차트), 업종 칸 ETF/ETN. ETF 차트는 종합 진단·재무제표 카드 숨김 | 32a3627 외
