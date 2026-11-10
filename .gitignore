@@ -53,3 +53,6 @@ $SCRATCH/
 
 # 서버가 주 1회 네이버에서 받아 덮어쓰는 미국 종목 한글명 (런타임 상태)
 data/us_names_ko.json
+
+# Playwright MCP 캡처·로그
+.playwright-mcp/

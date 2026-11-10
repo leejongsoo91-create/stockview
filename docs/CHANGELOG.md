@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-11 | 보안·환경 | ① Playwright MCP를 Edge(`--browser msedge`)로 전환해 화면 캡처 정상 확인(스마트 앱 컨트롤 유지), `.playwright-mcp/` gitignore ② 목록에서 빠진 국내 98종목을 사용자 크롬 저장값(관심종목 12·메모·그룹·차트 그리기)과 대조 → 0건 ③ 공개 이력에 노출된 AlphaVantage·Finnhub 키 교체(새 키 이력 등장 0건, 호출 정상), 서버 재시작 후 Finnhub 뉴스 50건 확인. 발견: AlphaVantage 뉴스 API 유료 전환·Yahoo RSS 404 (11-04부터, ROADMAP 등록) | (이번 커밋)
 - 11-09 | 버그 | 국내 재무제표 카드 복구: `fetch_kr_financials()`가 쓰던 `finance.naver.com/item/main.naver`가 302(stock.naver.com 개편)라 **전 종목** "Not found" → 네이버 모바일 `m.stock.naver.com/api/stock/{code}/finance/{annual,quarter}`로 교체(연간 4·분기 6, 예상치 "(E)", 영문 코드 0126Z0 포함). API에 없는 시가배당률·배당성향 줄 제외 | (이번 커밋)
 - 11-09 | 데이터·기능 | `scripts/fetch_kr_stocks.py`를 네이버 모바일 API로 교체(옛 `sise_market_sum`·`sise_group` 접속 불가): 목록·시총 `marketValue`, 업종 `industry`(79개), PER/EPS `integration`, 52주 Yahoo, `--dry-run` 비교 모드. `kr_stocks.json` 3,936 → 4,318종목(신규 480·상장폐지 등 98 제외, 07-02 이후 첫 재생성). **영문 섞인 신규 종목코드**(삼성에피스홀딩스 0126Z0 등 424개) 지원: `df.kr_code()`로 수급·뉴스·재무 API 코드 추출, 포트폴리오 입력 판별 | (이번 커밋)
 - 11-09 | 버그 | 국내 뉴스 시간 음수 수정: 인포스탁데일리 RSS가 시간대 없는 한국 시각("2026-11-09 17:11:16")이라 UTC로 읽혀 "-4시간 전"·정렬 맨 위 → 피드별 `naive_tz: "KST"` 보정, 미래 시각은 "방금"·정렬은 현재 시각으로 제한 | (이번 커밋)

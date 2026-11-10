@@ -1,6 +1,6 @@
 # ROADMAP — StockView 앞으로 할 일
 
-> 갱신: 2026-11-02 · 작업을 시작하면 "진행 중"으로, 끝나면 이 표에서 지우고 [CHANGELOG.md](CHANGELOG.md) 맨 위에 한 줄 추가한다.
+> 갱신: 2026-11-11 · 작업을 시작하면 "진행 중"으로, 끝나면 이 표에서 지우고 [CHANGELOG.md](CHANGELOG.md) 맨 위에 한 줄 추가한다.
 > worktree 병렬 작업 중에는 이 파일을 고치지 않는다 — main에 합칠 때만 수정(충돌 방지).
 
 ## 🔨 진행 중
@@ -11,9 +11,8 @@
 | 항목 | 설명 |
 |------|------|
 | 홈 화면 개편 (진행 중) | 11-06 지수·선물·금리 표, 상승·하락 상위, 관심종목·포트폴리오 요약 삭제 + 섹터 줄 ETF 기준 변경 완료. 이어서: 상승·하락 종목 수 위치 이동 등 사용자 요청대로 |
-| Playwright MCP Edge 전환 확인 | 11-09 `spawn UNKNOWN` 원인 = Windows **스마트 앱 컨트롤**이 새로 받은 `chromium-1252` 실행 차단. `~/.claude.json` Playwright 인자를 `--browser msedge`로 변경 — Claude Code 재시작 후 `stockview-verify` 캡처가 되는지 확인. 스마트 앱 컨트롤은 끄지 않음(재설치 전엔 다시 못 켬) |
-| 목록에서 빠진 국내 98종목 관심종목·포트폴리오 대조 — **사용자 확인** | 11-09 재생성으로 상장폐지·만기 종목 98개(주식 33·ETF 12·ETN 53, 네이버도 조회 불가) 제외. 사용자 브라우저 콘솔에서 대조 스크립트 실행 필요, 있으면 삭제 안내 |
-| ⚠️ 옛 API 키 교체(rotate) — **사용자 작업** | AlphaVantage·Finnhub 키가 과거 커밋 이력에 평문으로 남아 있고 **저장소가 공개(public)** 상태. 09-07에 코드에서는 `api/` 파일로 분리했지만 이력은 그대로 → 각 콘솔에서 새 키 발급 후 `api/alphavantage.txt`, `api/finnhub.txt` 교체 |
+| AlphaVantage 뉴스 유료 전환 대응 | 11-11 확인: `NEWS_SENTIMENT`가 프리미엄 전용이 되어 11-04부터 매번 `Information` 응답(성공 0건, 키 문제 아님). 수집 끄기 또는 다른 무료 뉴스 출처로 대체 결정 필요 |
+| Yahoo Finance RSS 404 | 11-04부터 `finance.yahoo.com/news/rssindex` 404. 새 주소로 바꾸거나 목록에서 제외 |
 | 과거 미검증 화면 일괄 확인 | 08-18~09-15 작업 다수가 "브라우저 시각 확인 미완료"(당시 도구 없음). 이제 Playwright MCP가 있으니 `stockview-verify`로 Brief 음성 재생, 재무제표, 차트 더미 배너 등 일괄 확인 |
 
 ## 💡 후보 (미착수, 언제든 시작 가능)
