@@ -663,6 +663,7 @@ _INDUSTRY_SHORT: dict[str, str] = {
 _NON_COMMON_NAME_RE = re.compile(
     r"\bWarrants?\b|\bRights?\b|Preferred|\bNotes?\b|Debentures?|Fixed[- ]to[- ]Floating"
     r"|Depositary Shares?,? (each )?(representing|rep)\b.*(Preferred|Series|Interest)"
+    r"|(?<!American )Deposit[ao]ry Shares?\s*$"  # "Cadiz Inc. Depositary Shares"(CDZIP) — ADR(American …)은 제외
     r"|\d+(\.\d+)?%\s"
     r"|(?<!Common )(?<!L\.P\. )(?<!LP )\bUnits?\b",
     re.I,
@@ -684,6 +685,35 @@ def is_non_common(ticker: str, name: str) -> bool:
         return True
     # "Holding L.P.  Units"처럼 공백이 겹친 이름이 있어 정리 후 판별 (lookbehind는 고정 폭)
     return bool(_NON_COMMON_NAME_RE.search(re.sub(r"\s+", " ", name or "")))
+
+
+# 나스닥 종목명 끝의 증권 종류 꼬리("Common Stock" 등, 약 4,000개) — 보통주에만 적용.
+# Class A/B·Series C는 같은 회사의 다른 주식(GOOGL/GOOG, FWONA/FWONK) 구분이라 남긴다.
+# 꼬리 키워드부터 끝까지 제거("Common Stock New", "Common Stock ($0.10 Par Value)", "Ordinary Shares (Ireland)" 포함).
+_NAME_TAIL_RE = re.compile(
+    r"(?:\s+|(?<=[.)]))(?:American Depositary Shares?|Common Units?|Shares of Beneficial Interest"
+    r"|Common Stock|Ordinary Shares?|Common Shares?|Capital Stock|Subordinate Voting Shares)\b.*$",
+    re.I,
+)
+
+
+def clean_us_name(name: str) -> str:
+    """'Apple Inc. Common Stock' → 'Apple Inc.', 'CBRE Group Inc Common Stock Class A' → 'CBRE Group Inc Class A',
+    'Sea Limited American Depositary Shares …' → 'Sea Limited ADR'."""
+    n = re.sub(r"\s+", " ", (name or "").strip())
+    m = _NAME_TAIL_RE.search(n)
+    if not m:
+        return n
+    head, tail = n[:m.start()].rstrip(" ,-"), m.group(0)
+    if not head:
+        return n
+    if re.match(r"\s*American Depositary", tail, re.I):
+        return head + " ADR"
+    # 꼬리 뒤에 붙은 클래스 표기는 살림 (같은 회사 다른 주식 구분)
+    cls = re.search(r"\b(Class [A-Z]|Series [A-Z])\b", tail)
+    if cls and cls.group(1) not in head:
+        head += " " + cls.group(1)
+    return head
 
 
 def _clean_industry(raw: str) -> str:
@@ -800,7 +830,7 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
 
         result.append({
             "ticker":      ticker,
-            "name":        name,
+            "name":        name if is_non_common(ticker, name) else clean_us_name(name),
             "name_ko":     name_ko(ticker),
             "sector":      sector,
             "industry":    industry,
