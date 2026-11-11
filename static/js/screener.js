@@ -933,11 +933,12 @@ function exportScreenerCSV() {
 // 국내주식 (KR) 스크리너
 // ══════════════════════════════════════════════════════════════════
 
-// ── 스팩/우선주 등 비정상 종목 판별 (KR) ─────────────────────────────────────
-// 우선주는 "우"/"N우B"로 끝나는 한국 증시 표준 표기 (예: 삼성전자우, 현대차2우B)
-const _KR_ABNORMAL_NAME_RE = /(스팩|우B?$)/;
+// ── 비정상 종목 판별 (KR) ─────────────────────────────────────────────────────
+// 11-12 사용자 기준: 정상 = 단일 종목(우선주 포함). ETF·ETN(종류)과 스팩은 제외.
+// (예전엔 우선주 "삼성전자우"·"현대차2우B"도 제외했음)
+const _KR_ABNORMAL_NAME_RE = /스팩/;
 function _isAbnormalKrListing(s) {
-  return _KR_ABNORMAL_NAME_RE.test((s.name || '').trim());
+  return stockKind(s) !== 'stock' || _KR_ABNORMAL_NAME_RE.test((s.name || '').trim());
 }
 
 async function loadKrScreener(showSpinner = false) {
@@ -978,6 +979,13 @@ function _populateKrSectorFilter() {
   });
   const kindGroup = document.getElementById('filter-kind-group');
   if (kindGroup) kindGroup.style.display = '';
+  _setNormalOnlyHint('kr');
+}
+
+// "정상 종목만" 체크박스 안내 문구 — 시장마다 기준이 다름
+function _setNormalOnlyHint(market) {
+  const el = document.getElementById('filter-normal-only-hint');
+  if (el) el.textContent = market === 'kr' ? '(ETF/ETN/스팩 제외, 우선주 포함)' : '(워런트/유닛/우선주/채권 제외)';
 }
 
 function _restoreUsSectorFilter() {
@@ -992,6 +1000,7 @@ function _restoreUsSectorFilter() {
   });
   const kindGroup = document.getElementById('filter-kind-group');
   if (kindGroup) kindGroup.style.display = 'none';
+  _setNormalOnlyHint('us');
 }
 
 function _getKrFiltered() {
@@ -1036,9 +1045,11 @@ function _getKrFiltered() {
   if (document.getElementById('filter-watchlist-only')?.checked && typeof WL !== 'undefined') {
     list = list.filter(s => WL.has(s.ticker));
   }
-  // 정상 종목만 (스팩/우선주 제외)
+  // 정상 종목만 (ETF/ETN/스팩 제외, 우선주 포함) — 종류를 ETF·ETN으로 직접 고른 경우는 그 선택을 따름
   if (document.getElementById('filter-normal-only')?.checked) {
-    list = list.filter(s => !_isAbnormalKrListing(s));
+    list = kind === 'etf' || kind === 'etn'
+      ? list.filter(s => !_KR_ABNORMAL_NAME_RE.test((s.name || '').trim()))
+      : list.filter(s => !_isAbnormalKrListing(s));
   }
   // 정렬 — 가격 없는 종목은 항상 맨 뒤 (1차 + Shift+클릭 2차)
   const _krCmpCol = (a, b, col, dir) => {

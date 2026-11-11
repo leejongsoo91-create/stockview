@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-12 | 기능 | 국내 종목검색 "정상 종목만" 기준 변경(사용자 결정): 정상 = 단일 종목, **우선주 포함**(삼성전자우·삼성물산우B 표시), ETF·ETN·스팩 제외. 종류를 ETF/ETN으로 직접 고르면 그 선택을 따름. 체크박스 안내 문구를 시장별로 표시(미국: 워런트/유닛/우선주/채권 제외, 국내: ETF/ETN/스팩 제외·우선주 포함) | (이번 커밋)
 - 11-12 | 버그·UI | 화면 점검(11-11 Playwright 일괄 확인)에서 나온 3건: ① 없는 종목(ZZZZ99) 조회 시 이전 종목의 차트·신호·진단·재무가 그대로 남던 문제 → 차트 영역 "종목을 찾을 수 없습니다" 덮개 + 사이드 카드 숨김·타이머 정지, 다음 조회 시 해제 ② 재무표가 사이드바보다 넓어 최신 연도가 가려짐 → 최신 연도 쪽으로 스크롤된 상태로 표시, 항목명 칸 고정, 칸 간격 축소(AAPL 넘침 69→29px) ③ 포트폴리오 도넛 범례가 70px로 좁아 "기.", "A..."로 잘림 → 좁으면 범례를 도넛 아래로 내림 | (이번 커밋)
 - 11-12 | 기능 | 미국 ETF(목록 밖 종목) 기본 정보: 야후 같은 응답의 정식 이름(`longName`)·52주 고저·`instrumentType`을 `fetch_quote`가 함께 반환, 한글명 표 `US_ETF_KO`(50개, 예: SOXX "iShares 반도체", SOXL "반도체 3배 레버리지"). sector "ETF"로 표시돼 차트에서 종합 진단·재무제표 404 요청이 사라짐. 관심종목 SPY·SOXX·QQQ 이름·섹터·52주 표시 | (이번 커밋)
 - 11-12 | 데이터 | 미국 종목명 꼬리 정리(`clean_us_name`, 보통주 4,196개): "Apple Inc. Common Stock" → "Apple Inc.", "Common Stock New/($0.10 Par)/REIT", "Ordinary Shares (Ireland)", "Common Units …"(MPLX LP) 제거, ADR은 "Sea Limited ADR", Class A/C·Series A는 유지(GOOGL·GOOG 구분). 우선주·채권 이름은 원문 유지. 비보통주 판별에 단독 "Depositary Shares"(CDZIP) 추가 | (이번 커밋)
