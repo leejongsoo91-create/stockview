@@ -657,10 +657,18 @@ _NON_COMMON_NAME_RE = re.compile(
 )
 
 
+def _nasdaq_pref_to_yahoo(sym: str) -> str:
+    """나스닥 우선주 표기 → 야후 표기: GL^D → GL-PD, DCOM^ → DCOM-P.
+    예전엔 ^만 지워 GLD(금 ETF)·META(메타) 등 실제 종목과 티커가 겹쳤음(11-11 발견, 13개 충돌).
+    야후 표기로 바꾸면 겹치지 않고 차트 조회도 됨(표본 40개 전부 확인)."""
+    m = re.fullmatch(r"([A-Z]+)\^([A-Z]*)", sym or "")
+    return f"{m.group(1)}-P{m.group(2)}" if m else (sym or "")
+
+
 def is_non_common(ticker: str, name: str) -> bool:
     """워런트·권리·유닛·우선주·채권 등 보통주가 아닌 증권이면 True."""
     t = (ticker or "").upper()
-    if t.endswith(".WS") or t.endswith("/WS"):
+    if t.endswith(".WS") or t.endswith("/WS") or re.search(r"-P[A-Z]?$", t):
         return True
     # "Holding L.P.  Units"처럼 공백이 겹친 이름이 있어 정리 후 판별 (lookbehind는 고정 폭)
     return bool(_NON_COMMON_NAME_RE.search(re.sub(r"\s+", " ", name or "")))
@@ -762,10 +770,8 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
         except (ValueError, TypeError):
             volume = 0
 
-        ticker  = (s.get("symbol") or "").strip()
-        # 나스닥 우선주 표기(GL^D, MET^A)는 제외 — 예전엔 ^만 지워 GLD(금 ETF)·META(메타) 등
-        # 실제 종목과 티커가 겹쳤음(11-11 발견, 227개 중 13개 충돌). 야후 표기도 달라 조회 불가.
-        if not ticker or "^" in ticker:
+        ticker  = _nasdaq_pref_to_yahoo((s.get("symbol") or "").strip())
+        if not ticker:
             continue
         name    = (s.get("name") or "").strip()
         sector_raw   = (s.get("sector")   or "")
