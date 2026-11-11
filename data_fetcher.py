@@ -1898,6 +1898,27 @@ SECTOR_ETFS = [   # (ETF, 한글 이름)
 ]
 
 
+# 자주 보는 미국 ETF 한글 이름 (나스닥 주식 목록에 ETF가 없어 차트·관심종목에서 이름이 비던 문제, 11-12)
+US_ETF_KO: dict[str, str] = {
+    "SPY": "SPDR S&P 500", "VOO": "뱅가드 S&P 500", "IVV": "iShares S&P 500", "SPLG": "SPDR 포트폴리오 S&P 500",
+    "QQQ": "인베스코 나스닥100", "QQQM": "인베스코 나스닥100 M", "DIA": "SPDR 다우존스", "IWM": "iShares 러셀 2000",
+    "VTI": "뱅가드 미국 전체 주식", "VT": "뱅가드 전세계 주식", "VEA": "뱅가드 선진국 주식", "VWO": "뱅가드 신흥국 주식",
+    "EEM": "iShares 신흥국 주식", "EWY": "iShares 한국 주식 MSCI Korea", "EWJ": "iShares 일본 주식",
+    "INDA": "iShares 인도 주식", "FXI": "iShares 중국 대형주", "KWEB": "KraneShares 중국 인터넷",
+    "SCHD": "슈왑 미국 배당", "VIG": "뱅가드 배당 성장", "VYM": "뱅가드 고배당",
+    "JEPI": "JP모건 프리미엄 인컴", "JEPQ": "JP모건 나스닥 프리미엄 인컴",
+    "VGT": "뱅가드 IT 섹터", "SOXX": "iShares 반도체", "SMH": "반에크 반도체",
+    "SOXL": "반도체 3배 레버리지", "SOXS": "반도체 -3배 인버스", "TQQQ": "나스닥100 3배 레버리지",
+    "SQQQ": "나스닥100 -3배 인버스", "UPRO": "S&P 500 3배 레버리지", "SPXL": "디렉시온 S&P 500 3배 레버리지",
+    "TSLL": "테슬라 2배 레버리지", "NVDL": "엔비디아 2배 레버리지", "ARKK": "ARK 혁신 기술",
+    "TLT": "미국 장기국채 20년+", "IEF": "미국 중기국채 7-10년", "SHY": "미국 단기국채 1-3년",
+    "TMF": "미국 장기국채 3배 레버리지", "AGG": "iShares 미국 종합 채권", "BND": "뱅가드 미국 종합 채권",
+    "GLD": "SPDR 금", "IAU": "iShares 금", "SLV": "iShares 은", "USO": "WTI 원유",
+    "UUP": "달러 강세", "IBIT": "iShares 비트코인 현물", "FBTC": "피델리티 비트코인 현물",
+    "VNQ": "뱅가드 미국 리츠",
+}
+
+
 def fetch_sector_etf_perf(period: str = "1d") -> list[dict]:
     """섹터 ETF 등락률. period: 1d(전일 종가 대비) | 1w(7일 전 종가 대비) | 1m(30일 전 종가 대비).
     기준가는 '그 날짜 이전 마지막 거래일 종가', 현재가는 Yahoo 실시간 값(미국 장중 지연 없음, 11-06 확인).
@@ -2020,7 +2041,7 @@ def refresh_prices_parallel(base: list[dict], max_workers: int = 30) -> list[dic
         for future in as_completed(futures):
             ticker, q = future.result()
             if q and q.get("price"):
-                ticker_map[ticker].update(q)
+                ticker_map[ticker].update({k: q[k] for k in ("price", "change", "change_pct", "volume")})
                 success += 1
 
     updated = [ticker_map[s["ticker"]] for s in base if s["ticker"] in ticker_map]
@@ -2055,11 +2076,17 @@ def fetch_quote(ticker: str) -> dict | None:
         change = round(price - prev, 4) if price and prev else 0.0
         change_pct = round(change / prev * 100, 4) if prev else 0.0
 
+        hi, lo = _safe(meta.get("fiftyTwoWeekHigh")), _safe(meta.get("fiftyTwoWeekLow"))
         return {
             "price":      round(price, 2) if price else None,
             "change":     round(change, 2),
             "change_pct": round(change_pct, 2),
             "volume":     int(meta.get("regularMarketVolume") or 0),
+            # 목록 밖 종목(ETF 등) 기본 정보용 — 같은 응답에 이미 들어 있음(추가 요청 없음)
+            "long_name":       (meta.get("longName") or meta.get("shortName") or "").strip(),
+            "instrument_type": meta.get("instrumentType") or "",
+            "week52_high":     round(hi, 2) if hi else None,
+            "week52_low":      round(lo, 2) if lo else None,
         }
     except Exception as e:
         log.debug(f"fetch_quote({ticker}): {e}")

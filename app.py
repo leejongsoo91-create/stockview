@@ -1294,10 +1294,18 @@ def stock_detail(ticker):
         hit = cache.get_fresh(key)
         if hit is None:
             q = df.fetch_quote(t)
-            etf_name = dict(df.SECTOR_ETFS).get(t)
-            hit = {"ticker": t, "name": f"{etf_name} 섹터 ETF ({t})" if etf_name else t, "name_ko": "",
-                   "sector": "ETF" if etf_name else "", **q,
-                   "market_cap": None, "pe": None, "eps": None, "week52_high": None, "week52_low": None} if q and q.get("price") else {}
+            hit = {}
+            if q and q.get("price"):
+                sector_ko = dict(df.SECTOR_ETFS).get(t)
+                is_etf = q.get("instrument_type") == "ETF" or bool(sector_ko) or t in df.US_ETF_KO
+                # 11-12: 이름은 야후 정식 이름(longName), 한글명은 US_ETF_KO·섹터 ETF 표.
+                # sector "ETF"면 프론트가 종합 진단·재무제표 요청을 생략(예전엔 404 2건)
+                hit = {"ticker": t, "name": q.get("long_name") or t,
+                       "name_ko": df.US_ETF_KO.get(t) or (f"{sector_ko} 섹터" if sector_ko else ""),
+                       "sector": "ETF" if is_etf else "",
+                       "price": q["price"], "change": q["change"], "change_pct": q["change_pct"], "volume": q["volume"],
+                       "market_cap": None, "pe": None, "eps": None,
+                       "week52_high": q.get("week52_high"), "week52_low": q.get("week52_low")}
             cache.set(key, hit, ttl=60 if hit else 300)
         if hit:
             return jsonify(hit)
