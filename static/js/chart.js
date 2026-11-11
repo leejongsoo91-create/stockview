@@ -1023,6 +1023,7 @@ async function loadChart(ticker) {
   document.getElementById('chart-price-badge').innerHTML     = '';
   document.getElementById('stock-info-panel').innerHTML      = '<div class="info-placeholder">불러오는 중…</div>';
   _setUpdatedAt('');
+  _setNotFound(null);
 
   // 기존 타이머 정지
   stopChartTimers();
@@ -1087,11 +1088,42 @@ async function loadChart(ticker) {
 
   } catch {
     if (stale()) return;
+    // 11-12: 예전엔 제목만 바뀌고 이전 종목의 차트·신호·진단·재무가 그대로 남아 착각할 수 있었음
+    stopChartTimers();
+    _setDummyBanner(false);
+    ['signal-card', 'stock-analysis-card', 'financials-card'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.style.display = 'none';
+    });
+    document.getElementById('chart-price-badge').innerHTML = '';
+    const starWrap = document.getElementById('chart-star-wrap');
+    if (starWrap) starWrap.innerHTML = '';
     document.getElementById('stock-info-panel').innerHTML =
-      `<div class="info-placeholder" style="color:var(--red)">Ticker "${ticker}" not found</div>`;
+      `<div class="info-placeholder" style="color:var(--red)">"${_escHtml(ticker)}" 종목을 찾을 수 없습니다</div>`;
     document.getElementById('chart-ticker-label').textContent  = ticker;
     document.getElementById('chart-company-label').textContent = '';
+    _setNotFound(ticker);
   }
+}
+
+// 없는 종목 안내 — 차트 영역 전체를 덮어 이전 종목 차트가 보이지 않게 함. null이면 숨김
+function _setNotFound(ticker) {
+  const main = document.querySelector('.chart-main');
+  if (!main) return;
+  let el = document.getElementById('chart-notfound');
+  if (!ticker) { if (el) el.hidden = true; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'chart-notfound';
+    el.className = 'chart-notfound';
+    main.appendChild(el);
+  }
+  const header = main.querySelector('.chart-header');
+  el.style.top = (header ? header.offsetHeight : 64) + 'px';
+  el.innerHTML = `<div class="chart-notfound-box">
+    <div class="chart-notfound-title">"${_escHtml(ticker)}" 종목을 찾을 수 없습니다</div>
+    <div class="chart-notfound-sub">티커를 다시 확인해 주세요. 예: AAPL, BRK/B, 005930.KS</div>
+  </div>`;
+  el.hidden = false;
 }
 
 // ── 예시(더미) 데이터 경고 배너 ──────────────────────────────────────────────
@@ -2435,6 +2467,9 @@ function _renderFinancialsTable(card, data, mode) {
       <tbody>${tbodyHtml}</tbody>
     </table></div>
   `;
+  // 표가 사이드바(260px)보다 넓어 최신 연도(맨 오른쪽)가 가려졌음 → 처음부터 최신 쪽이 보이게
+  const wrap = card.querySelector('.fin-table-wrap');
+  if (wrap) wrap.scrollLeft = wrap.scrollWidth;
 
   if (hasQuarterly) {
     card.querySelectorAll('.fin-toggle-btn').forEach(btn => {

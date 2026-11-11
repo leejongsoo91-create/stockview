@@ -1810,7 +1810,18 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  position: relative;   /* .chart-notfound 덮개 기준 */
 }
+/* 없는 종목 조회 시 이전 종목 차트를 가리는 덮개 (헤더 아래 전체) */
+.chart-notfound {
+  position: absolute; left: 0; right: 0; top: 64px; bottom: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-card);
+}
+.chart-notfound[hidden] { display: none; }
+.chart-notfound-box { text-align: center; padding: 24px; }
+.chart-notfound-title { font-size: 18px; font-weight: 700; color: var(--red); margin-bottom: 8px; }
+.chart-notfound-sub { font-size: 13px; color: var(--muted); }
 .chart-header {
   display: flex;
   align-items: center;
@@ -1974,10 +1985,14 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .fin-toggle-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .fin-table-wrap { overflow-x: auto; padding: 4px 0; }
 .fin-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
-.fin-table th, .fin-table td { padding: 5px 10px; text-align: right; border-bottom: 1px solid #1e2530; }
+.fin-table th, .fin-table td { padding: 5px 6px; text-align: right; border-bottom: 1px solid #1e2530; }
 .fin-table thead th { color: var(--muted); font-weight: 600; font-size: 10.5px; }
 .fin-table thead th:first-child { text-align: left; }
 .fin-table .fin-row-label { text-align: left; color: var(--text); font-weight: 600; }
+/* 가로 스크롤 시 항목명 칸 고정 (최신 연도 쪽으로 스크롤돼 있어도 무슨 줄인지 보이게) */
+.fin-table thead th:first-child, .fin-table .fin-row-label {
+  position: sticky; left: 0; z-index: 1; background: var(--bg-card);
+}
 .fin-table tbody td { color: var(--text); }
 
 /* ── 차트 사이드바 종목 뉴스 ─────────────────────────────────────────────────── */
@@ -2508,10 +2523,13 @@ mark.kw-hl {
 .pt-chart-inner {
   display: flex;
   align-items: center;
-  gap: 10px;   /* 16px → 10px: 한글 섹터명(경기소비재 등)이 좁은 카드에서 … 로 잘리던 문제 */
+  justify-content: center;
+  flex-wrap: wrap;   /* 11-12: 카드 폭 ~300px에 도넛 180px이면 범례가 70px만 남아 "기.", "A..."로 잘림 → 범례를 아래로 */
+  gap: 10px;
 }
 .pt-legend {
-  flex: 1;
+  flex: 1 1 130px;
+  min-width: 130px;
   display: flex;
   flex-direction: column;
   gap: 5px;
