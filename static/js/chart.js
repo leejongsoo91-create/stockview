@@ -59,6 +59,37 @@ const _INDEX_NAMES = {
   'GC=F':  '금 선물',
 };
 
+// 차트 제목 옆 표시용 기호 — 야후 내부 심볼(^GSPC·KRW=X) 대신 흔히 쓰는 표기.
+// 표시 전용: 데이터 요청·그리기·알림 저장 키는 계속 야후 심볼을 쓴다.
+const _INDEX_DISPLAY_SYMBOL = {
+  '^GSPC': 'SPX', '^IXIC': 'COMP', '^DJI': 'DJI', '^RUT': 'RUT', '^SOX': 'SOX', '^VIX': 'VIX',
+  '^TNX': 'US10Y', '^KS11': 'KOSPI', '^KQ11': 'KOSDAQ',
+  'CL=F': 'CL', 'GC=F': 'GC', 'ES=F': 'ES', 'YM=F': 'YM', 'NQ=F': 'NQ',
+  'KRW=X': 'USD/KRW', 'JPY=X': 'USD/JPY', 'EURUSD=X': 'EUR/USD', 'DX-Y.NYB': 'DXY', 'BTC-USD': 'BTC/USD',
+};
+
+// 지수·선물 → 관련(추종) ETF 버튼 (최대 2개). ^SOX(지수)와 SOXX(ETF)는 다른 상품이라 함께 보여 줌
+const _INDEX_RELATED_ETF = {
+  '^GSPC': ['SPY', 'VOO'], 'ES=F': ['SPY', 'VOO'],
+  '^IXIC': ['QQQ'], 'NQ=F': ['QQQ'],
+  '^DJI': ['DIA'], 'YM=F': ['DIA'],
+  '^RUT': ['IWM'],
+  '^SOX': ['SOXX', 'SMH'],
+  'GC=F': ['GLD'], 'CL=F': ['USO'],
+  'BTC-USD': ['IBIT'], '^TNX': ['IEF'], 'DX-Y.NYB': ['UUP'],
+  '^KS11': [['069500.KS', 'KODEX 200']], '^KQ11': [['229200.KS', 'KODEX 코스닥150']],
+};
+
+function _relatedEtfHtml(ticker) {
+  const list = _INDEX_RELATED_ETF[ticker];
+  if (!list) return '';
+  const btns = list.map(e => {
+    const [t, label] = Array.isArray(e) ? e : [e, e];
+    return `<button class="quick-btn related-etf-btn" data-ticker="${t}" title="${t} 차트 열기">${label}</button>`;
+  }).join('');
+  return `<span class="related-etf"><span class="related-etf-label">관련 ETF</span>${btns}</span>`;
+}
+
 function _isIndex(ticker) {
   return ticker.startsWith('^') || ticker.endsWith('=F') || ticker.endsWith('=X')
     || (typeof _INDEX_SYMBOL !== 'undefined' && Object.values(_INDEX_SYMBOL).includes(ticker));
@@ -2191,10 +2222,19 @@ function _renderHeader(stock) {
   const isIdx = _isIndex(stock.ticker || '');
   // 지수·환율 등은 Yahoo 심볼(^KS11·KRW=X)이 낯설어 큰 제목을 한글 이름으로, 심볼은 옆에 작게
   document.getElementById('chart-ticker-label').textContent  = isIdx ? stock.name : stock.ticker;
-  document.getElementById('chart-company-label').textContent =
-    isIdx ? stock.ticker : (stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name);
+  const companyEl = document.getElementById('chart-company-label');
+  companyEl.textContent =
+    isIdx ? (_INDEX_DISPLAY_SYMBOL[stock.ticker] || stock.ticker)
+          : (stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name);
+  if (isIdx) companyEl.title = `야후 심볼: ${stock.ticker}`;
+  else companyEl.removeAttribute('title');
   if (!isIdx && stockKind(stock) !== 'stock')
-    document.getElementById('chart-company-label').insertAdjacentHTML('beforeend', ' ' + kindBadgeHtml(stock));
+    companyEl.insertAdjacentHTML('beforeend', ' ' + kindBadgeHtml(stock));
+  if (isIdx) {
+    companyEl.insertAdjacentHTML('beforeend', _relatedEtfHtml(stock.ticker));
+    companyEl.querySelectorAll('.related-etf-btn').forEach(b =>
+      b.addEventListener('click', () => loadChart(b.dataset.ticker)));
+  }
   _updatePriceBadge(stock);
   // 지수(S&P500·VIX 등)는 관심종목 대상이 아니라 ★ 버튼 숨김
   const starWrap = document.getElementById('chart-star-wrap');

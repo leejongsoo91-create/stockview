@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-12 | 기능 | 지수 차트 제목의 야후 심볼을 흔히 쓰는 기호로 표시(`^GSPC`→SPX, `^SOX`→SOX, `KRW=X`→USD/KRW 등 19개, 표시 전용·저장 키는 그대로) + **관련 ETF 버튼**(SOX→SOXX·SMH, S&P 500→SPY·VOO, 코스피→KODEX 200 등 15개 지수) | (이번 커밋)
 - 11-12 | 데이터 | 우선주를 삭제하지 않고 야후 표기로 변환해 유지: 나스닥 `GL^D` → `GL-PD`, `MET^A` → `MET-PA`, 시리즈 없는 `DCOM^` → `DCOM-P`(표본 40개 + 시리즈 없는 2개 야후 조회 확인). 221개, 중복 0. 비보통주라 기본 숨김, "정상 종목만" 해제 시 보이고 차트 정상(MET-PA 1년 252봉) | (이번 커밋)
 - 11-11 | 버그·데이터 | 미국 종목 목록의 우선주 티커 충돌 수정: 나스닥 우선주 표기(`GL^D`)에서 `^`만 지워 **GLD(금 ETF)가 Globe Life 채권으로, META가 MetLife 우선주와 2줄로** 나오던 문제(227개 중 13개 실제 종목과 충돌) → `^` 종목 제외. 워런트·권리·유닛·우선주·채권 판별(`is_non_common`, 합자회사 Common Units는 정상) → `non_common` 필드로 히트맵·브리핑 신호 대상에서 제외, 종목검색 "정상 종목만" 기본 켜짐 | (이번 커밋)
 - 11-11 | 보안·환경 | ① Playwright MCP를 Edge(`--browser msedge`)로 전환해 화면 캡처 정상 확인(스마트 앱 컨트롤 유지), `.playwright-mcp/` gitignore ② 목록에서 빠진 국내 98종목을 사용자 크롬 저장값(관심종목 12·메모·그룹·차트 그리기)과 대조 → 0건 ③ 공개 이력에 노출된 AlphaVantage·Finnhub 키 교체(새 키 이력 등장 0건, 호출 정상), 서버 재시작 후 Finnhub 뉴스 50건 확인. 발견: AlphaVantage 뉴스 API 유료 전환·Yahoo RSS 404 (11-04부터, ROADMAP 등록) | (이번 커밋)

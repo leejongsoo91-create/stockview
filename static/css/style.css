@@ -1386,6 +1386,10 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   transition: border-color .15s, color .15s;
 }
 .quick-btn:hover { border-color: var(--accent); color: var(--accent); }
+/* 차트 제목 옆 관련 ETF 버튼 (지수 차트 전용) */
+.related-etf { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; vertical-align: middle; }
+.related-etf-label { font-size: 11px; color: var(--muted); }
+.related-etf .related-etf-btn { padding: 2px 8px; font-size: 11px; }
 .idx-btn { color: #e3b341 !important; border-color: #3a3010 !important; }
 .idx-btn:hover { border-color: #e3b341 !important; background: #e3b34115 !important; }
 
