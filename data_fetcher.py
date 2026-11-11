@@ -645,6 +645,27 @@ _INDUSTRY_SHORT: dict[str, str] = {
     "Mining & Quarrying of Nonmetallic Minerals (No Fuels)":             "Mining",
 }
 
+# 보통주가 아닌 상장 증권(워런트·권리·유닛·우선주·예탁우선주·채권) 판별 — 이름 기준.
+# 나스닥은 이런 증권에도 모회사 시가총액을 붙여 줘서(GOOGM 516B, TBB 130B) 히트맵·브리핑에 섞여 들어옴.
+# 합자회사 "Common Units"(MPLX·CQP)나 "Holding L.P. Units"(AB)는 정상 종목이라 제외하지 않는다.
+_NON_COMMON_NAME_RE = re.compile(
+    r"\bWarrants?\b|\bRights?\b|Preferred|\bNotes?\b|Debentures?|Fixed[- ]to[- ]Floating"
+    r"|Depositary Shares?,? (each )?(representing|rep)\b.*(Preferred|Series|Interest)"
+    r"|\d+(\.\d+)?%\s"
+    r"|(?<!Common )(?<!L\.P\. )(?<!LP )\bUnits?\b",
+    re.I,
+)
+
+
+def is_non_common(ticker: str, name: str) -> bool:
+    """워런트·권리·유닛·우선주·채권 등 보통주가 아닌 증권이면 True."""
+    t = (ticker or "").upper()
+    if t.endswith(".WS") or t.endswith("/WS"):
+        return True
+    # "Holding L.P.  Units"처럼 공백이 겹친 이름이 있어 정리 후 판별 (lookbehind는 고정 폭)
+    return bool(_NON_COMMON_NAME_RE.search(re.sub(r"\s+", " ", name or "")))
+
+
 def _clean_industry(raw: str) -> str:
     if not raw:
         return ""
@@ -741,7 +762,11 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
         except (ValueError, TypeError):
             volume = 0
 
-        ticker  = (s.get("symbol") or "").strip().replace("^", "")
+        ticker  = (s.get("symbol") or "").strip()
+        # 나스닥 우선주 표기(GL^D, MET^A)는 제외 — 예전엔 ^만 지워 GLD(금 ETF)·META(메타) 등
+        # 실제 종목과 티커가 겹쳤음(11-11 발견, 227개 중 13개 충돌). 야후 표기도 달라 조회 불가.
+        if not ticker or "^" in ticker:
+            continue
         name    = (s.get("name") or "").strip()
         sector_raw   = (s.get("sector")   or "")
         industry_raw = (s.get("industry") or "")
@@ -771,6 +796,7 @@ def fetch_nasdaq_stocks(min_market_cap_b: float = 0.3) -> list[dict]:
             "eps":         None,
             "week52_high": None,
             "week52_low":  None,
+            "non_common":  is_non_common(ticker, name),
         })
 
     result.sort(key=lambda x: x["market_cap"] or 0, reverse=True)
@@ -2963,7 +2989,10 @@ def build_daily_recommendations(us_stocks: list[dict], kr_stocks: list[dict], to
     def _process(stocks: list[dict], is_kr: bool, market: str):
         if is_kr:
             stocks = [s for s in stocks if not _is_kr_etf(s)]
-        pool = sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)[:top_n]
+        else:
+            # 워런트·우선주·채권은 모회사 시총을 달고 와 상위 500을 차지함(GOOGM·METAM·TBB 등)
+            stocks = [s for s in stocks if not s.get("non_common")]
+        pool =sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)[:top_n]
         metrics = compute_daily_metrics(pool, is_kr)
         buy  = sorted((s for s in metrics if s["score"] and s["score"] > 0),
                       key=lambda s: (-s["score"], -(s.get("market_cap") or 0)))

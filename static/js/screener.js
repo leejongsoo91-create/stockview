@@ -403,6 +403,7 @@ function _populateCountryFilter() {
 const _ABNORMAL_NAME_RE = /\b(Warrants?|Rights?|Preferred)\b/i;
 function _isAbnormalListing(s) {
   if (!s.market_cap) return true;
+  if (s.non_common) return true;  // 서버 판별(data_fetcher.is_non_common): 우선주·채권·유닛·.WS 포함
   return _ABNORMAL_NAME_RE.test(s.name || '');
 }
 

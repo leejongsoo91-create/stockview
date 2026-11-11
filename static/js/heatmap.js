@@ -200,7 +200,7 @@ function renderHeatmap() {
 
   // 3) Top N 필터
   const sorted  = [...pool]
-    .filter(s => !_HM_EXCLUDE.has(s.ticker))
+    .filter(s => !_HM_EXCLUDE.has(s.ticker) && !s.non_common)  // 워런트·우선주·채권 제외 (서버 판별)
     .sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
   const visible = (_hmTopN > 0 ? sorted.slice(0, _hmTopN) : sorted)
     .filter(s => s.price > 0);
