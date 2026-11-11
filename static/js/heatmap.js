@@ -196,7 +196,7 @@ function renderHeatmap() {
   }
 
   // 2) 중복 클래스 주식 제거 (우선주·중복 클래스는 GOOGL/주요 클래스로 대표)
-  const _HM_EXCLUDE = new Set(['GOOG', 'GOOGM', 'GOOGN', 'BRK.A', 'BF.A', 'BF.B', 'NWS', 'FOXA']);
+  const _HM_EXCLUDE = new Set(['GOOG', 'GOOGM', 'GOOGN', 'BRK/A', 'BF/A', 'NWS', 'FOXA'])  // 목록 표기는 슬래시(BRK/A). 예전 점 표기는 안 맞아 BRK/A가 중복 표시됐음;
 
   // 3) Top N 필터
   const sorted  = [...pool]

@@ -425,7 +425,7 @@ async function exportPortfolioCSV() {
     const all = await api('/api/stocks');
     all.forEach(s => { priceMap[s.ticker] = s; });
     for (const t of tickers) {
-      if (!priceMap[t]) { try { priceMap[t] = await api(`/api/stock/${t}`); } catch {} }
+      if (!priceMap[t]) { try { priceMap[t] = await api(`/api/stock/${encTk(t)}`); } catch {} }
     }
   } catch {}
 
@@ -537,7 +537,7 @@ async function renderPortfolio(opts = {}) {
     // API에 없는 종목은 개별 조회
     for (const t of tickers) {
       if (!priceMap[t]) {
-        try { priceMap[t] = await api(`/api/stock/${t}`); } catch {}
+        try { priceMap[t] = await api(`/api/stock/${encTk(t)}`); } catch {}
       }
     }
   } catch {}

@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-12 | 버그 | 슬래시·점 티커 조회 수정: `BRK/B`·`BF/B` 등 9개가 404(Flask 경로에 `/`), `LEN.B`·`OXY.WS` 등은 야후 표기 불일치 → 프론트 `encTk()`가 `/`→`-`로 보내고 서버 `_canon_us_ticker()`가 목록 표기로 되돌림, 야후·SEC 요청은 `yahoo_symbol()`(BRK-B·LEN-B·OXY-WT). 24개 전부 상세·차트 실데이터, BRK-B·LEN-B 재무·진단 정상. 관심종목 저장값(BRK/B) 그대로. 히트맵 BRK/A 중복 제외 목록을 슬래시 표기로 수정 | (이번 커밋)
 - 11-12 | 기능 | 지수 차트 제목의 야후 심볼을 흔히 쓰는 기호로 표시(`^GSPC`→SPX, `^SOX`→SOX, `KRW=X`→USD/KRW 등 19개, 표시 전용·저장 키는 그대로) + **관련 ETF 버튼**(SOX→SOXX·SMH, S&P 500→SPY·VOO, 코스피→KODEX 200 등 15개 지수) | (이번 커밋)
 - 11-12 | 데이터 | 우선주를 삭제하지 않고 야후 표기로 변환해 유지: 나스닥 `GL^D` → `GL-PD`, `MET^A` → `MET-PA`, 시리즈 없는 `DCOM^` → `DCOM-P`(표본 40개 + 시리즈 없는 2개 야후 조회 확인). 221개, 중복 0. 비보통주라 기본 숨김, "정상 종목만" 해제 시 보이고 차트 정상(MET-PA 1년 252봉) | (이번 커밋)
 - 11-11 | 버그·데이터 | 미국 종목 목록의 우선주 티커 충돌 수정: 나스닥 우선주 표기(`GL^D`)에서 `^`만 지워 **GLD(금 ETF)가 Globe Life 채권으로, META가 MetLife 우선주와 2줄로** 나오던 문제(227개 중 13개 실제 종목과 충돌) → `^` 종목 제외. 워런트·권리·유닛·우선주·채권 판별(`is_non_common`, 합자회사 Common Units는 정상) → `non_common` 필드로 히트맵·브리핑 신호 대상에서 제외, 종목검색 "정상 종목만" 기본 켜짐 | (이번 커밋)

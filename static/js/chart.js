@@ -997,7 +997,7 @@ function _bindResizeObserver() {
 const _DAILY_FAMILY_INTERVALS = new Set(['1d', 'mo', 'yr']);
 
 function _buildChartUrl(ticker) {
-  const enc = encodeURIComponent(ticker);
+  const enc = encTk(ticker);
   if (!_DAILY_FAMILY_INTERVALS.has(_currentInterval)) return `/api/chart/${enc}?interval=${_currentInterval}`;
   if (_currentCustomYears) return `/api/chart/${enc}?interval=${_currentInterval}&years=${_currentCustomYears}`;
   return `/api/chart/${enc}?interval=${_currentInterval}&period=${_currentPeriod}`;
@@ -1028,7 +1028,7 @@ async function loadChart(ticker) {
   stopChartTimers();
 
   try {
-    const encodedTicker = encodeURIComponent(ticker);
+    const encodedTicker = encTk(ticker);
     const chartUrl = _buildChartUrl(ticker);
 
     let ohlcv, stockData;
@@ -2097,8 +2097,8 @@ async function _loadCompareChart(ticker2) {
   if (!_currentTicker || !ticker2) return;
   _compareTicker = ticker2.toUpperCase();
 
-  const enc1 = encodeURIComponent(_currentTicker);
-  const enc2 = encodeURIComponent(_compareTicker);
+  const enc1 = encTk(_currentTicker);
+  const enc2 = encTk(_compareTicker);
   const mkUrl = (enc) => _currentInterval === '1d'
     ? `/api/chart/${enc}?interval=1d&period=${_currentPeriod}`
     : `/api/chart/${enc}?interval=${_currentInterval}`;
@@ -2282,7 +2282,7 @@ function _startAutoRefresh() {
           _alertCheck(_currentTicker, s.price);
         }
       } else {
-        const stock = await api(`/api/stock/${encodeURIComponent(_currentTicker)}`);
+        const stock = await api(`/api/stock/${encTk(_currentTicker)}`);
         _updatePriceBadge(stock);
         renderStockInfo(stock);
         _alertCheck(_currentTicker, stock.price);
@@ -2350,7 +2350,7 @@ async function renderStockAnalysis(ticker) {
 
   let data;
   try {
-    data = await api(`/api/stock-analysis/${encodeURIComponent(ticker)}`);
+    data = await api(`/api/stock-analysis/${encTk(ticker)}`);
   } catch {
     card.style.display = 'none';
     return;
@@ -2451,7 +2451,7 @@ async function renderFinancials(ticker) {
 
   let data;
   try {
-    data = await api(`/api/financials/${encodeURIComponent(ticker)}`);
+    data = await api(`/api/financials/${encTk(ticker)}`);
   } catch {
     card.style.display = 'none';
     return;
@@ -2579,7 +2579,7 @@ async function _loadStockNews(ticker) {
   try {
     const url = _isKrStock(ticker)
       ? `/api/kr-news/${encodeURIComponent(ticker)}`
-      : `/api/stock-news/${encodeURIComponent(ticker)}`;
+      : `/api/stock-news/${encTk(ticker)}`;
     const news = await api(url);
     if (!news || !news.length) {
       section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>

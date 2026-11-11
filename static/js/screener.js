@@ -864,7 +864,7 @@ function openStockModal(ticker) {
 
   // 뉴스 비동기 로드
   document.getElementById('sm-news').innerHTML = '<div class="sm-news-loading">뉴스를 불러오는 중…</div>';
-  api('/api/stock-news/' + ticker).then(items => {
+  api('/api/stock-news/' + encTk(ticker)).then(items => {
     const news = (items || []).slice(0, 3);
     if (!news.length) {
       document.getElementById('sm-news').innerHTML = '<div class="sm-news-empty">최근 뉴스가 없습니다.</div>';

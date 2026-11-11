@@ -1037,7 +1037,7 @@ def kr_news(code: str):
 @app.route("/api/stock-news/<ticker>")
 def stock_news(ticker: str):
     """종목별 뉴스 (Finnhub company-news, 30분 lazy 캐시)"""
-    ticker = ticker.upper()
+    ticker = _canon_us_ticker(ticker)
     key    = f"stock_news_{ticker}"
     cached = cache.get(key)
     if cached is not None:
@@ -1240,7 +1240,7 @@ _CHART_TTL = {
 
 @app.route("/api/chart/<ticker>")
 def chart(ticker):
-    t        = ticker.upper()
+    t        = _canon_us_ticker(ticker)
     period   = request.args.get("period",   "1y")
     interval = request.args.get("interval", "1d")
     years    = request.args.get("years", type=int)
@@ -1260,9 +1260,24 @@ def chart(ticker):
     return jsonify(_generate_ohlcv_dummy(t))
 
 
+def _canon_us_ticker(raw: str) -> str:
+    """URL에는 '/'를 못 넣어 프론트가 BRK/B → BRK-B로 보냄. 목록에 그 표기가 없으면
+    BRK/B·LEN.B·OXY.WS 중 목록에 있는 표기로 되돌린다(관심종목 저장값과 같은 키 유지)."""
+    t = (raw or "").upper()
+    if "-" not in t or t.endswith((".KS", ".KQ")):
+        return t
+    tickers = {s["ticker"] for s in _get_merged_us_stocks()}
+    if t in tickers:
+        return t
+    alts = [t.replace("-", "/"), t.replace("-", ".")]
+    if t.endswith("-WT"):
+        alts += [t[:-3] + ".WS", t[:-3] + "/WS"]
+    return next((a for a in alts if a in tickers), t)
+
+
 @app.route("/api/stock/<ticker>")
 def stock_detail(ticker):
-    t    = ticker.upper()
+    t    = _canon_us_ticker(ticker)
     # US 종목 먼저 검색 (_get_merged_us_stocks가 extra_fields·pe_eps 병합까지 처리)
     stock = next((s for s in _get_merged_us_stocks() if s["ticker"] == t), None)
     if stock:
@@ -1293,7 +1308,7 @@ def stock_detail(ticker):
 def stock_analysis(ticker):
     """종목 종합 진단 — 기술적 신호·밸류에이션·52주 위치·거래량·수급(KR)/뉴스감성(US)을
     항목별로 판정해 요약. 단일 매수/매도 결론을 자동 산출하지 않고 근거만 제공."""
-    t = ticker.upper()
+    t = _canon_us_ticker(ticker)
     key = f"stock_analysis_{t}"
     cached = cache.get_fresh(key)
     if cached is not None:
@@ -1320,7 +1335,7 @@ def financials(ticker):
     """재무제표 -- KR: 네이버 스크래핑 / US: SEC EDGAR API. 성공 12h / 없음 6h lazy 캐시.
     재무제표 없는 종목(ETF/ADR/SPAC 등)이 US 5,000개 중 상당수라, 404도 캐시해
     차트 열 때마다 SEC EDGAR가 반복 호출되는 것을 막는다(초당 10요청 제한)."""
-    t = ticker.upper()
+    t = _canon_us_ticker(ticker)
     key = f"financials_{t}"
     cached = cache.get(key)
     if cached is not None:

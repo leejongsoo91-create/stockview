@@ -173,6 +173,11 @@ function koEcoEvent(name) {
 }
 
 // api fetch 래퍼
+// API 경로용 티커 인코딩 — Flask 경로에 '/'가 들어가면 404라 BRK/B → BRK-B로 보냄(서버가 되돌림)
+function encTk(t) {
+  return encodeURIComponent(String(t || '').replace(/\//g, '-'));
+}
+
 async function api(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(r.status);
@@ -350,7 +355,7 @@ async function openCompareChart(tickers) {
 
   try {
     const seriesList = await Promise.all(tickers.map(t =>
-      api(`/api/chart/${encodeURIComponent(t)}?interval=1d&period=6mo`)
+      api(`/api/chart/${encTk(t)}?interval=1d&period=6mo`)
         .then(rows => ({ ticker: t, rows: Array.isArray(rows) ? rows : [] }))
         .catch(() => ({ ticker: t, rows: [] }))
     ));

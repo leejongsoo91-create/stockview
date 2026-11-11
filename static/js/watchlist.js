@@ -188,7 +188,7 @@ async function renderWatchlist(opts = {}) {
     const missing = tickers.filter(t => !found.has(t));
     for (const t of missing) {
       try {
-        const s = await api(`/api/stock/${t}`);
+        const s = await api(`/api/stock/${encTk(t)}`);
         if (s && !s.error) stocks.push(s);
       } catch {}
     }
@@ -336,7 +336,7 @@ async function exportWatchlistCSV() {
     const found = new Set(stocks.map(s => s.ticker));
     const missing = tickers.filter(t => !found.has(t));
     for (const t of missing) {
-      try { const s = await api(`/api/stock/${t}`); if (s && !s.error) stocks.push(s); } catch {}
+      try { const s = await api(`/api/stock/${encTk(t)}`); if (s && !s.error) stocks.push(s); } catch {}
     }
   } catch { return; }
 

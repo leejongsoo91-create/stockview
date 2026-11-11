@@ -304,6 +304,18 @@ def _norm_us_ticker(t: str) -> str:
     return re.sub(r"[ .\-]", "/", (t or "").strip().upper())
 
 
+def yahoo_symbol(t: str) -> str:
+    """야후·SEC 조회용 표기: BRK/B·LEN.B → BRK-B·LEN-B, OXY.WS·RAC/WS → OXY-WT.
+    나스닥 목록은 /·. 표기라 그대로 보내면 404(11-11 확인, 변환 시 27개 전부 조회 성공).
+    국내(.KS/.KQ, 두 글자)·지수(^GSPC, DX-Y.NYB)·우선주(GL-PD)는 그대로 둔다."""
+    t = (t or "").strip().upper()
+    m = re.fullmatch(r"([A-Z]{1,6})[./]WS", t)
+    if m:
+        return f"{m.group(1)}-WT"
+    m = re.fullmatch(r"([A-Z]{1,6})[./]([A-Z])", t)
+    return f"{m.group(1)}-{m.group(2)}" if m else t
+
+
 def set_us_names_ko(names: dict[str, str]) -> None:
     global _us_names_ko
     _us_names_ko = {_norm_us_ticker(k): v for k, v in (names or {}).items() if v}
@@ -822,7 +834,7 @@ def fetch_extra_fields(tickers: list[str], max_workers: int = 40) -> dict[str, d
     def _fetch_one(ticker: str) -> tuple[str, dict] | None:
         nonlocal exc_count
         url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
             "?interval=1d&range=1d"
         )
         try:
@@ -1052,7 +1064,7 @@ def _fetch_kr_price_one(stock: dict) -> tuple[dict, str]:
     ticker = stock["ticker"]
     try:
         url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
             f"?interval=1d&range=2d"
         )
         r = _kr_session().get(url, timeout=8)
@@ -1605,7 +1617,7 @@ def _sec_pick_concept(gaap: dict, keys: list[str]) -> list[dict]:
 
 def fetch_us_financials(ticker: str) -> dict | None:
     """SEC EDGAR companyfacts API로 미국 상장사 연간(10-K) 재무제표 조회. 무료, 키 불필요."""
-    cik = _load_sec_cik_map().get(ticker.upper())
+    cik = _load_sec_cik_map().get(yahoo_symbol(ticker))  # SEC도 BRK-B 표기
     if not cik:
         return None
     try:
@@ -1835,7 +1847,7 @@ def _fetch_mc_html(ticker: str) -> tuple[str, float | None]:
     """Yahoo Finance 페이지에서 시가총액 파싱"""
     try:
         r = requests.get(
-            f"https://finance.yahoo.com/quote/{ticker}/",
+            f"https://finance.yahoo.com/quote/{yahoo_symbol(ticker)}/",
             headers=_MC_HEADERS, timeout=12,
         )
         m = _MC_PAT.search(r.text)
@@ -1903,7 +1915,7 @@ def fetch_heatmap_perf(tickers: list[str], period: str = "1w", max_workers: int 
     def _fetch_one(ticker: str):
         nonlocal rate_limited
         url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
             f"?interval=1d&range={yf_range}"
         )
         try:
@@ -1999,7 +2011,7 @@ def _safe(val, default=None):
 
 def fetch_quote(ticker: str) -> dict | None:
     """Yahoo Finance v8 API로 단일 종목 현재가 조회"""
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1d"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}?interval=1d&range=1d"
     try:
         r = requests.get(url, headers=YF_HEADERS, timeout=10)
         r.raise_for_status()
@@ -2083,7 +2095,7 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
     if not daily_family:
         yf_interval, yf_range = _INTERVAL_MAP.get(interval, ("5m", "5d"))
         url = (
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
             f"?interval={yf_interval}&range={yf_range}"
         )
     else:
@@ -2092,13 +2104,13 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
             period2 = int(time.time())
             period1 = period2 - years * 365 * 86400
             url = (
-                f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
                 f"?interval={yf_interval}&period1={period1}&period2={period2}"
             )
         else:
             yf_range = "10y" if interval in ("mo", "yr") else _PERIOD_RANGE.get(period, "1y")
             url = (
-                f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
                 f"?interval={yf_interval}&range={yf_range}"
             )
     try:
@@ -2226,7 +2238,7 @@ def fetch_pe_eps_yahoo(tickers: list[str], daily_limit: int = 500) -> dict[str, 
     for ticker in batch:
         try:
             r = requests.get(
-                f"https://finance.yahoo.com/quote/{ticker}/",
+                f"https://finance.yahoo.com/quote/{yahoo_symbol(ticker)}/",
                 headers=_YF_HTML_HEADERS,
                 timeout=10,
             )
