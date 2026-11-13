@@ -2115,6 +2115,67 @@ _PERIOD_RANGE: dict[str, str] = {
 _DAILY_FAMILY_YF_INTERVAL: dict[str, str] = {"1d": "1d", "mo": "1mo", "yr": "1mo"}
 
 
+_KR_DAILY_DAYS = {"1mo": 31, "3mo": 92, "6mo": 183, "1y": 366, "2y": 731}
+
+
+def _fetch_kr_daily_naver(ticker: str, period: str = "1y", years: int | None = None) -> list[dict]:
+    """국내 일봉 — 네이버 차트 API(키 불필요, 10년치 0.1초). 실패하면 [].
+    주의(11-13·14 확인): 고가·저가·종가에 넥스트레이드 애프터마켓(~20:00) 가격이 섞임
+    (삼성전자 11-11 네이버 208,000 / KRX 공식 206,000 = 야후. 시가·거래량은 KRX와 같음).
+    그래서 야후 조회가 아예 실패했을 때만 쓴다. 최신 거래일 보충은 _kr_latest_bar_rt()."""
+    code = kr_code(ticker)
+    if not code:
+        return []
+    days = years * 366 if years else _KR_DAILY_DAYS.get(period, 366)
+    end = datetime.now(timezone(timedelta(hours=9)))
+    start = end - timedelta(days=days)
+    url = (f"https://api.stock.naver.com/chart/domestic/item/{code}/day"
+           f"?startDateTime={start:%Y%m%d}0000&endDateTime={end:%Y%m%d}2359")
+    try:
+        r = requests.get(url, headers=_NAVER_RT_HEADERS, timeout=10)
+        r.raise_for_status()
+        rows = []
+        for x in r.json() or []:
+            c = _safe(x.get("closePrice"))
+            ld = str(x.get("localDate") or "")
+            if not c or len(ld) != 8:
+                continue
+            rows.append({
+                "time":   f"{ld[:4]}-{ld[4:6]}-{ld[6:]}",
+                "open":   round(_safe(x.get("openPrice")) or c, 2),
+                "high":   round(_safe(x.get("highPrice")) or c, 2),
+                "low":    round(_safe(x.get("lowPrice")) or c, 2),
+                "close":  round(c, 2),
+                "volume": int(x.get("accumulatedTradingVolume") or 0),
+            })
+        return rows
+    except Exception as e:
+        log.warning(f"_fetch_kr_daily_naver({ticker}): {e}")
+        return []
+
+
+def _kr_latest_bar_rt(ticker: str) -> dict | None:
+    """국내 최신 거래일 봉 — 네이버 실시간 시세의 KRX 값(시가·고가·저가·종가·거래량).
+    애프터마켓 가격은 overMarketPriceInfo에 따로 있어 섞이지 않는다(11-14 확인: 삼성전자
+    11-13 closePrice 209,000 = KRX, overPrice 208,500 = 넥스트레이드). 장중엔 진행 중인 값.
+    09:00 전(넥스트레이드 프리마켓) 시각이나 거래량 0(거래정지)이면 KRX 봉이 아니므로 None."""
+    code = kr_code(ticker)
+    datas = _naver_rt_datas("domestic/stock", [code]) if code else []
+    if not datas:
+        return None
+    x = datas[0]
+    c, ts = _naver_num(x.get("closePrice")), str(x.get("localTradedAt") or "")
+    vol = int(_naver_num(x.get("accumulatedTradingVolume")) or 0)
+    if not c or not vol or len(ts) < 13 or ts[11:13] < "09":
+        return None
+    return {"time":   ts[:10],
+            "open":   round(_naver_num(x.get("openPrice")) or c, 2),
+            "high":   round(_naver_num(x.get("highPrice")) or c, 2),
+            "low":    round(_naver_num(x.get("lowPrice")) or c, 2),
+            "close":  round(c, 2),
+            "volume": vol}
+
+
 def _resample_yearly(monthly_rows: list[dict]) -> list[dict]:
     """월봉 rows(시간순 정렬)를 연도 단위 OHLCV로 집계."""
     buckets: dict[str, dict] = {}
@@ -2135,7 +2196,8 @@ def _resample_yearly(monthly_rows: list[dict]) -> list[dict]:
     return list(buckets.values())
 
 
-def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: int | None = None) -> list[dict]:
+def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: int | None = None,
+                _kr_fill: bool = True) -> list[dict]:
     """
     Yahoo Finance chart API로 OHLCV 데이터 조회.
 
@@ -2148,6 +2210,18 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
       - 분봉/시봉: UTC UNIX 초 정수 (Lightweight Charts UTCTimestamp)
     """
     daily_family = interval in _DAILY_FAMILY_YF_INTERVAL
+
+    # 국내 일봉: 야후는 최신 거래일 봉의 종가가 하루 가까이 비어 있어(빈 봉은 버려짐) 신호가 하루 늦게
+    # 계산됐음(11-12 확인) → 야후(KRX 공식) + 야후에 없는 최신 거래일 1개를 네이버 실시간 KRX 값으로 보충.
+    # 야후가 아예 실패하면 네이버 차트 API 전체(애프터마켓 가격 섞임 — 없는 것보단 나음).
+    if _kr_fill and interval == "1d" and ticker.upper().endswith((".KS", ".KQ")):
+        rows = fetch_ohlcv(ticker, period, interval, years, _kr_fill=False)
+        if not rows:
+            return _fetch_kr_daily_naver(ticker, period, years)
+        bar = _kr_latest_bar_rt(ticker)
+        if bar and bar["time"] > rows[-1]["time"]:
+            rows.append(bar)
+        return rows
 
     if not daily_family:
         yf_interval, yf_range = _INTERVAL_MAP.get(interval, ("5m", "5d"))
