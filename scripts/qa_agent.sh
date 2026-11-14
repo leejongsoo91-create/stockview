@@ -10,4 +10,4 @@ ROLE='너는 이 세션에서 StockView QA 담당이야. 규칙: (1) 코드·문
 
 TASK="${1:-지금은 점검하지 말고 \"QA 대기 중\"이라고만 답한 뒤 지시를 기다려.}"
 
-exec claude "${ROLE} 첫 작업: ${TASK}"
+exec bash scripts/pane.sh 🔍 QA -- claude "${ROLE} 첫 작업: ${TASK}"

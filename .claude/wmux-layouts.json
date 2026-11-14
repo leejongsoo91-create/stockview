@@ -47,12 +47,12 @@
       "description": "Claude 2개(메인·보조) + QA 전담 Claude + 서버 + 서버감시",
       "columns": [
         [
-          { "name": "Claude-메인", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- claude" },
-          { "name": "Claude-보조", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- claude" }
+          { "name": "Claude-메인", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/pane.sh 🧠 메인 -- claude" },
+          { "name": "Claude-보조", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/pane.sh 🛠 보조 -- claude" }
         ],
         [
           { "name": "QA", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/qa_agent.sh" },
-          { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- env PORT=5001 .venv/bin/python app.py", "port": 5001 },
+          { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/pane.sh 🖥 서버 :5001 -- env PORT=5001 .venv/bin/python app.py", "port": 5001 },
           { "name": "서버감시", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/server_watch.sh 5001 30" }
         ]
       ]

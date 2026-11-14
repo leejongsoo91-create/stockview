@@ -12,8 +12,9 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PY="${DIR}/.venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"; echo; echo "감시 종료"; exit 0' INT TERM
+trap 'kill $! 2>/dev/null; rm -rf "$TMP"; set_title "서버감시 (종료됨)"; echo; echo "감시 종료"; exit 0' INT TERM
 
+set_title() { printf '\e]0;%s\a' "$1"; }   # wmux 창 제목(탭 이름)에 표시
 RED=$'\e[31m'; GRN=$'\e[32m'; YEL=$'\e[33m'; DIM=$'\e[2m'; RST=$'\e[0m'
 
 # 엔드포인트 | 표시 이름 | 개수 확인 방식(len=배열 길이, -=확인 안 함)
@@ -32,8 +33,9 @@ import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 if sys.argv[2] == "len":
     print(len(d) if isinstance(d, (list, dict)) else "?")
-else:  # stale: fresh가 false인 캐시 키
-    bad = [k for k, v in d.items() if isinstance(v, dict) and v.get("fresh") is False]
+else:  # stale: 핵심 캐시 중 fresh가 false인 키 (종목별 chart_·financials_ 등은 조회할 때만 채워지므로 제외)
+    core = ("indices", "stocks", "kr_stocks", "news", "fear_greed", "us_quotes", "kr_quotes")
+    bad = [k for k in core if isinstance(d.get(k), dict) and d[k].get("fresh") is False]
     print("만료:" + ",".join(bad) if bad else "OK")
 PYEOF
 }
@@ -68,11 +70,13 @@ while true; do
              else [ "$status" = ok ] && status="warn"; line+=" ${YEL}${name} ${s}${RST} ·"; fi ;;
     esac
   done
+  case "$status" in down|fail) icon="❌" ;; warn) icon="⚠️" ;; *) icon="✅" ;; esac
+  set_title "📊 서버감시 :${PORT} ${icon} ${now}"
   case "$status" in
     down) fails=$((fails+1)); echo "${now} ${RED}❌ 서버 꺼짐 (응답 없음, 연속 ${fails}회)${RST}" ;;
     fail) fails=$((fails+1)); echo "${now} ${RED}❌${RST}${line% ·}" ;;
     warn) fails=0; echo "${now} ${YEL}⚠️${RST}${line% ·}" ;;
     *)    fails=0; echo "${now} ${GRN}✅${RST}${line% ·}" ;;
   esac
-  sleep "$INTERVAL"
+  sleep "$INTERVAL" & wait $!   # 대기 중에도 Ctrl+C·종료 신호에 바로 반응
 done

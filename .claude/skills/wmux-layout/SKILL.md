@@ -59,6 +59,7 @@ $W = "$env:LOCALAPPDATA\wmux\bin\wmux.cmd"
 ## 알려진 제약 (2026-11-01 wmux 4.13.0 확인)
 
 - **창 크기 비율 지정 불가** — 균등 분할. 3줄 이상이면 `split right` 반복이라 50/25/25가 된다 → 사용자에게 마우스로 경계 드래그 안내
+- **창 이름은 `scripts/pane.sh <이름> -- <명령>`으로 붙인다** (터미널 제목 OSC로 설정, claude면 `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`로 대화 주제 자동 제목을 꺼서 이름 유지. wsl.exe를 거치면 따옴표가 사라지므로 이름은 따옴표 없이 쓰고 `--`로 구분). `list-surfaces --json`의 `title`로 확인
 - **wmux 탭/창 이름표(라벨)는 wmux 밖에서 설정 불가** (MCP `pane_metadata set`은 wmux 안 Claude만 가능). 그래서 창 구분은 터미널 제목 + 결과 표의 ptyId로 한다. wmux 안에서 실행 중인 Claude라면 `pane_metadata set label`로 라벨을 추가로 붙여도 된다
 - 내장 브라우저는 wmux 창 **안에서** 실행한 `wmux open`만 허용 → 스크립트는 대상 창에 백그라운드 Job으로 `wmux open`을 보내는 방식으로 우회
 - wmux 밖의 MCP 호출자는 `#w2-1` 같은 창 이름 지정이 막혀 있음 → CLI에 ptyId(`daemon-xxxx`)로 지정
