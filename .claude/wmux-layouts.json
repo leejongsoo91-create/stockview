@@ -42,6 +42,21 @@
         [ { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- env PORT=5001 .venv/bin/python app.py", "port": 5001 } ]
       ]
     },
+    "team": {
+      "title": "팀",
+      "description": "Claude 2개(메인·보조) + QA 전담 Claude + 서버 + 서버감시",
+      "columns": [
+        [
+          { "name": "Claude-메인", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- claude" },
+          { "name": "Claude-보조", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- claude" }
+        ],
+        [
+          { "name": "QA", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/qa_agent.sh" },
+          { "name": "서버", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- env PORT=5001 .venv/bin/python app.py", "port": 5001 },
+          { "name": "서버감시", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/server_watch.sh 5001 30" }
+        ]
+      ]
+    },
     "parallel": {
       "title": "병렬",
       "description": "worktree마다 세로 줄 1개(Claude + 서버). parallel-work 스킬과 함께 사용, -Worktrees 필수",
