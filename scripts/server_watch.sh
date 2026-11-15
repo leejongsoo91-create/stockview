@@ -34,7 +34,16 @@ d = json.load(open(sys.argv[1], encoding="utf-8"))
 if sys.argv[2] == "len":
     print(len(d) if isinstance(d, (list, dict)) else "?")
 else:  # stale: 핵심 캐시 중 fresh가 false인 키 (종목별 chart_·financials_ 등은 조회할 때만 채워지므로 제외)
-    core = ("indices", "stocks", "kr_stocks", "news", "fear_greed", "us_quotes", "kr_quotes")
+    # 실시간 시세 캐시는 장중에만 갱신된다(app.py _us_market_window/_kr_market_window와 같은 시간대) → 장중에만 확인.
+    # 장 시작 직후 첫 수집 전(5분)도 제외
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    def in_window(tz, start, end):
+        t = datetime.now(ZoneInfo(tz)); hm = t.hour * 60 + t.minute
+        return t.weekday() < 5 and start + 5 <= hm <= end
+    core = ["indices", "stocks", "kr_stocks", "news", "fear_greed"]
+    if in_window("America/New_York", 9 * 60 + 25, 16 * 60 + 20): core.append("us_quotes")
+    if in_window("Asia/Seoul", 8 * 60 + 55, 15 * 60 + 45): core.append("kr_quotes")
     bad = [k for k in core if isinstance(d.get(k), dict) and d[k].get("fresh") is False]
     print("만료:" + ",".join(bad) if bad else "OK")
 PYEOF

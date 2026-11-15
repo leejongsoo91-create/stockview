@@ -17,6 +17,7 @@
 | 화면이 바뀌는 작업을 마침 / "확인해봐" | `stockview-verify` | 서버·API 점검 + Playwright 화면 캡처 |
 | "동시에", "병렬로", "창 여러 개로" | `parallel-work` | worktree·브랜치·포트 분리 |
 | "레이아웃", "창 배치", "화면확인 모드" | `wmux-layout` | wmux 프리셋 적용·전환 |
+| **"불러오기"·작업 착수** 시 (메인 Claude만) | `.venv/bin/python scripts/team_up.py` | 없는 팀 창만 메인 옆에 추가: 🔍 QA · 🖥 서버 :5001 · 📊 서버감시 (이미 있으면 건너뜀, 보조 Claude는 요청 시 `--with-helper`). 환경변수 `STOCKVIEW_PANE`이 메인이 아닌 창(QA·보조)에서는 실행하지 않는다 |
 
 작업을 시작할 때는 `docs/ROADMAP.md`의 **"진행 중"** 칸만 확인한다 (전체 이력은 읽지 않는다).
 

@@ -14,5 +14,6 @@ while [ $# -gt 0 ] && [ "$1" != "--" ]; do TITLE="${TITLE:+$TITLE }$1"; shift; d
 
 printf '\e]0;%s\a' "$TITLE"
 export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
+export STOCKVIEW_PANE="$TITLE"   # 창 역할 — CLAUDE.md 팀 창 자동 펼치기는 이 값이 메인이 아닐 때 건너뛴다
 echo "── ${TITLE} ──"
 exec "$@"
