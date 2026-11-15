@@ -6,6 +6,7 @@
 > 상세 경위는 [specs/work-history-detail.md](specs/work-history-detail.md)(~11-01) · [specs/plan-legacy.md](specs/plan-legacy.md)(옛 PLAN.md 원본), 결정 배경은 [decisions/](decisions/).
 
 ## 2026-11
+- 11-16 | 환경 | wmux 팀 레이아웃(`team`)에서 보조 Claude 창 제외 → 메인 + QA + 서버 + 서버감시 4창. 보조는 필요할 때 `team_up.py --with-helper` | (이번 커밋)
 - 11-15 | 환경 | 작업 시작 시 팀 창 자동 펼치기: `scripts/team_up.py`가 StockView 작업 공간(`finviz-app`/`SV-*`, 화면에 다른 공간이 떠 있어도 그 공간만 대상)에서 **없는 창만** 메인 옆에 추가(🔍 QA · 🖥 서버 :5001 · 📊 서버감시, 보조는 `--with-helper`), CLAUDE.md 발동 표에 등록(QA·보조 창은 `STOCKVIEW_PANE`으로 제외). 서버감시는 장 밖(주말·야간)에 실시간 시세 캐시 만료를 경고하지 않음(app.py 장중 시간대와 동일) | (이번 커밋)
 - 11-14 | 환경 | 창 이름 고정: `scripts/pane.sh <이름> -- <명령>`(터미널 제목 설정, Claude 자동 제목 끔)으로 팀 레이아웃 창 이름을 🧠 메인·🛠 보조·🔍 QA·🖥 서버 :5001·📊 서버감시로 표시. 서버감시는 제목에 ✅/⚠️/❌와 시각을 매번 갱신, 캐시 점검을 핵심 7개로 한정(종목별 차트 캐시 만료는 정상이라 제외), Ctrl+C·종료 신호에 바로 멈추도록 수정 | (이번 커밋)
 - 11-14 | 환경 | 팀 작업 창 구성: ① `scripts/server_watch.sh` — Claude 없이 30초마다 홈·지수·미국·국내·뉴스·캐시 API를 점검해 한 줄씩 표시(✅/⚠️ 비어 있음·캐시 만료/❌ 실패·서버 꺼짐), 포트·간격 인자 ② `scripts/qa_agent.sh` — 코드 수정 금지·점검·보고만 하는 QA 전담 Claude 실행(stockview-verify 절차, 유료 API·5001 서버 재시작 금지) ③ wmux 프리셋 `team`(팀) = 메인·보조 Claude + QA + 서버 + 서버감시 | (이번 커밋)

@@ -44,11 +44,10 @@
     },
     "team": {
       "title": "팀",
-      "description": "Claude 2개(메인·보조) + QA 전담 Claude + 서버 + 서버감시",
+      "description": "메인 Claude + QA 전담 Claude + 서버 + 서버감시 (보조 Claude는 필요할 때 team_up.py --with-helper)",
       "columns": [
         [
-          { "name": "Claude-메인", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/pane.sh 🧠 메인 -- claude" },
-          { "name": "Claude-보조", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/pane.sh 🛠 보조 -- claude" }
+          { "name": "Claude-메인", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/pane.sh 🧠 메인 -- claude" }
         ],
         [
           { "name": "QA", "cmd": "wsl -d Ubuntu -u root --cd /root/stockview -- bash scripts/qa_agent.sh" },
