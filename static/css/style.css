@@ -1328,11 +1328,11 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 8px 20px;   /* 줄 간격 8px(11-16 20→8, 빈 공간 줄이기) · 칸 간격 20px */
   flex-wrap: wrap;
 }
 .chart-search-row { display: flex; gap: 6px; align-items: center; }
@@ -1397,21 +1397,36 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .idx-btn { color: #e3b341 !important; border-color: #3a3010 !important; }
 .idx-btn:hover { border-color: #e3b341 !important; background: #e3b34115 !important; }
 
-/* interval + 기간 선택 버튼 행 */
-.chart-interval-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-  flex-wrap: wrap;
+/* 차트 보기 드롭다운 (봉 · 차트 종류 · 기간 · ⌖ · 세로 범위) — 지표 줄 앞에 한 줄로 */
+.chart-view-ctrls { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.chart-sel {
+  appearance: none; -webkit-appearance: none;
+  background-color: var(--bg-input);
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); font-size: 12px; font-weight: 600;
+  padding: 3px 22px 3px 9px; height: 26px; cursor: pointer;
 }
+.chart-sel:hover, .chart-sel:focus { border-color: var(--accent); outline: none; }
+.chart-sel[hidden], .chart-years-group[hidden] { display: none; }
+.chart-sel option { background: var(--bg-card); color: var(--text); }
+.chart-focus-btn {
+  width: 28px; height: 26px; border-radius: 6px; cursor: pointer;
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--muted);
+  font-size: 16px; line-height: 1;
+}
+.chart-focus-btn:hover { border-color: var(--accent); color: var(--accent); }
+.chart-focus-btn.active { border-color: var(--accent); color: var(--accent); background: var(--bg-card); box-shadow: 0 0 0 1px var(--accent) inset; }
 
 /* 기술 지표 버튼 행 */
 .chart-indicator-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 0;
   flex-wrap: wrap;
 }
 .ind-btn {
@@ -1529,7 +1544,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 0;
   flex-wrap: wrap;
 }
 .draw-tool-btn {
@@ -1713,44 +1728,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   user-select: none;
 }
 
-/* interval 버튼 */
-.interval-btn {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 9px;
-  cursor: pointer;
-  transition: border-color .15s, color .15s, background .15s;
-}
-.interval-btn:hover  { border-color: var(--accent); color: var(--accent); }
-.interval-btn.active { background: #388bfd33; border-color: var(--accent); color: var(--accent); }
-
-/* 기간 선택 버튼 행 (하위 호환) */
-.chart-period-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-}
-.period-btn {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 9px;
-  cursor: pointer;
-  transition: border-color .15s, color .15s, background .15s;
-}
-.period-btn:hover  { border-color: var(--accent); color: var(--accent); }
-.period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-
 /* 기간 직접 입력(연수) */
-.chart-years-group { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
+.chart-years-group { display: inline-flex; align-items: center; gap: 4px; }
 .chart-years-input {
   width: 48px;
   background: var(--bg-input);

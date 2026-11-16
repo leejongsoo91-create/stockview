@@ -9,6 +9,31 @@ let _currentTicker  = null;
 let _currentPeriod  = '1y';
 let _currentCustomYears = null; // 기간 직접 입력(연수) — period 버튼과 상호 배타
 let _currentInterval = '1d';
+let _chartType      = 'candle';  // 차트 종류: candle | line | bar
+let _scaleMode      = 'auto';    // 세로 범위: auto(캔들 기준) | all(지표 포함) | log | pct
+const _RIGHT_PAD_BARS = 10;      // 처음 화면에서 마지막 봉 오른쪽에 둘 빈 칸 수(파란점선 미래 일부가 보이는 정도)
+
+// 차트 보기 설정 저장 — localStorage 'CHV' = { iv, period, years, type, scale }
+const _CHV_KEY = 'CHV';
+const _CHV_INTERVALS = ['1m', '5m', '15m', '30m', '60m', '1d', 'mo', 'yr'];
+(function _loadChartView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_CHV_KEY) || 'null');
+    if (!v || typeof v !== 'object') return;
+    if (_CHV_INTERVALS.includes(v.iv)) _currentInterval = v.iv;
+    if (['1mo', '3mo', '6mo', '1y', '2y'].includes(v.period)) _currentPeriod = v.period;
+    if (Number.isInteger(v.years) && v.years >= 1 && v.years <= 30) _currentCustomYears = v.years;
+    if (['candle', 'line', 'bar'].includes(v.type)) _chartType = v.type;
+    if (['auto', 'all', 'log', 'pct'].includes(v.scale)) _scaleMode = v.scale;
+  } catch {}
+})();
+function _saveChartView() {
+  try {
+    localStorage.setItem(_CHV_KEY, JSON.stringify({
+      iv: _currentInterval, period: _currentPeriod, years: _currentCustomYears, type: _chartType, scale: _scaleMode,
+    }));
+  } catch {}
+}
 let _priceTimer     = null;
 let _candleTimer    = null;
 let _lastOhlcv      = [];
@@ -217,6 +242,75 @@ function stopChartTimers() {
 }
 
 // ── LW 차트 생성 ─────────────────────────────────────────────────────────────
+// ── 차트 종류(캔들·라인·바) · 세로 범위 · 화면 맞춤 ──────────────────────────────
+// 메인 시리즈는 항상 _candleSeries 변수 하나 — 신호 화살표·수평선·좌표 변환이 모두 이걸 쓰므로
+// 종류를 바꿀 땐 시리즈를 새로 만들고 데이터·화살표·수평선을 다시 붙인다.
+function _createMainSeries() {
+  if (_chartType === 'line') {
+    return _lwChart.addLineSeries({ color: '#58a6ff', lineWidth: 2, crosshairMarkerVisible: true });
+  }
+  if (_chartType === 'bar') {
+    return _lwChart.addBarSeries({ upColor: '#3fb950', downColor: '#f85149', thinBars: false });
+  }
+  return _lwChart.addCandlestickSeries({
+    upColor:         '#3fb950',
+    downColor:       '#f85149',
+    borderUpColor:   '#3fb950',
+    borderDownColor: '#f85149',
+    wickUpColor:     '#3fb950',
+    wickDownColor:   '#f85149',
+  });
+}
+
+function _mainPoint(d) {
+  return _chartType === 'line'
+    ? { time: d.time, value: d.close }
+    : { time: d.time, open: d.open, high: d.high, low: d.low, close: d.close };
+}
+
+function _hlineOpts(d) {
+  return { price: d.points[0].price, color: d.color || '#58a6ff', lineWidth: 1,
+           lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: '' };
+}
+
+function _setChartType(type) {
+  if (type === _chartType || !_lwChart) { _chartType = type; return; }
+  _chartType = type;
+  _drawings.forEach(d => {   // 수평선은 메인 시리즈에 붙어 있어 옮겨 단다
+    if (d._priceLineRef) { try { _candleSeries.removePriceLine(d._priceLineRef); } catch {} d._priceLineRef = null; }
+  });
+  const range = _lwChart.timeScale().getVisibleLogicalRange();
+  _lwChart.removeSeries(_candleSeries);
+  _candleSeries = _createMainSeries();
+  if (_lastOhlcv.length) _candleSeries.setData(_lastOhlcv.map(_mainPoint));
+  _drawings.forEach(d => { if (d.type === 'hline') d._priceLineRef = _candleSeries.createPriceLine(_hlineOpts(d)); });
+  if (_compareMode) _candleSeries.applyOptions({ visible: false });
+  else _applyIndicators();   // 신호 화살표 다시 붙임
+  if (range) _lwChart.timeScale().setVisibleLogicalRange(range);
+  _redrawDrawings();
+}
+
+// 세로 범위: auto/log/pct는 캔들(메인 시리즈)만으로 눈금을 잡아 캔들이 화면을 채운다 — 멀리 있는
+// 긴 이평선은 화면 밖으로 나갈 수 있음. all(지표 포함)은 예전처럼 모든 선이 보이게 넓힌다.
+function _overlayScaleOpts() {
+  return { autoscaleInfoProvider: _scaleMode === 'all' ? (orig => orig()) : () => null };
+}
+function _applyScaleMode() {
+  if (!_lwChart) return;
+  const mode = _scaleMode === 'log' ? LightweightCharts.PriceScaleMode.Logarithmic
+             : _scaleMode === 'pct' ? LightweightCharts.PriceScaleMode.Percentage
+             : LightweightCharts.PriceScaleMode.Normal;
+  _lwChart.priceScale('right').applyOptions({ mode });
+  Object.entries(_indSeries).forEach(([k, ser]) => { if (ser && k !== 'volma') ser.applyOptions(_overlayScaleOpts()); });
+}
+
+// 처음 화면·전체보기: 첫 봉 ~ 마지막 봉 + 10칸 (fitContent는 파란점선 미래 25칸까지 넣어 빈 곳이 커짐)
+function _fitChart() {
+  const n = _lastOhlcv.length;
+  if (!n) { _lwChart.timeScale().fitContent(); return; }
+  _lwChart.timeScale().setVisibleLogicalRange({ from: 0, to: n - 1 + _RIGHT_PAD_BARS });
+}
+
 function _createLWChart() {
   const container = document.getElementById('lw-chart');
   const W = container.clientWidth || 900;
@@ -247,7 +341,7 @@ function _createLWChart() {
       borderColor: '#30363d',
       timeVisible: true,
       fixLeftEdge: true,
-      rightOffset: 40, // 마지막 봉 오른쪽 여백(HTS처럼) — 추세선을 미래 방향으로 그릴 공간 확보. fixRightEdge와 같이 쓰면 여백이 무시되므로 fixRightEdge는 뺌
+      rightOffset: _RIGHT_PAD_BARS, // 마지막 봉 오른쪽 여백(HTS처럼) — 11-16 40→10칸(빈 공간이 너무 많았음). fixRightEdge와 같이 쓰면 여백이 무시되므로 fixRightEdge는 뺌
     },
     // 좌클릭 드래그는 국내 HTS 방식 구간 확대/축소 제스처로 대체 (_bindChartZoomEvents 참고) — 기본 패닝은 끔
     handleScroll: { pressedMouseMove: false },
@@ -255,14 +349,7 @@ function _createLWChart() {
     handleScale: false,
   });
 
-  _candleSeries = _lwChart.addCandlestickSeries({
-    upColor:         '#3fb950',
-    downColor:       '#f85149',
-    borderUpColor:   '#3fb950',
-    borderDownColor: '#f85149',
-    wickUpColor:     '#3fb950',
-    wickDownColor:   '#f85149',
-  });
+  _candleSeries = _createMainSeries();   // 캔들·라인·바 중 저장된 차트 종류
 
   // BB 밴드 fill/mask — volSeries 보다 먼저 생성해야 볼륨 바가 마스크 위에 렌더됨
   _indSeries.bbFill = _lwChart.addAreaSeries({
@@ -284,6 +371,8 @@ function _createLWChart() {
     scaleMargins: { top: 0.78, bottom: 0 },
     borderVisible: false,
   });
+
+  _applyScaleMode();
 
   // 서브 패널(RSI·MACD) 시간축 동기화 + 그리기 도구 재렌더
   _lwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
@@ -323,6 +412,34 @@ let _zoomBoxEl        = null;
 let _zoomDragStartX   = null;
 let _prevVisibleRange = null;   // 더블클릭으로 되돌아갈 직전 화면 범위 (1단계)
 const _ZOOM_DRAG_MIN_PX = 5;    // 이보다 작은 드래그는 클릭으로 간주해 무시
+
+// ⌖ 포커싱 — 확대 상태는 _prevVisibleRange(되돌아갈 범위)가 있느냐로 판단(드래그 확대와 공용)
+let _lastHoverLogical = null;
+const _FOCUS_MIN_BARS = 20;     // 포커싱 화면 최소 봉 수
+function _toggleFocus(centerLogical) {
+  if (!_lwChart || _compareMode) return;
+  const ts = _lwChart.timeScale();
+  if (_prevVisibleRange) {
+    ts.setVisibleLogicalRange(_prevVisibleRange);
+    _prevVisibleRange = null;
+  } else {
+    const cur = ts.getVisibleLogicalRange();
+    if (!cur) return;
+    const width = Math.max(_FOCUS_MIN_BARS, (cur.to - cur.from) * 0.3);
+    const c = centerLogical != null && isFinite(centerLogical) ? centerLogical : (cur.from + cur.to) / 2;
+    _prevVisibleRange = cur;
+    ts.setVisibleLogicalRange({ from: c - width / 2, to: c + width / 2 });
+  }
+  _syncFocusBtn();
+}
+function _syncFocusBtn() {
+  const fb = document.getElementById('chart-focus-btn');
+  if (!fb) return;
+  const on = !!_prevVisibleRange;
+  fb.classList.toggle('active', on);
+  fb.setAttribute('aria-pressed', on);
+  if (fb.dataset.baseTitle) fb.title = fb.dataset.baseTitle + (on ? '\n(지금 확대 중 — 누르면 원래대로)' : '\n(지금 원래 구간)');
+}
 
 function _bindChartZoomEvents() {
   const container = document.getElementById('lw-chart');
@@ -415,10 +532,7 @@ function _bindChartZoomEvents() {
         const now = Date.now();
         const near = _lastTapX != null && Math.hypot(endX - _lastTapX, endY - _lastTapY) < 25;
         if (near && (now - _lastTapTime) < 350) {
-          if (_prevVisibleRange) {
-            _lwChart.timeScale().setVisibleLogicalRange(_prevVisibleRange);
-            _prevVisibleRange = null;
-          }
+          _toggleFocus(_lwChart.timeScale().coordinateToLogical(endX));
           _lastTapTime = 0; _lastTapX = null; _lastTapY = null;
         } else {
           _lastTapTime = now; _lastTapX = endX; _lastTapY = endY;
@@ -433,25 +547,40 @@ function _bindChartZoomEvents() {
       const t1 = timeScale.coordinateToTime(startX);
       const t2 = timeScale.coordinateToTime(endX);
       if (t1 == null || t2 == null) return;
-      _prevVisibleRange = timeScale.getVisibleLogicalRange();
+      if (!_prevVisibleRange) _prevVisibleRange = timeScale.getVisibleLogicalRange();
       timeScale.setVisibleRange({
         from: t1 < t2 ? t1 : t2,
         to:   t1 < t2 ? t2 : t1,
       });
+      _syncFocusBtn();
     } else {
       // 오른쪽 → 왼쪽: 전체보기로 복귀
-      timeScale.fitContent();
+      _fitChart();
+      _prevVisibleRange = null;
+      _syncFocusBtn();
     }
   };
   container.addEventListener('pointerup', finishDrag);
   container.addEventListener('pointerleave', finishDrag);
   container.addEventListener('pointercancel', finishDrag);
 
-  container.addEventListener('dblclick', () => {
-    if (!_prevVisibleRange) return;
-    _lwChart.timeScale().setVisibleLogicalRange(_prevVisibleRange);
-    _prevVisibleRange = null;
+  // 더블클릭 = ⌖ 포커싱 버튼과 같음: 확대돼 있으면 원래대로, 아니면 그 자리를 가운데로 확대
+  container.addEventListener('dblclick', e => {
+    if (_drawTool) return;
+    const rect = container.getBoundingClientRect();
+    _toggleFocus(_lwChart.timeScale().coordinateToLogical(e.clientX - rect.left));
   });
+
+  // ⌖ 버튼: 마지막으로 마우스가 있던 차트 위치를 가운데로 (차트 위를 지나간 적 없으면 화면 가운데)
+  _lwChart.subscribeCrosshairMove(param => {
+    if (param.point) _lastHoverLogical = _lwChart.timeScale().coordinateToLogical(param.point.x);
+  });
+  const fb = document.getElementById('chart-focus-btn');
+  if (fb) {
+    fb.dataset.baseTitle = fb.title;
+    fb.addEventListener('click', () => _toggleFocus(_lastHoverLogical));
+    _syncFocusBtn();
+  }
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && _drawTool) _exitDrawMode();
@@ -1000,52 +1129,89 @@ function _chartSearchSelect(ticker) {
 const _CUSTOM_YEARS_MIN = 1;
 const _CUSTOM_YEARS_MAX = 30;
 
+// ── 차트 보기 드롭다운 (봉 · 차트 종류 · 기간 · 세로 범위) ─────────────────────────
+// 기간 값: '1mo'~'2y' = 기간 프리셋, 'yN' = N년(직접 연수 조회), '' = 월봉·연봉 기본(10년), 'custom' = 직접 입력
+function _periodOptions() {
+  if (_currentInterval === '1d') {
+    return [['1mo', '1개월'], ['3mo', '3개월'], ['6mo', '6개월'], ['1y', '1년'], ['2y', '2년'],
+            ['y5', '5년'], ['y10', '10년'], ['custom', '직접 입력…']];
+  }
+  if (_currentInterval === 'mo' || _currentInterval === 'yr') {
+    return [['', '기본(10년)'], ['y5', '5년'], ['y20', '20년'], ['y30', '30년'], ['custom', '직접 입력…']];
+  }
+  return [];   // 분봉·시봉은 기간 없음
+}
+
+function _renderPeriodSelect() {
+  const sel = document.getElementById('chart-period-sel');
+  const yg  = document.getElementById('chart-years-group');
+  if (!sel) return;
+  const opts = _periodOptions();
+  sel.hidden = !opts.length;
+  sel.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  let val;
+  if (_currentCustomYears) val = opts.some(([v]) => v === 'y' + _currentCustomYears) ? 'y' + _currentCustomYears : 'custom';
+  else val = _currentInterval === '1d' ? _currentPeriod : '';
+  sel.value = val;
+  const showYears = !!opts.length && val === 'custom';
+  yg.hidden = !showYears;
+  if (showYears && _currentCustomYears) document.getElementById('chart-years-input').value = _currentCustomYears;
+}
+
 function _bindPeriodEvents() {
-  // 기간 버튼 (1D interval일 때만 활성)
-  document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _currentCustomYears = null; // 직접입력과 상호 배타
-      document.getElementById('chart-years-input').classList.remove('active');
-      if (btn.dataset.period === _currentPeriod) return;
-      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      _currentPeriod = btn.dataset.period;
-      if (_currentTicker) loadChart(_currentTicker);
-    });
+  const ivSel    = document.getElementById('chart-interval-sel');
+  const typeSel  = document.getElementById('chart-type-sel');
+  const perSel   = document.getElementById('chart-period-sel');
+  const scaleSel = document.getElementById('chart-scale-sel');
+  const yg       = document.getElementById('chart-years-group');
+  const yearsInput = document.getElementById('chart-years-input');
+  ivSel.value = _currentInterval;
+  typeSel.value = _chartType;
+  scaleSel.value = _scaleMode;
+  _renderPeriodSelect();
+
+  const reload = () => { _saveChartView(); if (_currentTicker) loadChart(_currentTicker); };
+
+  ivSel.addEventListener('change', () => {
+    if (ivSel.value === _currentInterval) return;
+    _currentInterval = ivSel.value;
+    _renderPeriodSelect();
+    reload();
   });
 
-  // 기간 직접 입력(연수) — 2Y 이상 임의 기간 조회
-  const yearsInput = document.getElementById('chart-years-input');
+  perSel.addEventListener('change', () => {
+    const v = perSel.value;
+    if (v === 'custom') {          // 연수 입력칸을 열고 [조회]를 기다림
+      yg.hidden = false;
+      yearsInput.focus();
+      return;
+    }
+    yg.hidden = true;
+    if (v.startsWith('y')) _currentCustomYears = parseInt(v.slice(1), 10);
+    else { _currentCustomYears = null; if (v) _currentPeriod = v; }
+    reload();
+  });
+
+  // 기간 직접 입력(연수) — 1~30년
   const applyCustomYears = () => {
     const n = parseInt(yearsInput.value, 10);
     if (!Number.isFinite(n) || n < _CUSTOM_YEARS_MIN || n > _CUSTOM_YEARS_MAX) return;
     _currentCustomYears = n;
-    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-    yearsInput.classList.add('active');
-    if (_currentTicker) loadChart(_currentTicker);
+    _renderPeriodSelect();
+    reload();
   };
   document.getElementById('chart-years-go-btn').addEventListener('click', applyCustomYears);
   yearsInput.addEventListener('keydown', e => { if (e.key === 'Enter') applyCustomYears(); });
 
-  // interval 버튼 (1m/5m/15m/30m/1H/1D)
-  document.querySelectorAll('.interval-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const iv = btn.dataset.interval;
-      if (iv === _currentInterval) return;
-      document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      _currentInterval = iv;
-      // 기간 버튼(1M~2Y)은 1D에서만 의미 있음, 직접입력(연수)은 1D/월봉/연봉 전부에서 유용
-      const pg = document.getElementById('period-group');
-      const sep = document.querySelector('.chart-sep');
-      const yg = document.querySelector('.chart-years-group');
-      const showPeriodButtons = iv === '1d';
-      const showYearsInput    = _DAILY_FAMILY_INTERVALS.has(iv);
-      if (pg)  pg.style.display  = showPeriodButtons ? '' : 'none';
-      if (sep) sep.style.display = showPeriodButtons ? '' : 'none';
-      if (yg)  yg.style.display  = showYearsInput    ? '' : 'none';
-      if (_currentTicker) loadChart(_currentTicker);
-    });
+  typeSel.addEventListener('change', () => {
+    _setChartType(typeSel.value);
+    _saveChartView();
+  });
+
+  scaleSel.addEventListener('change', () => {
+    _scaleMode = scaleSel.value;
+    _applyScaleMode();
+    _saveChartView();
   });
 }
 
@@ -1247,16 +1413,15 @@ function _setDummyBanner(show, ticker) {
 }
 
 function _renderCandles(ohlcv, { fit = true } = {}) {
-  _candleSeries.setData(ohlcv.map(d => ({
-    time: d.time, open: d.open, high: d.high, low: d.low, close: d.close,
-  })));
+  _candleSeries.setData(ohlcv.map(_mainPoint));
   _volSeries.setData(ohlcv.map(d => ({
     time:  d.time,
     value: d.volume,
     color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
   })));
-  if (fit) _lwChart.timeScale().fitContent();
+  // 지표(파란점선의 미래 25칸 포함)를 먼저 붙인 뒤 화면을 맞춰야 맞춘 범위가 밀리지 않는다
   _applyIndicators();
+  if (fit) { _fitChart(); _prevVisibleRange = null; _syncFocusBtn(); }
 }
 
 // ── 기술 지표 계산 ────────────────────────────────────────────────────────────
@@ -1546,6 +1711,7 @@ function _applyIndicators() {
       _indSeries[key] = _lwChart.addLineSeries({
         color, lineWidth: width,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        ..._overlayScaleOpts(),
       });
     }
   };
@@ -1573,6 +1739,7 @@ function _applyIndicators() {
       _indSeries.blue = _lwChart.addLineSeries({
         color: '#2f81f7', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        ..._overlayScaleOpts(),
       });
     }
     _indSeries.blue.setData(_calcBlueDotted(fullBars, warm.length, times));
@@ -2696,10 +2863,7 @@ function _startAutoRefresh() {
 
       if (prev && latest.time === prev.time) {
         // 같은 날짜: 마지막 캔들만 업데이트 (화면 깜빡임 없음)
-        _candleSeries.update({
-          time: latest.time, open: latest.open,
-          high: latest.high, low: latest.low, close: latest.close,
-        });
+        _candleSeries.update(_mainPoint(latest));
         _volSeries.update({
           time:  latest.time,
           value: latest.volume,
