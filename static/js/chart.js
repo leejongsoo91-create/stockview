@@ -94,6 +94,14 @@ const _IND_DEFS = [
     calc: '화면에 보이는 기간의 가격 범위를 24칸으로 나눠 칸마다 거래량 합 (확대·이동하면 다시 계산)',
     what: '가격대별로 쌓인 거래량 분포. 거래가 많이 몰린 가격대는 강한 지지·저항으로 작용해요.',
     how: '옆으로 긴 막대가 있는 가격대에서 많은 사람이 사고팔았어요. 그 가격 근처에 오면 멈추거나 튕기기 쉬워요. 가장 긴 막대는 파란색이에요.' },
+  { id: 'vwap',  tab: 'vol', name: 'VWAP', title: 'VWAP (거래량 가중 평균가)', color: '#0ea5e9', defaultOn: false,
+    calc: '차트 첫 봉부터 누적: Σ(대표가(고+저+종)/3 × 거래량) ÷ Σ거래량',
+    what: '보이는 기간 동안 거래된 모든 주식의 평균 매입 단가.',
+    how: '주가가 이 선 위면 이 기간에 산 사람들이 평균적으로 벌고 있는 거예요. 아래로 내려가면 평균적으로 손해인 자리예요.' },
+  { id: 'obv',   tab: 'vol', name: 'OBV', title: 'OBV (거래량 누적)', color: '#0891b2', defaultOn: false,
+    calc: '오른 날은 거래량을 더하고 내린 날은 뺀 누적값 (차트 아래 거래량 영역에 표시)',
+    what: '주가가 오르면 거래량을 더하고, 내리면 빼서 돈의 흐름을 추적.',
+    how: '선이 올라가면 오르는 날 거래가 더 많았다는 뜻이에요. 주가는 그대로인데 이 선이 먼저 오르면 돈이 몰리는 중일 수 있어요.' },
   { id: 'ymgp',  tab: 'pro', name: '역매공파', title: '역매공파', color: '#eab308', color2: '#22c55e', defaultOn: false, whatLabel: '언제 켜지나',
     calc: '112<224<448일선(장기 역배열) · 최근 20일 안에 거래량 2배↑ 양봉 · 종가가 파란점선/112·224일선 ±3% · 몸통 2% 이하 양봉',
     what: '"역배열 매집 공략" 표시. 오래 내려온(장기 역배열) 종목에서 매집 흔적이 있고, 주가가 파란점선·장기 이평 근처에서 작은 양봉을 만들면 캔들 아래 네모를 찍어요. 매집 거래량이 평균 3배 이상이면 초록, 아니면 노랑.',
@@ -128,7 +136,7 @@ function _saveActiveInds() {
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
 const _activeInds = _loadActiveInds();
 const _indSeries  = { bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null, blue: null,
-                      ichiT: null, ichiK: null, ichiA: null, ichiB: null, ichiC: null, ggr: null };
+                      ichiT: null, ichiK: null, ichiA: null, ichiB: null, ichiC: null, ggr: null, vwap: null, obv: null };
 _IND_MA.forEach(d => { _indSeries[d.id] = null; });
 // 일봉 화면 기간 앞쪽 봉(/api/chart-warmup) — 긴 이평선·파란점선을 화면 첫 봉부터 그리기 위한 계산 전용
 let   _warmOhlcv  = [];
@@ -320,7 +328,7 @@ function _applyScaleMode() {
              : _scaleMode === 'pct' ? LightweightCharts.PriceScaleMode.Percentage
              : LightweightCharts.PriceScaleMode.Normal;
   _lwChart.priceScale('right').applyOptions({ mode });
-  Object.entries(_indSeries).forEach(([k, ser]) => { if (ser && k !== 'volma') ser.applyOptions(_overlayScaleOpts()); });
+  Object.entries(_indSeries).forEach(([k, ser]) => { if (ser && k !== 'volma' && k !== 'obv') ser.applyOptions(_overlayScaleOpts()); });
   _scheduleIndOverlay();
 }
 
@@ -1591,6 +1599,15 @@ function _calcIchimoku(bars) {
   return { tenkan, kijun, spanA, spanB, chikou: bars.map(b => b.close) };
 }
 
+// OBV: 첫날 0, 종가가 오르면 +거래량, 내리면 −거래량, 같으면 그대로
+function _calcOBV(bars) {
+  let obv = 0;
+  return bars.map((b, i) => {
+    if (i > 0) { const c = b.close, p = bars[i - 1].close; if (c > p) obv += b.volume || 0; else if (c < p) obv -= b.volume || 0; }
+    return obv;
+  });
+}
+
 // 공구리(단테공구리) — 키움증권 수식 그대로 (P2=5). 화면 표시 전용.
 //   HT = HIGHEST(H,P2), NewH = VALUEWHEN(1, H>HT(1), H)            ← 5일 신고가가 나온 봉의 고가
 //   BOX1 = HIGHEST(H,P2-2) < HIGHEST(H,P2-1)                        ← 3봉 전 고가가 그 뒤 3봉보다 높음
@@ -1958,6 +1975,28 @@ function _applyIndicators() {
     ICHI_KEYS.forEach(_rmLine);
     _ichiCloud = null;
   }
+
+  // VWAP — 화면 기간 첫 봉부터 누적한 거래량 가중 평균가
+  if (_activeInds.has('vwap')) {
+    _setLine('vwap', '#0ea5e9', 2);
+    let pv = 0, vv = 0;
+    _indSeries.vwap.setData(_lastOhlcv.map((d, i) => {
+      const v = d.volume || 0; pv += (d.high + d.low + d.close) / 3 * v; vv += v;
+      return vv > 0 ? { time: times[i], value: +(pv / vv).toFixed(4) } : null;
+    }).filter(Boolean));
+  } else { _rmLine('vwap'); }
+
+  // OBV — 거래량 영역(아래쪽)에 별도 눈금으로 겹쳐 그림
+  if (_activeInds.has('obv')) {
+    if (!_indSeries.obv) {
+      _indSeries.obv = _lwChart.addLineSeries({
+        color: '#0891b2', lineWidth: 2, priceScaleId: 'obv',
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+      _lwChart.priceScale('obv').applyOptions({ scaleMargins: { top: 0.8, bottom: 0.02 }, visible: false });
+    }
+    _indSeries.obv.setData(_calcOBV(_lastOhlcv).map((v, i) => ({ time: times[i], value: v })));
+  } else { _rmLine('obv'); }
 
   // 공구리 — 노란 계단선
   if (_activeInds.has('ggr') && fullBars.length > _GGR_P2 + 3) {
@@ -2698,7 +2737,7 @@ function _guideData() {
 
 function _guideSvg(ind) {
   const bars = _guideData(), N = bars.length, closes = bars.map(b => b.close);
-  const W = 700, isBlue = ind.id === 'blue', isIchi = ind.id === 'ichi', sub = ind.tab === 'sub' || ind.id === 'volma';
+  const W = 700, isBlue = ind.id === 'blue', isIchi = ind.id === 'ichi', sub = ind.tab === 'sub' || ind.id === 'volma' || ind.id === 'obv';
   const priceH = sub ? 180 : 280, subTop = 195, subH = 95;
   const span = N - 1 + (isBlue ? _BLUE_SHIFT : isIchi ? _ICHI_SHIFT : 0);
   const x = i => 10 + (i / span) * (W - 20);
@@ -2737,6 +2776,12 @@ function _guideSvg(ind) {
   bars.forEach((b, i) => { const col = b.close >= b.open ? '#3fb950' : '#f85149';
     out.push(`<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.high)}" y2="${y(b.low)}" stroke="${col}" opacity="${fade}"/>`,
       `<rect x="${x(i) - bw / 2}" y="${y(Math.max(b.open, b.close))}" width="${bw}" height="${Math.max(1, Math.abs(y(b.open) - y(b.close)))}" fill="${col}" opacity="${fade}"/>`); });
+  if (ind.id === 'vwap') {   // VWAP: 첫 봉부터 누적 평균 단가
+    let pv = 0, vv = 0;
+    const vw = bars.map(b => { pv += (b.high + b.low + b.close) / 3 * b.volume; vv += b.volume; return pv / vv; });
+    out.push(`<polyline points="${vw.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="${ind.color}" stroke-width="3"/>`);
+    out.push(`<text x="${x(14)}" y="${y(vw[14]) - 12}" class="ind-guide-svg-label">평균 단가</text>`);
+  }
   if (ind.id === 'vprof') {   // 매물대: 가격대 24칸 거래량 → 오른쪽 가로 막대, 가장 긴 칸은 파랑
     const nb = 24, step = (hi - lo) / nb, bins = new Array(nb).fill(0);
     bars.forEach(b => { const a0 = Math.max(0, Math.floor((b.low - lo) / step)), z = Math.min(nb - 1, Math.floor((b.high - lo) / step));
@@ -2794,6 +2839,8 @@ function _guideSvg(ind) {
     if (ind.id === 'volma') { const vs = bars.map(b => b.volume), top = Math.max(...vs) * 1.1;
       bars.forEach((b, i) => out.push(`<rect x="${x(i) - bw / 2}" y="${sy(b.volume, 0, top)}" width="${bw}" height="${subTop + subH - sy(b.volume, 0, top)}" fill="${b.close >= b.open ? '#3fb950' : '#f85149'}" opacity=".45"/>`));
       out.push(pl(_calcMA(vs, 20), 0, top, ind.color)); }
+    if (ind.id === 'obv') { const o = _calcOBV(bars), a = Math.min(...o), b = Math.max(...o);
+      out.push(pl(o, a - (b - a) * .05, b + (b - a) * .05, ind.color)); }
   }
   return out.join('');
 }
