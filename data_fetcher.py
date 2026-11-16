@@ -1187,6 +1187,7 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
     session = requests.Session()
     session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     result: dict[str, dict] = {}
+    not_krx: dict[str, str] = {}   # 넥스트레이드 가격이 들어온 종목 {야후 티커: 코드} (거래정지 종목은 제외 — 가격 그대로)
     t0 = time.time()
     for mkt in ("KOSPI", "KOSDAQ"):
         page = 1
@@ -1204,6 +1205,8 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                 code, price = s.get("itemCode"), _naver_num(s.get("closePrice"))
                 if not code or not price:
                     continue
+                if not _naver_is_krx(s) and (s.get("tradeStopType") or {}).get("name") != "HALTED":
+                    not_krx[f"{code}.{'KS' if mkt == 'KOSPI' else 'KQ'}"] = code
                 mv = _naver_num(s.get("marketValue"))   # 억원 단위 (삼성전자 11,780,251 = 약 1,178조)
                 result[code] = {
                     "price":      price,
@@ -1217,8 +1220,74 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                 break
             page += 1
             time.sleep(0.2)
+    if not_krx:   # 장 마감 후·장 시작 전: 가격만 넥스트레이드 값이라 KRX 종가(야후)로 교체. 실패한 종목은 그대로
+        krx, used = fetch_kr_close_yahoo(list(not_krx)), 0
+        for t, k in krx.items():
+            q = result[not_krx[t]]
+            # 야후 값이 네이버 기준가(종가−등락폭 = KRX 전일 종가)와 맞물릴 때만 쓴다: 장 마감 후엔 야후 전일 종가,
+            # 장 시작 전엔 야후 종가가 기준가와 같아야 함. 거래정지·권리락 등으로 야후가 틀린 종목(11-17 진원생명과학
+            # 네이버 2,670 / 야후 534)은 네이버 값 유지
+            base = q["price"] - q["change"]
+            if not base or min(abs(k["prev"] - base), abs(k["price"] - base)) > base * 0.001:
+                continue
+            used += 1
+            if q.get("market_cap") and q["price"]:
+                q["market_cap"] = int(q["market_cap"] * k["price"] / q["price"])
+            q.update(price=k["price"], change=k["change"], change_pct=k["change_pct"])
+        log.info(f"fetch_kr_quotes_naver: 넥스트레이드 가격 {len(not_krx)}종목 중 {used}개 KRX 종가로 교체 (야후 수신 {len(krx)})")
     log.info(f"fetch_kr_quotes_naver: {len(result)}종목, {time.time() - t0:.0f}초")
     return result
+
+
+def _naver_is_krx(x: dict) -> bool:
+    """네이버 국내 시세의 closePrice가 KRX 가격인지 — 체결 시각이 09:00~15:30일 때만.
+    15:30 이후(넥스트레이드 애프터마켓 ~20:00)·09:00 전(프리마켓)에는 closePrice가 넥스트레이드 체결가이고
+    등락폭만 KRX 전일 종가 기준이라 둘이 섞인다(11-17 확인: 삼성전자 11-16 네이버 195,000 / KRX 196,800).
+    시총 목록(marketValue)의 localTradedAt은 체결 시각이 아니라 목록 생성 시각이라 장 밖이면 전 종목이 해당된다.
+    overMarketPriceInfo 유무로는 못 가른다(목록에 그 정보가 없는 종목도 20:00까지 넥스트레이드 체결가가 들어옴)."""
+    hm = str(x.get("localTradedAt") or "")[11:16]
+    return "09:00" <= hm <= "15:30"
+
+
+_kr_close_memo: dict[str, tuple[float, dict]] = {}   # {야후 티커: (받은 시각, 값)} — 10분간 재사용
+
+
+def fetch_kr_close_yahoo(tickers: list[str]) -> dict[str, dict]:
+    """국내 종목 KRX 종가 (야후 spark, 한 요청 20종목·키 불필요). 장 밖에 네이버 가격을 대신할 때 쓴다.
+    반환: {야후 티커(005930.KS): {price, prev, change, change_pct}}, 실패한 종목은 빠진다."""
+    now, out, need = time.time(), {}, []
+    for t in tickers:
+        m = _kr_close_memo.get(t)
+        if m and now - m[0] < 600:
+            out[t] = m[1]
+        else:
+            need.append(t)
+
+    def _one(chunk: list[str]) -> dict:
+        got = {}
+        try:
+            r = requests.get("https://query1.finance.yahoo.com/v7/finance/spark",
+                             params={"symbols": ",".join(chunk), "range": "1d", "interval": "1d"},
+                             headers=YF_HEADERS, timeout=10)
+            r.raise_for_status()
+            for x in (r.json().get("spark") or {}).get("result") or []:
+                meta = ((x.get("response") or [{}])[0] or {}).get("meta") or {}
+                p, prev = _safe(meta.get("regularMarketPrice")), _safe(meta.get("chartPreviousClose"))
+                if p and prev:
+                    got[x.get("symbol")] = {"price": round(p, 2), "prev": round(prev, 2), "change": round(p - prev, 2),
+                                            "change_pct": round((p - prev) / prev * 100, 2)}
+        except Exception as e:
+            log.warning(f"fetch_kr_close_yahoo 실패({chunk[0]} 외 {len(chunk) - 1}개): {e}")
+        time.sleep(0.2)
+        return got
+
+    chunks = [need[i:i + 20] for i in range(0, len(need), 20)]   # 21개부터 400 오류
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        for got in ex.map(_one, chunks):
+            for t, v in got.items():
+                _kr_close_memo[t] = (now, v)
+                out[t] = v
+    return out
 
 
 def fetch_kr_indices_naver() -> dict[str, dict]:
@@ -1271,10 +1340,12 @@ def _naver_rt_quote(x: dict) -> dict | None:
 
 
 def fetch_rt_kr(tickers: list[str]) -> dict[str, dict]:
-    """국내 종목(005930.KS 등) 실시간 시세. 반환: {티커: {price, change, change_pct, volume}}"""
+    """국내 종목(005930.KS 등) 실시간 시세 — KRX 정규장 값만. 반환: {티커: {price, change, change_pct, volume}}"""
     by_code = {t.split(".")[0]: t for t in tickers}
     out = {}
     for x in _naver_rt_datas("domestic/stock", list(by_code)):
+        if not _naver_is_krx(x):   # 08:55~09:00·15:30 이후 넥스트레이드 가격은 반영하지 않음
+            continue
         q, t = _naver_rt_quote(x), by_code.get(x.get("itemCode"))
         if q and t:
             out[t] = q
@@ -2122,7 +2193,7 @@ def _fetch_kr_daily_naver(ticker: str, period: str = "1y", years: int | None = N
     """국내 일봉 — 네이버 차트 API(키 불필요, 10년치 0.1초). 실패하면 [].
     주의(11-13·14 확인): 고가·저가·종가에 넥스트레이드 애프터마켓(~20:00) 가격이 섞임
     (삼성전자 11-11 네이버 208,000 / KRX 공식 206,000 = 야후. 시가·거래량은 KRX와 같음).
-    그래서 야후 조회가 아예 실패했을 때만 쓴다. 최신 거래일 보충은 _kr_latest_bar_rt()."""
+    그래서 야후 조회가 아예 실패했을 때만 쓴다. 최신 거래일 보충은 _kr_latest_bar_rt()(야후 meta)."""
     code = kr_code(ticker)
     if not code:
         return []
@@ -2155,23 +2226,39 @@ def _fetch_kr_daily_naver(ticker: str, period: str = "1y", years: int | None = N
 
 
 def _kr_latest_bar_rt(ticker: str) -> dict | None:
-    """국내 최신 거래일 봉 — 네이버 실시간 시세의 KRX 값(시가·고가·저가·종가·거래량).
-    애프터마켓 가격은 overMarketPriceInfo에 따로 있어 섞이지 않는다(11-14 확인: 삼성전자
-    11-13 closePrice 209,000 = KRX, overPrice 208,500 = 넥스트레이드). 장중엔 진행 중인 값.
-    09:00 전(넥스트레이드 프리마켓) 시각이나 거래량 0(거래정지)이면 KRX 봉이 아니므로 None."""
-    code = kr_code(ticker)
-    datas = _naver_rt_datas("domestic/stock", [code]) if code else []
-    if not datas:
+    """국내 최신 거래일 봉 — 야후 일봉 응답의 meta(KRX 종가·고가·저가·거래량)와 그날 봉의 시가.
+    야후는 최신 거래일 봉의 종가를 하루 가까이 비워 두지만 meta.regularMarketPrice에는 KRX 값이 바로 들어온다.
+    네이버 실시간 값은 쓰지 않는다: 15:30 이후 종가·고가·저가에 넥스트레이드 애프터마켓 가격이 섞임
+    (11-17 확인: 삼성전자 11-16 네이버 종가 195,000·저가 194,900 / KRX 196,800·195,000).
+    09:00 전 시각이거나 거래량 0(거래정지)이면 None."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
+                         "?interval=1d&range=5d", headers=YF_HEADERS, timeout=10)
+        r.raise_for_status()
+        res = r.json()["chart"]["result"][0]
+    except Exception as e:
+        log.warning(f"_kr_latest_bar_rt({ticker}): {e}")
         return None
-    x = datas[0]
-    c, ts = _naver_num(x.get("closePrice")), str(x.get("localTradedAt") or "")
-    vol = int(_naver_num(x.get("accumulatedTradingVolume")) or 0)
-    if not c or not vol or len(ts) < 13 or ts[11:13] < "09":
+    meta = res.get("meta") or {}
+    c, ts = _safe(meta.get("regularMarketPrice")), meta.get("regularMarketTime")
+    vol = int(meta.get("regularMarketVolume") or 0)
+    if not c or not vol or not ts:
         return None
-    return {"time":   ts[:10],
-            "open":   round(_naver_num(x.get("openPrice")) or c, 2),
-            "high":   round(_naver_num(x.get("highPrice")) or c, 2),
-            "low":    round(_naver_num(x.get("lowPrice")) or c, 2),
+    kst = datetime.fromtimestamp(ts, tz=timezone(timedelta(hours=9)))
+    if kst.hour < 9:
+        return None
+    day = kst.strftime("%Y-%m-%d")
+    o = None
+    q = (res.get("indicators") or {}).get("quote", [{}])[0]
+    for k, bts in enumerate(res.get("timestamp") or []):
+        if datetime.fromtimestamp(bts, tz=timezone(timedelta(hours=9))).strftime("%Y-%m-%d") == day:
+            o = _safe((q.get("open") or [None] * (k + 1))[k])
+    h, l = _safe(meta.get("regularMarketDayHigh")) or c, _safe(meta.get("regularMarketDayLow")) or c
+    o = o or c
+    return {"time":   day,
+            "open":   round(o, 2),
+            "high":   round(max(h, o, c), 2),
+            "low":    round(min(l, o, c), 2),
             "close":  round(c, 2),
             "volume": vol}
 
@@ -2212,7 +2299,7 @@ def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: in
     daily_family = interval in _DAILY_FAMILY_YF_INTERVAL
 
     # 국내 일봉: 야후는 최신 거래일 봉의 종가가 하루 가까이 비어 있어(빈 봉은 버려짐) 신호가 하루 늦게
-    # 계산됐음(11-12 확인) → 야후(KRX 공식) + 야후에 없는 최신 거래일 1개를 네이버 실시간 KRX 값으로 보충.
+    # 계산됐음(11-12 확인) → 야후(KRX 공식) + 야후에 없는 최신 거래일 1개를 야후 meta의 KRX 값으로 보충.
     # 야후가 아예 실패하면 네이버 차트 API 전체(애프터마켓 가격 섞임 — 없는 것보단 나음).
     if _kr_fill and interval == "1d" and ticker.upper().endswith((".KS", ".KQ")):
         rows = fetch_ohlcv(ticker, period, interval, years, _kr_fill=False)

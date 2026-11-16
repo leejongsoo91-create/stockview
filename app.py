@@ -887,6 +887,8 @@ _scheduler.add_job(refresh_stocks,          "interval", minutes=5,  id="stocks")
 _scheduler.add_job(refresh_us_quotes,       "interval", minutes=1,  id="us_quotes")   # 장중만 실제 수집 (네이버, 약 70요청)
 _scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")   # 네이버 시세가 살아 있으면 30분에 한 번만 실제 실행
 _scheduler.add_job(refresh_kr_quotes,       "interval", minutes=1,  id="kr_quotes")   # 장중만 실제 수집 (네이버, 약 44요청)
+_scheduler.add_job(lambda: refresh_kr_quotes(force=True), "cron", day_of_week="mon-fri", hour=16, minute=5,
+                   timezone="Asia/Seoul", id="kr_quotes_close")   # 장 마감 확정 종가 (15:30~15:45 야후 값이 늦을 수 있어 한 번 더)
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
 _scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")

@@ -54,7 +54,7 @@
 | `refresh_indices` | 30초 | 지수 19개, `indices_update`. 캐시 ttl 90초(갱신 주기보다 길게 — 같으면 순간 더미 값 반환). 코스피·코스닥은 네이버 실시간 값으로 덮어씀(Yahoo 등락률 오류). 달러/원은 포트폴리오 원화 환산에도 사용 |
 | `_rt_loop` (백그라운드) | **10초** | 화면 종목 실시간: 브라우저가 `rt_subscribe`로 보낸 종목(관심종목·포트폴리오·차트) + 지수(코스피·코스닥·S&P·나스닥·다우)를 네이버 polling으로 받아 캐시에 반영 → `rt_quotes`·`rt_indices`. 장중만 요청, 여러 명이 봐도 한 번만 받음 |
 | `refresh_us_quotes` | 1분 (뉴욕 평일 09:25~16:20만) | 미국 전 종목 가격·등락률·거래량을 네이버 미국 시장 목록(약 70요청, 24초)으로 덮어씀 — **Nasdaq 스크리너 API는 장중에도 전일 종가**. 시가총액은 Nasdaq 값을 가격 비율로만 조정. 시작 15초 후 한 번 |
-| `refresh_kr_quotes` | 1분 (평일 08:55~15:45 KST만) | 국내 전 종목 시세·시가총액을 네이버 국내 시장 목록(약 44요청, 10초)으로. 시작 20초 후 한 번 |
+| `refresh_kr_quotes` | 1분 (평일 08:55~15:45 KST만) + 평일 16:05 한 번 | 국내 전 종목 시세·시가총액을 네이버 국내 시장 목록(약 44요청, 10초)으로. 시작 20초 후 한 번. 장 밖(목록 시각이 09:00~15:30 밖)에는 네이버 가격이 넥스트레이드 체결가라 야후 spark(20종목씩, `fetch_kr_close_yahoo`)의 KRX 종가로 교체 — 야후 값이 네이버 기준가와 맞을 때만, 거래정지 제외. 16:05는 15:30~15:45에 받은 야후 값이 늦었을 경우 확정 종가로 다시 받기 |
 | `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update`. Nasdaq(섹터·업종 등 기본 정보) 위에 마지막 네이버 시세를 덮어씀. KR Yahoo 갱신은 네이버 시세가 살아 있으면 30분에 한 번만(52주 최고·최저용) |
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
@@ -92,7 +92,7 @@
 |------|------|
 | Yahoo Finance | JSON 배치 API(`v7/quote`, `quoteSummary`)는 크럼 없이 401 → HTML 스크래핑·v8 chart만 사용. 병렬 과다 시 429 → 동시성 5 + 지연, 실패율 50%↑면 캐시 60초 |
 | 네이버 금융 | 페이지마다 인코딩이 다름(EUC-KR / UTF-8 혼재) → 새 페이지는 `Content-Type` 먼저 확인. 옛 HTML 페이지가 계속 폐기되는 중 → `m.stock.naver.com/api/...` JSON API 우선 |
-| 국내 일봉 | 야후 v8 chart는 최신 거래일 봉 종가가 하루 가까이 비어 있음 → `fetch_ohlcv`가 야후 뒤에 네이버 실시간 KRX 값으로 최신 1봉 보충(`_kr_latest_bar_rt`). 네이버 차트 API(`api.stock.naver.com/chart/domestic`)는 고가·저가·종가에 넥스트레이드 애프터마켓 가격이 섞여 야후 실패 시에만 사용 (11-14) |
+| 국내 일봉 | 야후 v8 chart는 최신 거래일 봉 종가가 하루 가까이 비어 있음 → `fetch_ohlcv`가 야후 뒤에 야후 meta(regularMarketPrice·DayHigh·DayLow·Volume)의 KRX 값으로 최신 1봉 보충(`_kr_latest_bar_rt`, 11-17 — 네이버 실시간 값은 15:30 이후 넥스트레이드 가격이 섞여 폐기). 네이버 차트 API(`api.stock.naver.com/chart/domestic`)는 고가·저가·종가에 넥스트레이드 애프터마켓 가격이 섞여 야후 실패 시에만 사용 (11-14) |
 | KRX KIND | 07-12에 EUC-KR → UTF-8로 바뀐 전례 |
 | SEC EDGAR | User-Agent에 이메일 형식 문자열 필수(없으면 403). `fy`/`fp` 라벨이 불안정 → 기간 종료일(`end`)로 그룹핑 |
 | RSS | 피드가 자주 죽음(404/403). 국내 RSS는 커스텀 User-Agent 필요한 곳 많음 |
