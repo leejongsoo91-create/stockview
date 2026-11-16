@@ -550,6 +550,34 @@ function renderMarketStatus() {
 let _homeStocks   = [];
 let _sectorPeriod = '1d';
 
+// ── 서버 시작 직후 예시 데이터 걸러내기 (11-17, A안) ─────────────────────────
+// 서버는 켜지자마자 app.py의 예시 종목 59개(가짜 가격)를 /api/stocks로 돌려주고, 실제 목록(5,000개,
+// 실패 시 S&P 500 503개)은 수십 초 뒤 들어온다. 200개 미만이면 예시로 보고 홈에 "불러오는 중"을 띄운 뒤
+// 5초마다 다시 요청한다(서버의 stocks_update 신호를 재연결 전에 놓쳐도 저절로 고쳐지도록). 최대 2분.
+const _US_REAL_MIN = 200;
+function _isPlaceholderUs(stocks) { return !Array.isArray(stocks) || stocks.length < _US_REAL_MIN; }
+const _usWait = { timer: null, tries: 0, gaveUp: false };
+function _waitRealUs() {
+  if (_usWait.timer || _usWait.gaveUp) return;
+  _usWait.tries = 0;
+  _usWait.timer = setInterval(async () => {
+    if (++_usWait.tries > 24) {   // 5초 × 24 = 2분
+      clearInterval(_usWait.timer); _usWait.timer = null; _usWait.gaveUp = true;
+      if (_currentView === 'home') { _renderTop(); renderMarketStatBar(_homeStocks); }
+      return;
+    }
+    try {
+      const s = await api('/api/stocks');
+      if (_isPlaceholderUs(s)) return;
+      clearInterval(_usWait.timer); _usWait.timer = null;
+      _refreshCurrentView();
+    } catch {}
+  }, 5000);
+}
+function _usWaitMsg() {
+  return _usWait.gaveUp ? '미국 종목을 아직 받지 못했습니다 — 잠시 뒤 새로고침해 보세요' : '실제 데이터 불러오는 중…';
+}
+
 
 // 11-06: S&P 500 섹터 ETF(SPDR 11개) 등락률로 변경 — /api/sector-etf. 예전 우리 종목 단순평균은
 // 작은 종목이 왜곡했고(통신 +6.40% vs 실제 -0.85%) 1주·1개월은 75초 걸렸음. 칩을 누르면 해당 ETF 차트.
@@ -663,6 +691,12 @@ function _renderTop() {
   document.querySelectorAll('#top-by button').forEach(b => b.classList.toggle('active', b.dataset.v === by));
 
   const src = market === 'us' ? (_top.us || window._scStocks || []) : (window._krStocks || []);
+  if (market === 'us' && _isPlaceholderUs(src)) {   // 서버 시작 직후 예시 데이터 → 순위를 보여주지 않음
+    el.innerHTML = `<tr><td style="color:var(--muted)">${_usWaitMsg()}</td></tr>`;
+    _top.rows = {}; _top.shownMarket = null;
+    _waitRealUs();
+    return;
+  }
   if (market === 'kr' && !src.length) {   // 국내 목록을 아직 안 받았으면 받아서 다시 그림
     el.innerHTML = '<tr><td style="color:var(--muted)">국내 종목 불러오는 중…</td></tr>';
     _top.rows = {}; _top.shownMarket = null;
@@ -740,7 +774,13 @@ function _renderTop() {
 
 function renderMarketStatBar(stocks) {
   const el = document.getElementById('market-stat-bar');
-  if (!el || !stocks || !stocks.length) return;
+  if (!el) return;
+  if (_isPlaceholderUs(stocks)) {   // 서버 시작 직후 예시 데이터 → 종목 수·상승/하락을 세지 않음
+    el.title = '';
+    el.innerHTML = `<span class="msb-label">${_usWait.gaveUp ? '미국 종목 정보 없음' : '미국 종목 불러오는 중…'}</span>`;
+    _waitRealUs();
+    return;
+  }
   let up = 0, down = 0, flat = 0;
   stocks.forEach(s => {
     const p = parseFloat(s.change_pct) || 0;
@@ -980,7 +1020,7 @@ function buildTickerTape(indices, stocks) {
   const items = [
     ...indices.map(i => ({ label: koIndex(i.name), value: i.value.toLocaleString('en-US', {minimumFractionDigits:2}), pct: i.change_pct,
                            sym: _INDEX_SYMBOL[i.name] })),
-    ...['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','JPM','LLY','NFLX'].map(t => {
+    ...(_isPlaceholderUs(stocks) ? [] : ['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','JPM','LLY','NFLX']).map(t => {   // 예시 데이터면 종목 가격은 빼고 지수만
       const s = stocks.find(x => x.ticker === t);
       if (!s) return null;
       return { label: s.ticker, value: fmt$(s.price), pct: s.change_pct, sym: s.ticker };
