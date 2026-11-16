@@ -622,11 +622,21 @@ function _topLabel(s, market, by) {
   return (by === 'amount' ? '거래대금 ' : '시총 ') + '<b>' + (market === 'us' ? _topFmtUsd(v) : _topFmtKrw(v)) + '</b>';
 }
 
+// 스크롤 위치에 따라 위·아래 흐림(더 있음 표시)을 켜고 끔 — 맨 위면 위쪽, 맨 아래면 아래쪽 흐림 없음
+function _topScrollEdges() {
+  const sc = document.getElementById('top-scroll');
+  if (!sc) return;
+  sc.classList.toggle('at-top', sc.scrollTop <= 2);
+  sc.classList.toggle('at-bottom', sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2);
+}
+
 function _topBind() {
   if (_top.bound) return;
   const head = document.querySelector('.movers-panel .top-head');
   if (!head) return;
   _top.bound = true;
+  const sc = document.getElementById('top-scroll');
+  if (sc) sc.addEventListener('scroll', _topScrollEdges, { passive: true });
   head.addEventListener('click', e => {
     const b = e.target.closest('.top-seg button');
     if (!b) return;
@@ -685,7 +695,6 @@ function _renderTop() {
       : '$' + (s.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     tr.innerHTML = `
       <td class="top-rank">${rank}${mv}</td>
-      <td onclick="event.stopPropagation()" style="width:28px">${starBtn(t)}</td>
       <td class="m-ticker">${code}</td>
       <td class="m-name">${_escHtml(name || '')}<br><span class="top-sub">${_topLabel(s, market, by)}</span></td>
       <td class="top-price">${price}</td>
@@ -720,6 +729,7 @@ function _renderTop() {
     if (sc) sc.scrollTop = 0;
   }
   _top.rank = newRank; _top.shownMarket = market;
+  _topScrollEdges();
 
   const cnt = document.getElementById('top-count');
   if (cnt) cnt.textContent = `· Top ${top.length}`;
