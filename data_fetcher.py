@@ -1900,16 +1900,33 @@ def _classify_disclosure(title: str, dtype: str) -> str:
     return "company"
 
 
+_FG_COMPONENTS = ("market_momentum_sp500", "stock_price_strength", "stock_price_breadth", "put_call_options",
+                  "market_volatility_vix", "junk_bond_demand", "safe_haven_demand")   # CNN 지수를 이루는 7개 지표
+
+
 def fetch_fear_greed() -> dict | None:
-    """CNN Fear & Greed Index 현재값 반환. 실패 시 None."""
+    """CNN Fear & Greed Index 현재값 반환. 실패 시 None.
+    history: 1년 추이 [[유닉스 ms, 점수], ...](하루 1개), components: 구성 지표 7개 [{key, score, rating}]
+    — 홈 상세 창용(11-17). 둘 다 못 받으면 빈 리스트(현재값·지난 값만으로도 동작)."""
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
     try:
         r = requests.get(url, headers=YF_HEADERS, timeout=10)
         r.raise_for_status()
-        d = r.json().get("fear_and_greed", {})
+        raw = r.json()
+        d = raw.get("fear_and_greed", {})
         score = d.get("score")
         if score is None:
             return None
+        history = []
+        for p in ((raw.get("fear_and_greed_historical") or {}).get("data") or []):
+            x, y = _safe(p.get("x")), _safe(p.get("y"))
+            if x and y is not None:
+                history.append([int(x), round(y, 1)])
+        components = []
+        for k in _FG_COMPONENTS:
+            c = raw.get(k) or {}
+            if _safe(c.get("score")) is not None:
+                components.append({"key": k, "score": round(float(c["score"]), 1), "rating": (c.get("rating") or "").title()})
         return {
             "score":      round(float(score), 1),
             "rating":     d.get("rating", "").title(),
@@ -1917,6 +1934,8 @@ def fetch_fear_greed() -> dict | None:
             "prev_1w":    round(float(d.get("previous_1_week") or 0), 1),
             "prev_1m":    round(float(d.get("previous_1_month") or 0), 1),
             "prev_1y":    round(float(d.get("previous_1_year") or 0), 1),
+            "history":    history,
+            "components": components,
         }
     except Exception as e:
         log.warning(f"Fear & Greed fetch 실패: {e}")

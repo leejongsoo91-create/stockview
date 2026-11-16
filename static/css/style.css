@@ -16,6 +16,8 @@
   --tape-h:     28px;
   --chart-canvas:      #161b22;  /* Lightweight Charts 캔버스(항상 어두움)와 같은 색 — 지표 가이드 예시 그림 배경 */
   --chart-canvas-text: #e6edf3;
+  /* 공포·탐욕 5구간 (극단적 공포 → 극단적 탐욕) + 색 띠 위 글자색 */
+  --fg-c1: #e5534b; --fg-c2: #e07a3a; --fg-c3: #e3b341; --fg-c4: #5dac57; --fg-c5: #27ae60; --fg-on: #0d1117;
 }
 body.light-theme {
   --bg:         #f5f6fa;
@@ -32,6 +34,7 @@ body.light-theme {
   --accent2:    #0550ae;
   --chart-canvas:      #161b22;  /* 라이트 테마에서도 차트 캔버스는 어두움 */
   --chart-canvas-text: #e6edf3;
+  --fg-c1: #cf222e; --fg-c2: #bc4c00; --fg-c3: #9a6700; --fg-c4: #2da44e; --fg-c5: #116329; --fg-on: #ffffff;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 13px; }
@@ -252,6 +255,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .msb-up   { color: var(--green); }
 .msb-down { color: var(--red); }
 .msb-flat { color: var(--muted); }
+/* 상태 줄 오른쪽 묶음: 공포·탐욕 배지 + 미국 종목 수 */
+.home-stat-right { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ── HOME — 지수·선물·채권 Overview 3그룹 ───────────────────────────────── */
 .home-overview {
@@ -476,6 +481,63 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .fg-neutral       { color: #e3b341; }
 .fg-greed         { color: #5dac57; }
 .fg-extreme-greed { color: #27ae60; }
+
+/* 홈 공포·탐욕 배지 (11-17) — 상태 줄 오른쪽, 누르면 상세 창 */
+.fg-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 2px 6px 2px 9px; font-size: 11.5px; color: var(--text); cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.fg-badge:hover, .fg-badge:focus-visible { border-color: var(--accent); background: var(--bg-input); outline: none; }
+.fg-badge-dot    { width: 7px; height: 7px; border-radius: 50%; }
+.fg-badge-score  { font-weight: 800; }
+.fg-badge-rating { font-weight: 700; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; color: var(--fg-on); }
+.fg-badge-arrow  { color: var(--muted); font-size: 13px; line-height: 1; }
+
+/* 공포·탐욕 상세 창 */
+.fg-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.55);
+  display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow-y: auto;
+}
+.fg-modal-overlay[hidden] { display: none; }
+.fg-modal-box {
+  width: min(760px, 100%); background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.45); animation: smFadeIn .18s ease;
+}
+.fg-modal-head { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.fg-modal-head h3 { margin: 0; font-size: 15px; color: var(--text); }
+.fg-modal-head h3 small { color: var(--muted); margin-left: 8px; font-weight: 400; font-size: 11.5px; }
+.fg-modal-close { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; padding: 2px 6px; }
+.fg-modal-close:hover { color: var(--text); }
+.fg-modal-body { padding: 16px 18px 18px; display: grid; gap: 18px; }
+.fg-m-top { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.fg-m-big { font-size: 40px; font-weight: 800; line-height: 1; }
+.fg-m-rating { font-size: 14px; font-weight: 700; margin-top: 4px; }
+.fg-m-prev { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; flex: 1; min-width: 260px; }
+.fg-m-pv { background: var(--bg-input); border-radius: 8px; padding: 8px 10px; }
+.fg-m-pv .l { font-size: 11px; color: var(--muted); }
+.fg-m-pv .v { font-size: 16px; font-weight: 700; margin-top: 2px; }
+.fg-m-pv .r { font-size: 10.5px; }
+.fg-m-sec { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+.fg-m-hist text { fill: var(--muted); font-size: 10px; }
+.fg-m-hist .fg-h-tip { fill: var(--text); font-size: 11px; font-weight: 700; }
+.fg-m-comp { display: grid; grid-template-columns: 110px 1fr 36px 80px; gap: 4px 12px; align-items: center; }
+.fg-m-comp .n { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.fg-m-comp .s { text-align: right; font-weight: 700; font-size: 12.5px; color: var(--text); }
+.fg-m-comp .r { font-size: 11px; font-weight: 700; }
+.fg-m-comp .d { grid-column: 1 / -1; font-size: 11px; color: var(--muted); margin: -2px 0 8px; }
+.fg-m-track { height: 8px; border-radius: 4px; background: var(--bg-input); overflow: hidden; }
+.fg-m-fill  { height: 100%; border-radius: 4px; }
+.fg-m-guide { display: flex; border-radius: 6px; overflow: hidden; font-size: 10.5px; text-align: center; }
+.fg-m-guide div { padding: 5px 2px; color: var(--fg-on); font-weight: 700; }
+.fg-m-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+@media (max-width: 600px) {
+  .fg-m-prev { grid-template-columns: repeat(2, 1fr); }
+  .fg-m-comp { grid-template-columns: 90px 1fr 30px; }
+  .fg-m-comp .r { display: none; }
+  .fg-m-guide { font-size: 9px; }
+}
 
 /* 홈 카드 내 텍스트 */
 .fg-score-home {

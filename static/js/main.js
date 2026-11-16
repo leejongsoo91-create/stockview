@@ -759,56 +759,125 @@ function renderMarketStatBar(stocks) {
     `<span class="msb-flat">보합 ${flat.toLocaleString()}</span>`;
 }
 
-// ── 홈 Fear & Greed 위젯 ────────────────────────────────────────────────────
-function _fgRatingClass(rating) {
-  if (!rating) return '';
-  return 'fg-' + rating.toLowerCase().replace(/\s+/g, '-');
-}
-
-function _scoreToRating(score) {
-  if (score <= 25) return 'Extreme Fear';
-  if (score <= 44) return 'Fear';
-  if (score <= 55) return 'Neutral';
-  if (score <= 75) return 'Greed';
-  return 'Extreme Greed';
-}
+// ── 홈 Fear & Greed 배지·상세 창 ──────────────────────────────────────────────
+// 홈 공포·탐욕: 상단 줄 작은 배지 + 누르면 상세 창(게이지·지난 값·1년 추이·구성 지표 7개) — 11-17
+// 색은 CSS 변수 --fg-c1~c5(극단적 공포→극단적 탐욕). CNN 구간: 0–25·25–45·45–55·55–75·75–100
+let _homeFg = null;
+const _FG_COMP_INFO = {
+  market_momentum_sp500: ['시장 모멘텀',  'S&P 500이 125일 평균보다 얼마나 위·아래에 있나'],
+  stock_price_strength:  ['주가 강도',    '52주 신고가 종목 수 vs 신저가 종목 수 (뉴욕증권거래소)'],
+  stock_price_breadth:   ['시장 폭',      '오르는 종목 거래량 vs 내리는 종목 거래량'],
+  put_call_options:      ['풋/콜 옵션',   '하락에 거는 풋옵션이 많으면 공포 (5일 평균 비율)'],
+  market_volatility_vix: ['변동성 (VIX)', 'VIX가 50일 평균보다 높으면 공포'],
+  junk_bond_demand:      ['정크본드 수요', '고위험 채권과 안전 채권의 수익률 차이가 좁으면 탐욕'],
+  safe_haven_demand:     ['안전자산 수요', '최근 20일 주식 vs 국채 수익률 — 채권이 이기면 공포'],
+};
+function _fgLevel(v) { return v < 25 ? 1 : v < 45 ? 2 : v < 55 ? 3 : v < 75 ? 4 : 5; }
+function _fgColor(v) { return `var(--fg-c${_fgLevel(v)})`; }
+function _fgKo(v)    { return ['', '극단적 공포', '공포', '중립', '탐욕', '극단적 탐욕'][_fgLevel(v)]; }
+function _fgEmoji(v) { return ['', '😱', '😨', '😐', '😊', '🤑'][_fgLevel(v)]; }
 
 function renderHomeFearGreed(fg) {
   if (!fg || fg.score == null) return;
-  const { score, rating, prev_close, prev_1w, prev_1m, prev_1y } = fg;
+  _homeFg = fg;
+  const b = document.getElementById('fg-badge');
+  if (b) {
+    const v = fg.score;
+    b.innerHTML = `<span class="fg-badge-dot" style="background:${_fgColor(v)}"></span>`
+      + `<span>${_fgEmoji(v)} 공포·탐욕</span>`
+      + `<span class="fg-badge-score" style="color:${_fgColor(v)}">${Math.round(v)}</span>`
+      + `<span class="fg-badge-rating" style="background:${_fgColor(v)}">${_fgKo(v)}</span>`
+      + `<span class="fg-badge-arrow">›</span>`;
+    b.hidden = false;
+    if (!b._bound) {
+      b._bound = true;
+      b.addEventListener('click', _openFgModal);
+      const ov = document.getElementById('fg-modal');
+      document.getElementById('fg-modal-close')?.addEventListener('click', _closeFgModal);
+      ov?.addEventListener('click', e => { if (e.target === ov) _closeFgModal(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && ov && !ov.hidden) _closeFgModal(); });
+    }
+  }
+  const ov = document.getElementById('fg-modal');
+  if (ov && !ov.hidden) _renderFgModal();   // 열어 둔 채 갱신되면 내용도 새로
+}
 
-  const deg  = (score / 100 * 180) - 90;
-  const rCls = _fgRatingClass(rating);
+function _openFgModal()  { const ov = document.getElementById('fg-modal'); if (!ov || !_homeFg) return; _renderFgModal(); ov.hidden = false; }
+function _closeFgModal() { const ov = document.getElementById('fg-modal'); if (ov) ov.hidden = true; }
 
-  // 바늘
-  requestAnimationFrame(() => {
-    const n = document.getElementById('home-fg-needle');
-    if (n) n.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+function _fgGaugeSvg(score) {
+  const cx = 90, cy = 95, R = 80, r = 58;
+  const pt = (v, rad) => { const a = Math.PI * (1 - v / 100); return [cx + rad * Math.cos(a), cy - rad * Math.sin(a)]; };
+  let p = '';
+  [[0, 25], [25, 45], [45, 55], [55, 75], [75, 100]].forEach(([a, c]) => {
+    const [x1, y1] = pt(a, R), [x2, y2] = pt(c, R), [x3, y3] = pt(c, r), [x4, y4] = pt(a, r);
+    p += `<path d="M${x1},${y1} A${R},${R} 0 0 1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 0 0 ${x4},${y4} Z" fill="${_fgColor(a + 1)}" stroke="var(--bg-card)" stroke-width="2"/>`;
   });
+  const [nx, ny] = pt(score, R + 4);
+  p += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="5" fill="var(--text)"/>`;
+  return `<svg class="fg-m-gauge" width="180" height="104" viewBox="0 0 180 104" aria-hidden="true">${p}</svg>`;
+}
 
-  // 점수 + 등급
-  const scoreEl  = document.getElementById('home-fg-score');
-  const ratingEl = document.getElementById('home-fg-rating');
-  if (scoreEl)  { scoreEl.textContent = score;  scoreEl.className  = 'fg-score-big '    + rCls; }
-  if (ratingEl) { ratingEl.textContent = koFg(rating); ratingEl.className = 'fg-rating-label ' + rCls; }
+function _fgHistSvg(h) {
+  const W = 720, H = 170, L = 26, T = 8, B = 20, x0 = h[0][0], x1 = h[h.length - 1][0] || x0 + 1;
+  const X = t => L + (t - x0) / (x1 - x0) * (W - L - 6), Y = v => T + (1 - v / 100) * (H - T - B);
+  let s = '';
+  [[0, 25], [25, 45], [45, 55], [55, 75], [75, 100]].forEach(([a, c]) => {
+    s += `<rect x="${L}" y="${Y(c)}" width="${W - L - 6}" height="${Y(a) - Y(c)}" fill="${_fgColor(a + 1)}" opacity=".09"/>`;
+  });
+  [0, 25, 50, 75, 100].forEach(v => {
+    s += `<text x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${v}</text><line x1="${L}" x2="${W - 6}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="2 4"/>`;
+  });
+  s += `<path d="${h.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join('')}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>`;
+  const last = h[h.length - 1];
+  s += `<circle cx="${X(last[0])}" cy="${Y(last[1])}" r="4" fill="${_fgColor(last[1])}" stroke="var(--bg-card)" stroke-width="2"/>`;
+  let mi = 0; const seen = new Set();
+  h.forEach(p => {   // 매달 첫 주에 월 표시(두 달에 한 번)
+    const d = new Date(p[0]), k = d.getFullYear() + '-' + d.getMonth();
+    if (!seen.has(k) && d.getDate() <= 7) { seen.add(k); if (mi++ % 2 === 0) s += `<text x="${X(p[0])}" y="${H - 5}" text-anchor="middle">${d.getMonth() + 1}월</text>`; }
+  });
+  s += `<line class="fg-h-line" y1="${T}" y2="${H - B}" stroke="var(--muted)" visibility="hidden"/><text class="fg-h-tip" y="${T + 10}" visibility="hidden"></text>`;
+  return { svg: `<svg class="fg-m-hist" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="공포·탐욕 지수 1년 추이">${s}</svg>`, X, W };
+}
 
-  // 과거 비교
-  const histEl = document.getElementById('home-fg-history');
-  if (histEl) {
-    const rows = [
-      ['어제',     prev_close],
-      ['1주 전',   prev_1w],
-      ['1개월 전', prev_1m],
-      ['1년 전',   prev_1y],
-    ];
-    histEl.innerHTML = rows.map(([label, val]) => {
-      const r = _scoreToRating(val);
-      return `<div class="fg-hist-row">
-        <span class="fg-hist-label">${label}</span>
-        <span class="fg-hist-val ${_fgRatingClass(r)}">${val}</span>
-        <span class="fg-hist-rating">${koFg(r)}</span>
-      </div>`;
-    }).join('');
+function _renderFgModal() {
+  const fg = _homeFg, body = document.getElementById('fg-modal-body');
+  if (!fg || !body) return;
+  const v = fg.score;
+  const prev = [['전일', fg.prev_close], ['1주 전', fg.prev_1w], ['1개월 전', fg.prev_1m], ['1년 전', fg.prev_1y]];
+  const hist = (fg.history || []).filter(p => Array.isArray(p) && p.length === 2);
+  const comps = fg.components || [];
+  const hs = hist.length > 1 ? _fgHistSvg(hist) : null;
+  body.innerHTML = `
+    <div class="fg-m-top">
+      ${_fgGaugeSvg(v)}
+      <div><div class="fg-m-big" style="color:${_fgColor(v)}">${v.toFixed(1)}</div>
+           <div class="fg-m-rating" style="color:${_fgColor(v)}">${_fgEmoji(v)} ${_fgKo(v)}</div></div>
+      <div class="fg-m-prev">${prev.map(([k, x]) => x == null ? '' : `
+        <div class="fg-m-pv"><div class="l">${k}</div><div class="v" style="color:${_fgColor(x)}">${(+x).toFixed(1)}</div><div class="r" style="color:${_fgColor(x)}">${_fgKo(x)}</div></div>`).join('')}</div>
+    </div>
+    ${hs ? `<div><div class="fg-m-sec">1년 추이</div>${hs.svg}</div>` : ''}
+    ${comps.length ? `<div><div class="fg-m-sec">구성 지표 ${comps.length}개 — 이 지표들을 평균해 지수가 나옵니다</div>
+      <div class="fg-m-comp">${comps.map(c => {
+        const [n, d] = _FG_COMP_INFO[c.key] || [c.key, ''];
+        return `<div class="n">${n}</div><div class="fg-m-track"><div class="fg-m-fill" style="width:${Math.max(2, c.score)}%;background:${_fgColor(c.score)}"></div></div>
+          <div class="s">${Math.round(c.score)}</div><div class="r" style="color:${_fgColor(c.score)}">${_fgKo(c.score)}</div><div class="d">${d}</div>`;
+      }).join('')}</div></div>` : ''}
+    <div><div class="fg-m-sec">읽는 법</div>
+      <div class="fg-m-guide"><div style="flex:25;background:var(--fg-c1)">0–25 극단적 공포</div><div style="flex:20;background:var(--fg-c2)">25–45 공포</div><div style="flex:10;background:var(--fg-c3)">45–55 중립</div><div style="flex:20;background:var(--fg-c4)">55–75 탐욕</div><div style="flex:25;background:var(--fg-c5)">75–100 극단적 탐욕</div></div>
+      <p class="fg-m-note">사람들이 겁을 먹으면(공포) 주식을 팔아 가격이 싸지고, 욕심을 내면(탐욕) 비싸지는 경향을 숫자로 나타낸 지표입니다. "남들이 공포에 질렸을 때 사라"는 역발상 참고용이며, 매매 신호는 아닙니다.</p></div>`;
+  if (hs) {   // 그래프에 마우스를 올리면 그날 점수
+    const svg = body.querySelector('.fg-m-hist'), ln = svg.querySelector('.fg-h-line'), tip = svg.querySelector('.fg-h-tip');
+    svg.addEventListener('mousemove', e => {
+      const rc = svg.getBoundingClientRect(), mx = (e.clientX - rc.left) / rc.width * hs.W;
+      let best = hist[0];
+      for (const p of hist) if (Math.abs(hs.X(p[0]) - mx) < Math.abs(hs.X(best[0]) - mx)) best = p;
+      const x = hs.X(best[0]), d = new Date(best[0]);
+      ln.setAttribute('x1', x); ln.setAttribute('x2', x); ln.setAttribute('visibility', 'visible');
+      tip.textContent = `${d.getMonth() + 1}/${d.getDate()} ${Math.round(best[1])} ${_fgKo(best[1])}`;
+      tip.setAttribute('x', Math.min(x + 6, hs.W - 120)); tip.setAttribute('visibility', 'visible');
+    });
+    svg.addEventListener('mouseleave', () => { ln.setAttribute('visibility', 'hidden'); tip.setAttribute('visibility', 'hidden'); });
   }
 }
 

@@ -58,7 +58,7 @@
 | `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update`. Nasdaq(섹터·업종 등 기본 정보) 위에 마지막 네이버 시세를 덮어씀. KR Yahoo 갱신은 네이버 시세가 살아 있으면 30분에 한 번만(52주 최고·최저용) |
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
-| `refresh_fear_greed` | 30분 | |
+| `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정) — 홈 상단 배지·상세 창, Brief 게이지에서 사용 (11-17) |
 | `refresh_earnings` | 1시간 | |
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |
 | `refresh_av_news` | 12시간 | |

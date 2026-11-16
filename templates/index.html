@@ -51,7 +51,22 @@
       <div class="home-status-bar">
         <div id="market-status"></div>
         <span id="home-et-time" class="mkt-et-time"></span>
-        <div id="market-stat-bar" class="market-stat-bar"></div>
+        <div class="home-stat-right">
+          <!-- 공포·탐욕 배지 (11-17: 왼쪽 큰 게이지 패널 대신) — 누르면 상세 창 -->
+          <button type="button" id="fg-badge" class="fg-badge" title="CNN 공포·탐욕 지수 — 눌러서 자세히 보기" hidden></button>
+          <div id="market-stat-bar" class="market-stat-bar"></div>
+        </div>
+      </div>
+
+      <!-- 공포·탐욕 상세 창 -->
+      <div id="fg-modal" class="fg-modal-overlay" hidden>
+        <div class="fg-modal-box" role="dialog" aria-modal="true" aria-labelledby="fg-modal-title">
+          <div class="fg-modal-head">
+            <h3 id="fg-modal-title">😨 공포·탐욕 지수<small>CNN Fear &amp; Greed · 0 = 극단적 공포, 100 = 극단적 탐욕</small></h3>
+            <button type="button" class="fg-modal-close" id="fg-modal-close" aria-label="닫기">✕</button>
+          </div>
+          <div class="fg-modal-body" id="fg-modal-body"></div>
+        </div>
       </div>
 
       <!-- 섹터 퍼포먼스 가로 스트립 -->
@@ -69,21 +84,6 @@
 
       <!-- 2단 대시보드 -->
       <div class="home-dashboard">
-
-        <!-- 왼쪽: Fear & Greed -->
-        <div class="home-left">
-          <div class="home-card home-fg-panel">
-            <div class="panel-title">😨 공포·탐욕 지수</div>
-            <div class="fg-gauge-wrap hfg-wrap">
-              <div class="fg-arc"></div>
-              <div class="fg-inner"></div>
-              <div class="fg-needle" id="home-fg-needle"></div>
-            </div>
-            <div class="fg-score-big" id="home-fg-score">—</div>
-            <div class="fg-rating-label" id="home-fg-rating">불러오는 중…</div>
-            <div class="fg-history" id="home-fg-history"></div>
-          </div>
-        </div>
 
         <!-- 오른쪽: 2×2 패널 그리드 -->
         <div class="home-right">
