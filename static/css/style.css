@@ -1590,6 +1590,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   z-index: 2;
 }
 #chart-draw-canvas.draw-active { pointer-events: auto; cursor: crosshair; }
+/* 지표 레이어(일목 구름·매물대) — 그리기 캔버스 아래, 항상 마우스 통과 */
+#chart-ind-canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
 
 /* 가격 알림 버튼 */
 .chart-alert-btn {

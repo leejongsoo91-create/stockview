@@ -46,6 +46,7 @@ const _IND_TABS = [
   { id: 'band', name: '밴드' },
   { id: 'sub',  name: '보조지표' },
   { id: 'vol',  name: '거래량' },
+  { id: 'pro',  name: '전문가' },
 ];
 const _IND_DEFS = [
   { id: 'ma5',   tab: 'ma', name: '5일',   title: '5일 이동평균선',   period: 5,   color: '#f59e0b',
@@ -73,6 +74,10 @@ const _IND_DEFS = [
     calc: 'EMA26 + 대표가(고+저+종)/3의 26일 표준편차×2.5, 25봉 앞으로',
     what: '26일 지수평균에 변동폭을 더해 25봉 앞으로 옮긴 위쪽 선. 그래서 오늘 이후 25봉까지 그려져요.',
     how: '주가 위에 걸린 "넘어야 할 벽"이에요. 주가가 이 점선을 넘어서면 벽을 깬 거예요.' },
+  { id: 'ichi',  tab: 'band', name: '일목', title: '일목균형표', color: '#ef4444', color2: '#3b82f6', defaultOn: false,
+    calc: '전환선 9일 · 기준선 26일 · 선행스팬 26봉 앞(2는 52일) · 후행스팬 26봉 뒤',
+    what: '5개 선과 구름으로 추세·힘·지지저항을 한 번에 보는 일본식 지표. 빨강=전환선, 파랑=기준선, 칠해진 띠=구름.',
+    how: '주가가 구름 위에 있으면 힘이 센 쪽, 구름 아래면 약한 쪽이에요. 구름이 두꺼울수록 뚫고 지나가기 어려워요.' },
   { id: 'rsi',   tab: 'sub', name: 'RSI', title: 'RSI (상대강도지수)', color: '#e3b341',
     calc: '14일 기준, 0~100', what: '0~100. 70 이상이면 과매수(너무 올라 조정 가능), 30 이하면 과매도(너무 빠져 반등 가능).',
     how: '선이 위쪽 띠(70)를 넘으면 너무 달아오른 것, 아래쪽 띠(30) 밑이면 너무 식은 거예요. 띠 안으로 돌아올 때를 눈여겨봐요.' },
@@ -85,21 +90,30 @@ const _IND_DEFS = [
   { id: 'volma', tab: 'vol', name: '거래량 MA', title: '거래량 이동평균', color: 'rgba(255,166,77,0.95)',
     calc: '최근 20일 거래량 평균', what: '최근 거래량의 평균 수준을 보여주는 선.',
     how: '오늘 거래량 막대가 이 선보다 훨씬 길면 평소보다 관심이 몰린 날이에요. 가격이 크게 움직일 때 거래량이 같이 늘면 믿을 만한 움직임이에요.' },
+  { id: 'vprof', tab: 'vol', name: '매물대', title: '매물대', color: '#8b949e', defaultOn: false,
+    calc: '화면에 보이는 기간의 가격 범위를 24칸으로 나눠 칸마다 거래량 합 (확대·이동하면 다시 계산)',
+    what: '가격대별로 쌓인 거래량 분포. 거래가 많이 몰린 가격대는 강한 지지·저항으로 작용해요.',
+    how: '옆으로 긴 막대가 있는 가격대에서 많은 사람이 사고팔았어요. 그 가격 근처에 오면 멈추거나 튕기기 쉬워요. 가장 긴 막대는 파란색이에요.' },
+  { id: 'ymgp',  tab: 'pro', name: '역매공파', title: '역매공파', color: '#eab308', color2: '#22c55e', defaultOn: false, whatLabel: '언제 켜지나',
+    calc: '112<224<448일선(장기 역배열) · 최근 20일 안에 거래량 2배↑ 양봉 · 종가가 파란점선/112·224일선 ±3% · 몸통 2% 이하 양봉',
+    what: '"역배열 매집 공략" 표시. 오래 내려온(장기 역배열) 종목에서 매집 흔적이 있고, 주가가 파란점선·장기 이평 근처에서 작은 양봉을 만들면 캔들 아래 네모를 찍어요. 매집 거래량이 평균 3배 이상이면 초록, 아니면 노랑.',
+    how: '오래 내려간 뒤 바닥에서 조용히 모으는 흔적이 보일 때 찍혀요. 네모가 여러 번 나오면 바닥을 다지는 중일 수 있어요. 화면 표시 전용 — 매수·매도 신호 계산에는 들어가지 않아요.' },
 ];
 const _IND_MA = _IND_DEFS.filter(d => d.period);
 
 // 켜진 지표 저장 — localStorage 'CHI' = { on: [켜진 id], known: [저장 당시 있던 id] }
-// known에 없는 지표(나중에 새로 생긴 것)는 기본값(켜짐)으로 둔다. 저장값이 없으면 전체 켜짐.
+// known에 없는 지표(나중에 새로 생긴 것)는 그 지표의 기본값(defaultOn, 생략 시 켜짐)을 따른다.
+// 일목·매물대·역매공파는 defaultOn:false — 사용자가 ⚙에서 직접 켠다.
 const _CHI_KEY = 'CHI';
 function _loadActiveInds() {
-  const all = _IND_DEFS.map(d => d.id);
   try {
     const saved = JSON.parse(localStorage.getItem(_CHI_KEY) || 'null');
     if (saved && Array.isArray(saved.on) && Array.isArray(saved.known)) {
-      return new Set(all.filter(id => saved.on.includes(id) || !saved.known.includes(id)));
+      // 저장 당시 없던 지표(새로 생긴 것)는 그 지표의 기본값을 따른다
+      return new Set(_IND_DEFS.filter(d => saved.on.includes(d.id) || (!saved.known.includes(d.id) && d.defaultOn !== false)).map(d => d.id));
     }
   } catch {}
-  return new Set(all);
+  return new Set(_IND_DEFS.filter(d => d.defaultOn !== false).map(d => d.id));   // 처음: 기본 켜짐 지표만
 }
 function _saveActiveInds() {
   try {
@@ -109,7 +123,8 @@ function _saveActiveInds() {
 
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
 const _activeInds = _loadActiveInds();
-const _indSeries  = { bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null, blue: null };
+const _indSeries  = { bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null, blue: null,
+                      ichiT: null, ichiK: null, ichiA: null, ichiB: null, ichiC: null };
 _IND_MA.forEach(d => { _indSeries[d.id] = null; });
 // 일봉 화면 기간 앞쪽 봉(/api/chart-warmup) — 긴 이평선·파란점선을 화면 첫 봉부터 그리기 위한 계산 전용
 let   _warmOhlcv  = [];
@@ -302,6 +317,7 @@ function _applyScaleMode() {
              : LightweightCharts.PriceScaleMode.Normal;
   _lwChart.priceScale('right').applyOptions({ mode });
   Object.entries(_indSeries).forEach(([k, ser]) => { if (ser && k !== 'volma') ser.applyOptions(_overlayScaleOpts()); });
+  _scheduleIndOverlay();
 }
 
 // 처음 화면·전체보기: 첫 봉 ~ 마지막 봉 + 10칸 (fitContent는 파란점선 미래 25칸까지 넣어 빈 곳이 커짐)
@@ -380,6 +396,7 @@ function _createLWChart() {
     if (_rsiChart)  _rsiChart.timeScale().setVisibleLogicalRange(range);
     if (_macdChart) _macdChart.timeScale().setVisibleLogicalRange(range);
     _redrawDrawings();
+    _scheduleIndOverlay();
   });
 
   // 서브 패널 크로스헤어 동기화
@@ -398,6 +415,12 @@ function _createLWChart() {
   _zoomBoxEl = document.createElement('div');
   _zoomBoxEl.className = 'chart-zoom-box';
   container.appendChild(_zoomBoxEl);
+
+  // 지표 레이어 캔버스(일목 구름·매물대) — 그리기 캔버스 아래, 마우스 이벤트 통과
+  _indCanvas = document.createElement('canvas');
+  _indCanvas.id = 'chart-ind-canvas';
+  container.appendChild(_indCanvas);
+  _indCtx = _indCanvas.getContext('2d');
 
   // 그리기 도구용 캔버스 오버레이
   _drawCanvas = document.createElement('canvas');
@@ -607,12 +630,82 @@ function _yToPrice(y) { return _candleSeries.coordinateToPrice(y); }
 function _timeToX(time) { return _lwChart.timeScale().timeToCoordinate(time); }
 function _priceToY(price) { return _candleSeries.priceToCoordinate(price); }
 
+// ── 지표 레이어 캔버스: 일목 구름 · 매물대 ─────────────────────────────────────
+let _indCanvas = null, _indCtx = null, _indOverlayRaf = 0;
+let _ichiCloud   = null;   // { a: 선행스팬1 데이터, b: 선행스팬2 데이터 } — _applyIndicators가 채움
+let _ymgpMarkers = [];     // 역매공파 표시 — _applyIndicators가 채움
+const _VPROF_BINS = 24;
+
+// 가격 눈금이 자동으로 다시 잡힌 뒤 좌표를 읽도록 다음 프레임에 그린다
+function _scheduleIndOverlay() {
+  if (_indOverlayRaf) return;
+  _indOverlayRaf = requestAnimationFrame(() => { _indOverlayRaf = 0; _redrawIndOverlay(); });
+}
+
+function _redrawIndOverlay() {
+  if (!_indCtx || !_indCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  _indCtx.clearRect(0, 0, _indCanvas.width / dpr, _indCanvas.height / dpr);
+  if (_compareMode || !_lastOhlcv.length || !_candleSeries) return;
+  const ts = _lwChart.timeScale();
+  const y = p => _candleSeries.priceToCoordinate(p);
+
+  // 일목 구름: 선행스팬1 ≥ 2 구간은 초록, 반대는 빨강
+  if (_ichiCloud && _activeInds.has('ichi')) {
+    const bMap = new Map(_ichiCloud.b.map(d => [d.time, d.value]));
+    const pts = _ichiCloud.a.filter(d => bMap.has(d.time)).map(d => ({
+      x: ts.timeToCoordinate(d.time), ya: y(d.value), yb: y(bMap.get(d.time)), up: d.value >= bMap.get(d.time),
+    })).filter(p => p.x != null && p.ya != null && p.yb != null);
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1], p1 = pts[i];
+      _indCtx.fillStyle = p1.up ? 'rgba(34,197,94,0.13)' : 'rgba(239,68,68,0.13)';
+      _indCtx.beginPath();
+      _indCtx.moveTo(p0.x, p0.ya); _indCtx.lineTo(p1.x, p1.ya);
+      _indCtx.lineTo(p1.x, p1.yb); _indCtx.lineTo(p0.x, p0.yb);
+      _indCtx.closePath(); _indCtx.fill();
+    }
+  }
+
+  // 매물대: 화면에 보이는 봉의 가격 범위를 24칸으로 나눠 거래량 합 → 오른쪽에서 왼쪽으로 가로 막대
+  if (_activeInds.has('vprof')) {
+    const lr = ts.getVisibleLogicalRange();
+    if (!lr) return;
+    const i0 = Math.max(0, Math.ceil(lr.from)), i1 = Math.min(_lastOhlcv.length - 1, Math.floor(lr.to));
+    if (i1 - i0 < 2) return;
+    const bars = _lastOhlcv.slice(i0, i1 + 1);
+    const lo = Math.min(...bars.map(b => b.low)), hi = Math.max(...bars.map(b => b.high));
+    if (!(hi > lo)) return;
+    const step = (hi - lo) / _VPROF_BINS, bins = new Array(_VPROF_BINS).fill(0);
+    bars.forEach(b => {   // 봉의 저가~고가에 걸친 칸에 거래량을 나눠 담음
+      const a = Math.max(0, Math.floor((b.low - lo) / step)), z = Math.min(_VPROF_BINS - 1, Math.floor((b.high - lo) / step));
+      const share = (b.volume || 0) / (z - a + 1);
+      for (let k = a; k <= z; k++) bins[k] += share;
+    });
+    const max = Math.max(...bins);
+    if (!(max > 0)) return;
+    const paneW = ts.width(), maxLen = paneW * 0.22, poc = bins.indexOf(max);
+    bins.forEach((v, k) => {
+      const yTop = y(lo + step * (k + 1)), yBot = y(lo + step * k);
+      if (yTop == null || yBot == null) return;
+      const len = v / max * maxLen, top = Math.min(yTop, yBot) + 1, h = Math.max(1, Math.abs(yBot - yTop) - 2);
+      _indCtx.fillStyle = k === poc ? 'rgba(88,166,255,0.38)' : 'rgba(139,148,158,0.26)';
+      _indCtx.fillRect(paneW - len, top, len, h);
+    });
+  }
+}
+
 function _resizeDrawCanvas() {
   if (!_drawCanvas) return;
   const container = document.getElementById('lw-chart');
   const w = container.clientWidth;
   const h = container.clientHeight;
   const dpr = window.devicePixelRatio || 1;
+  if (_indCanvas) {
+    _indCanvas.width = w * dpr; _indCanvas.height = h * dpr;
+    _indCanvas.style.width = w + 'px'; _indCanvas.style.height = h + 'px';
+    _indCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    _scheduleIndOverlay();
+  }
   _drawCanvas.width  = w * dpr;
   _drawCanvas.height = h * dpr;
   _drawCanvas.style.width  = w + 'px';
@@ -1462,6 +1555,81 @@ function _calcBlueDotted(bars, warmLen, times) {
   return out;
 }
 
+// 계산 배열(앞쪽 warmup 포함)을 shift봉 옮겨 화면 시각에 맞춘 선 데이터로. shift>0이면 미래 쪽으로 이어진다.
+function _shiftedData(vals, shift, warmLen, times) {
+  const future = shift > 0 ? _futureTimes(times, shift) : [];
+  const out = [];
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    if (v == null || !isFinite(v)) continue;
+    const j = i + shift - warmLen;
+    if (j < 0) continue;
+    const t = j < times.length ? times[j] : future[j - times.length];
+    if (t == null) continue;
+    out.push({ time: t, value: +v.toFixed(4) });
+  }
+  return out;
+}
+
+// 일목균형표 (표준 9·26·52): 전환선·기준선은 그 자리, 선행스팬1·2는 26봉 앞, 후행스팬은 종가를 26봉 뒤에 그린다
+const _ICHI_SHIFT = 26;
+function _calcIchimoku(bars) {
+  const mid = (i, n) => {
+    if (i < n - 1) return null;
+    let h = -Infinity, l = Infinity;
+    for (let k = i - n + 1; k <= i; k++) { if (bars[k].high > h) h = bars[k].high; if (bars[k].low < l) l = bars[k].low; }
+    return (h + l) / 2;
+  };
+  const tenkan = bars.map((_, i) => mid(i, 9));
+  const kijun  = bars.map((_, i) => mid(i, 26));
+  const spanA  = tenkan.map((t, i) => t == null || kijun[i] == null ? null : (t + kijun[i]) / 2);
+  const spanB  = bars.map((_, i) => mid(i, 52));
+  return { tenkan, kijun, spanA, spanB, chikou: bars.map(b => b.close) };
+}
+
+// 역매공파(역배열 매집 공략) — 화면 표시 전용, 매수·매도 신호 계산과 무관(data_fetcher.py 이중 구현 대상 아님).
+// 조건: ① 112<224<448일선 ② 최근 20일 안에 거래량이 직전 20일 평균의 2배 이상인 양봉
+//       ③ 종가가 파란점선 또는 112·224일선의 ±3% 안 ④ 몸통 2% 이하 양봉. 매집 거래량 3배↑면 초록, 아니면 노랑.
+const _YMGP = { near: 0.03, body: 0.02, volX: 2, strongX: 3, look: 20, labelGap: 5 };
+function _calcYmgpMarkers(bars, warmLen, times) {
+  const closes = bars.map(b => b.close), vols = bars.map(b => b.volume || 0);
+  const ma112 = _calcMA(closes, 112), ma224 = _calcMA(closes, 224), ma448 = _calcMA(closes, 448);
+  // 파란점선이 k번째 봉에 찍히는 값 = k-25번째 봉에서 계산한 값
+  const tp = bars.map(b => (b.high + b.low + b.close) / 3), ema = _calcEMA(closes, 26);
+  const blueAt = k => {
+    const i = k - _BLUE_SHIFT;
+    if (i < 25 || ema[i] == null) return null;
+    const s = tp.slice(i - 25, i + 1), m = s.reduce((a, b) => a + b, 0) / 26;
+    return ema[i] + 2.5 * Math.sqrt(s.reduce((a, b) => a + (b - m) ** 2, 0) / 26);
+  };
+  // 매집 거래량 배수: 그날 거래량 ÷ 직전 20일 평균 (양봉만)
+  const accRatio = vols.map((v, i) => {
+    if (i < 20 || bars[i].close <= bars[i].open) return 0;
+    let sum = 0; for (let k = i - 20; k < i; k++) sum += vols[k];
+    return sum > 0 ? v / (sum / 20) : 0;
+  });
+  const out = [];
+  let lastMark = -Infinity;
+  for (let k = Math.max(warmLen, 0); k < bars.length; k++) {
+    const b = bars[k];
+    if (ma448[k] == null || !(ma112[k] < ma224[k] && ma224[k] < ma448[k])) continue;           // ①
+    if (!(b.close > b.open) || (b.close - b.open) / b.open > _YMGP.body) continue;              // ④
+    const refs = [blueAt(k), ma112[k], ma224[k]].filter(v => v != null && v > 0);
+    if (!refs.some(r => Math.abs(b.close - r) / r <= _YMGP.near)) continue;                     // ③
+    let best = 0;
+    for (let i = Math.max(0, k - _YMGP.look + 1); i <= k; i++) best = Math.max(best, accRatio[i]);
+    if (best < _YMGP.volX) continue;                                                            // ②
+    const j = k - warmLen;
+    out.push({
+      time: times[j], position: 'belowBar', shape: 'square', size: 1,
+      color: best >= _YMGP.strongX ? '#22c55e' : '#eab308',
+      text: j - lastMark > _YMGP.labelGap ? '바닥 매집' : '',
+    });
+    lastMark = j;
+  }
+  return out;
+}
+
 // 마지막 봉 다음부터 count개의 미래 시각. 일봉은 주말 건너뜀(공휴일은 모름), 월봉·연봉은 달·해 단위,
 // 분봉·시봉(숫자 시각)은 마지막 간격만큼.
 function _futureTimes(times, count) {
@@ -1745,6 +1913,29 @@ function _applyIndicators() {
     _indSeries.blue.setData(_calcBlueDotted(fullBars, warm.length, times));
   } else { _rmLine('blue'); }
 
+  // 일목균형표 — 선 5개는 시리즈로, 구름(선행스팬1·2 사이 칠하기)은 지표 레이어 캔버스에 그린다
+  const ICHI_KEYS = ['ichiT', 'ichiK', 'ichiA', 'ichiB', 'ichiC'];
+  if (_activeInds.has('ichi') && fullBars.length >= 52) {
+    const ich = _calcIchimoku(fullBars);
+    const style = { ichiT: ['#ef4444', 1.5], ichiK: ['#3b82f6', 1.5], ichiA: ['rgba(34,197,94,0.6)', 1],
+                    ichiB: ['rgba(239,68,68,0.6)', 1], ichiC: ['rgba(163,163,163,0.65)', 1] };
+    ICHI_KEYS.forEach(k => _setLine(k, style[k][0], style[k][1]));
+    _indSeries.ichiT.setData(_shiftedData(ich.tenkan, 0, warm.length, times));
+    _indSeries.ichiK.setData(_shiftedData(ich.kijun,  0, warm.length, times));
+    const a = _shiftedData(ich.spanA, _ICHI_SHIFT, warm.length, times);
+    const b = _shiftedData(ich.spanB, _ICHI_SHIFT, warm.length, times);
+    _indSeries.ichiA.setData(a);
+    _indSeries.ichiB.setData(b);
+    _indSeries.ichiC.setData(_shiftedData(ich.chikou, -_ICHI_SHIFT, warm.length, times));
+    _ichiCloud = { a, b };
+  } else {
+    ICHI_KEYS.forEach(_rmLine);
+    _ichiCloud = null;
+  }
+
+  // 역매공파 표시(네모) — 신호 화살표와 함께 _setMainMarkers()에서 붙인다
+  _ymgpMarkers = _activeInds.has('ymgp') && !_chartIsDummy ? _calcYmgpMarkers(fullBars, warm.length, times) : [];
+
   // Bollinger Bands
   if (_activeInds.has('bb')) {
     const bb = _calcBB(closes);
@@ -1840,6 +2031,7 @@ function _applyIndicators() {
     _renderSignalCard();
   }
   _resizeChartPanels();
+  _scheduleIndOverlay();
 }
 
 // ── 복합 매수/매도 시그널 ────────────────────────────────────────────────────
@@ -1959,7 +2151,7 @@ function _calcSignals() {
 function _applySignalMarkers() {
   if (!_candleSeries || !_lastOhlcv.length) return;
   const result = _calcSignals();
-  if (!result || result.activeCount === 0) { _candleSeries.setMarkers([]); return; }
+  if (!result || result.activeCount === 0) { _setMainMarkers([]); return; }
 
   const { sig, times, activeCount } = result;
   const isKr = _isKrStock(_currentTicker);
@@ -1990,7 +2182,14 @@ function _applySignalMarkers() {
       });
     }
   }
-  _candleSeries.setMarkers(markers);
+  _setMainMarkers(markers);
+}
+
+// 메인 시리즈 표시 = 매수·매도 화살표 + (켜져 있으면) 역매공파 네모. Lightweight Charts는 시간순 정렬 필요
+function _setMainMarkers(signalMarkers) {
+  const all = signalMarkers.concat(_activeInds.has('ymgp') ? _ymgpMarkers : []);
+  all.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  _candleSeries.setMarkers(all);
 }
 
 function _renderSignalCard() {
@@ -2436,6 +2635,8 @@ function _renderIndicatorGuide() {
   document.getElementById('ind-guide-dot').innerHTML   = _indDot(d);
   document.getElementById('ind-guide-title').textContent = d.title;
   document.getElementById('ind-guide-cat').textContent   = _IND_TABS.find(t => t.id === d.tab).name;
+  const whatDt = document.querySelector('.ind-guide-desc dt');
+  if (whatDt) whatDt.textContent = d.whatLabel || '무엇인가';
   document.getElementById('ind-guide-what').textContent  = d.what;
   document.getElementById('ind-guide-how').textContent   = d.how;
   document.getElementById('ind-guide-calc').textContent  = '계산: ' + d.calc;
@@ -2462,9 +2663,9 @@ function _guideData() {
 
 function _guideSvg(ind) {
   const bars = _guideData(), N = bars.length, closes = bars.map(b => b.close);
-  const W = 700, isBlue = ind.id === 'blue', sub = ind.tab === 'sub' || ind.tab === 'vol';
+  const W = 700, isBlue = ind.id === 'blue', isIchi = ind.id === 'ichi', sub = ind.tab === 'sub' || ind.id === 'volma';
   const priceH = sub ? 180 : 280, subTop = 195, subH = 95;
-  const span = N - 1 + (isBlue ? _BLUE_SHIFT : 0);
+  const span = N - 1 + (isBlue ? _BLUE_SHIFT : isIchi ? _ICHI_SHIFT : 0);
   const x = i => 10 + (i / span) * (W - 20);
   const std = (a, n) => a.map((_, i) => { if (i < n - 1) return null; const s = a.slice(i - n + 1, i + 1), m = s.reduce((p, q) => p + q, 0) / n; return Math.sqrt(s.reduce((p, q) => p + (q - m) ** 2, 0) / n); });
   const SHOW = { ma5: 5, ma20: 20, ma60: 40, ma112: 60, ma224: 80, ma448: 100 };
@@ -2474,6 +2675,11 @@ function _guideSvg(ind) {
     over.push({ vals: b.upper, color: ind.color, bold: true, label: '위 밴드' }, { vals: b.mid, color: ind.color, thin: true }, { vals: b.lower, color: ind.color, bold: true, label: '아래 밴드' }); }
   if (isBlue) { const tp = bars.map(b => (b.high + b.low + b.close) / 3), e = _calcEMA(closes, 26), s = std(tp, 26);
     over.push({ vals: [...Array(_BLUE_SHIFT).fill(null), ...e.map((v, i) => v == null ? null : v + 2.5 * s[i])], color: ind.color, bold: true, dash: true, label: '넘어야 할 벽' }); }
+  let cloud = null;
+  if (isIchi) { const ich = _calcIchimoku(bars), pad = Array(_ICHI_SHIFT).fill(null);
+    cloud = { a: [...pad, ...ich.spanA], b: [...pad, ...ich.spanB] };
+    over.push({ vals: ich.tenkan, color: ind.color, bold: true }, { vals: ich.kijun, color: ind.color2, bold: true },
+              { vals: cloud.a, color: '#22c55e', thin: true }, { vals: cloud.b, color: '#ef4444', thin: true }); }
   let lo = Math.min(...bars.map(b => b.low)), hi = Math.max(...bars.map(b => b.high));
   over.forEach(o => o.vals.forEach(v => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
   const y = v => 10 + (1 - (v - lo) / (hi - lo)) * (priceH - 20);
@@ -2484,9 +2690,38 @@ function _guideSvg(ind) {
     u.vals.forEach((v, i) => v != null && pts.push(`${x(i)},${y(v)}`));
     l.vals.map((v, i) => [v, i]).reverse().forEach(([v, i]) => v != null && pts.push(`${x(i)},${y(v)}`));
     out.push(`<polygon points="${pts.join(' ')}" fill="${ind.color}" opacity=".08"/>`); }
+  if (cloud) {   // 일목 구름: 선행스팬1 ≥ 2 초록, 아니면 빨강
+    for (let i = 1; i < cloud.a.length; i++) {
+      const a0 = cloud.a[i - 1], a1 = cloud.a[i], b0 = cloud.b[i - 1], b1 = cloud.b[i];
+      if ([a0, a1, b0, b1].some(v => v == null)) continue;
+      out.push(`<polygon points="${x(i - 1)},${y(a0)} ${x(i)},${y(a1)} ${x(i)},${y(b1)} ${x(i - 1)},${y(b0)}" fill="${a1 >= b1 ? '#22c55e' : '#ef4444'}" opacity=".16"/>`);
+    }
+    const ci = cloud.a.findIndex((v, i) => v != null && cloud.b[i] != null) + 6;
+    if (cloud.a[ci] != null) out.push(`<text x="${x(ci)}" y="${Math.min(y(cloud.a[ci]), y(cloud.b[ci])) - 8}" class="ind-guide-svg-label">구름</text>`);
+  }
   bars.forEach((b, i) => { const col = b.close >= b.open ? '#3fb950' : '#f85149';
     out.push(`<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.high)}" y2="${y(b.low)}" stroke="${col}" opacity="${fade}"/>`,
       `<rect x="${x(i) - bw / 2}" y="${y(Math.max(b.open, b.close))}" width="${bw}" height="${Math.max(1, Math.abs(y(b.open) - y(b.close)))}" fill="${col}" opacity="${fade}"/>`); });
+  if (ind.id === 'vprof') {   // 매물대: 가격대 24칸 거래량 → 오른쪽 가로 막대, 가장 긴 칸은 파랑
+    const nb = 24, step = (hi - lo) / nb, bins = new Array(nb).fill(0);
+    bars.forEach(b => { const a0 = Math.max(0, Math.floor((b.low - lo) / step)), z = Math.min(nb - 1, Math.floor((b.high - lo) / step));
+      for (let k = a0; k <= z; k++) bins[k] += b.volume / (z - a0 + 1); });
+    const mx = Math.max(...bins), poc = bins.indexOf(mx);
+    bins.forEach((v, k) => { const top = y(lo + step * (k + 1)) + 1, h = Math.max(1, y(lo + step * k) - y(lo + step * (k + 1)) - 2), len = v / mx * W * 0.24;
+      out.push(`<rect x="${W - 10 - len}" y="${top}" width="${len}" height="${h}" fill="${k === poc ? '#58a6ff' : '#8b949e'}" opacity="${k === poc ? .45 : .3}"/>`); });
+    out.push(`<text x="${W - 150}" y="${y(lo + step * (poc + 1)) - 6}" class="ind-guide-svg-label">많이 거래된 가격대</text>`);
+  }
+  if (ind.id === 'ymgp') {   // 역매공파: 바닥권의 작은 양봉 아래 네모 (설명용 위치)
+    let last = -99, n = 0;
+    for (let i = 55; i < 95 && n < 3; i++) {
+      const b = bars[i];
+      if (b.close > b.open && (b.close - b.open) / b.open < 0.012 && i - last >= 10) {
+        out.push(`<rect x="${x(i) - 5}" y="${y(b.low) + 8}" width="10" height="10" fill="${n === 1 ? ind.color2 : ind.color}"/>`);
+        if (n === 0) out.push(`<text x="${x(i) + 10}" y="${y(b.low) + 34}" class="ind-guide-svg-label">바닥 매집</text>`);
+        last = i; n++;
+      }
+    }
+  }
   const pts = vals => vals.map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean).join(' ');
   over.forEach(o => {
     out.push(`<polyline points="${pts(o.vals)}" fill="none" stroke="${o.color}" stroke-width="${o.bold ? 3 : o.thin ? 1 : 1.2}" opacity="${o.bold ? 1 : .35}"${o.dash ? ' stroke-dasharray="7 5"' : ''}/>`);
@@ -2686,6 +2921,7 @@ async function _loadCompareChart(ticker2) {
   _lwChart.timeScale().fitContent();
 
   _compareMode = true;
+  _scheduleIndOverlay();   // 비교 모드에선 구름·매물대 지움
 
   // 범례 표시
   const legend = document.getElementById('cmp-legend');
@@ -2724,6 +2960,7 @@ function _exitCompare() {
   if (legend) legend.style.display = 'none';
 
   document.getElementById('chart-cmp-toggle')?.classList.remove('active');
+  _scheduleIndOverlay();   // 구름·매물대 다시 표시
 }
 
 function _bindCompareEvents() {
