@@ -14,7 +14,8 @@
 
 ## Windows CLI 설치 (문서에 없음)
 - 공식 `install.sh`는 macOS·Linux 전용. Windows용은 `https://releases.aside.com/cli/AsideCLI-win-x64-latest.zip` (aside.exe 1개, AT YOUR SIDE INC 서명 확인)
-- 설치 위치: `%USERPROFILE%\.aside\cli\aside.exe`. 업데이트는 `aside update`
+- 설치 위치: 처음엔 `%USERPROFILE%\.aside\cli\aside.exe`였으나 **11-17 `aside update`(1.26.1115.1556)부터 `%LOCALAPPDATA%\Aside\CLI\current\aside.exe`에 설치됨** → MCP 등록 경로도 새 위치로 변경(`claude mcp get aside` Connected 확인). 옛 위치 파일은 남아 있지만 쓰지 않음
+- 업데이트는 `aside update` (확인 질문 Y/n이 나옴 — 자동 실행 시 `echo Y |`). 업데이트 후 경로가 또 바뀌었는지 `claude mcp get aside`로 확인
 - CLI는 브라우저 앱의 로그인 계정을 그대로 사용 (별도 `aside login` 불필요했음)
 
 ## MCP 도구
