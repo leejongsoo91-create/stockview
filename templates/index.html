@@ -89,8 +89,21 @@
         <div class="home-right">
           <div class="home-right-grid">
             <div class="movers-panel">
-              <h3 class="panel-title">🔥 거래량 상위</h3>
-              <table class="movers-table"><tbody id="volume-body"></tbody></table>
+              <div class="panel-title top-head">
+                <span class="top-title">🔥 상위 종목 <span id="top-count" class="top-count"></span></span>
+                <span class="top-seg-label">시장</span>
+                <span class="top-seg top-seg-big" id="top-market">
+                  <button data-v="us" class="active">🇺🇸 미국</button><button data-v="kr">🇰🇷 국내</button>
+                </span>
+                <span class="top-seg-label">기준</span>
+                <span class="top-seg" id="top-by">
+                  <button data-v="volume" class="active">거래량</button><button data-v="amount">거래대금</button><button data-v="cap">시총</button>
+                </span>
+              </div>
+              <div class="top-scroll" id="top-scroll">
+                <table class="movers-table top-table"><tbody id="volume-body"></tbody></table>
+              </div>
+              <div class="top-foot" id="top-foot"></div>
             </div>
             <div class="news-preview-panel">
               <h3 class="panel-title">📰 최신 뉴스</h3>

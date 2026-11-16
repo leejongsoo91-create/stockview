@@ -587,21 +587,145 @@ async function loadSectorPerf(period, silent = false) {
   }
 }
 
-// ── Volume Leaders ───────────────────────────────────────────────────────────
+// ── 홈 상위 종목 Top 100 (거래량·거래대금·시총 / 미국·국내) ─────────────────────
+// 기준·시장 버튼으로 바꾸고, 1분 갱신(stocks_update·kr_stocks_update) 때 다시 정렬한다.
+// 같은 시장 안에서 순위가 바뀌면 줄이 새 자리로 스르륵 이동하고 ▲n·▼n·NEW를 3초간 표시(FLIP 애니메이션).
+// 선택값은 localStorage HMV({market, by})에 저장. 거래대금 = 현재가 × 거래량(서버에 별도 값 없음).
+const _TOP_N = 100;
+const _top = { market: 'us', by: 'volume', us: null, rows: {}, rank: {}, shownMarket: null, fadeT: null, bound: false };
+try {
+  const v = JSON.parse(localStorage.getItem('HMV') || '{}');
+  if (v.market === 'us' || v.market === 'kr') _top.market = v.market;
+  if (['volume', 'amount', 'cap'].includes(v.by)) _top.by = v.by;
+} catch {}
+
+function _topVal(s, market, by) {
+  if (by === 'volume') return s.volume || 0;
+  if (by === 'amount') return (s.price || 0) * (s.volume || 0);
+  return market === 'us' ? (s.market_cap || 0) * 1e9 : (s.market_cap || 0);   // 미국 market_cap은 십억달러 단위
+}
+function _topFmtUsd(n) {
+  if (n >= 1e12) return '$' + (n / 1e12).toFixed(2) + 'T';
+  if (n >= 1e9)  return '$' + (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6)  return '$' + (n / 1e6).toFixed(1) + 'M';
+  return '$' + Math.round(n).toLocaleString();
+}
+function _topFmtKrw(n) {
+  if (n >= 1e14) return Math.round(n / 1e12).toLocaleString() + '조원';   // 100조 이상은 소수점 없이 (1,150조원)
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + '조원';
+  if (n >= 1e8)  return Math.round(n / 1e8).toLocaleString() + '억원';
+  return Math.round(n).toLocaleString() + '원';
+}
+function _topLabel(s, market, by) {
+  const v = _topVal(s, market, by);
+  if (by === 'volume') return '거래량 <b>' + (market === 'us' ? fmtVol(v) : (v >= 1e4 ? Math.round(v / 1e4).toLocaleString() + '만주' : v.toLocaleString() + '주')) + '</b>';
+  return (by === 'amount' ? '거래대금 ' : '시총 ') + '<b>' + (market === 'us' ? _topFmtUsd(v) : _topFmtKrw(v)) + '</b>';
+}
+
+function _topBind() {
+  if (_top.bound) return;
+  const head = document.querySelector('.movers-panel .top-head');
+  if (!head) return;
+  _top.bound = true;
+  head.addEventListener('click', e => {
+    const b = e.target.closest('.top-seg button');
+    if (!b) return;
+    const key = b.parentNode.id === 'top-market' ? 'market' : 'by';
+    if (_top[key] === b.dataset.v) return;
+    _top[key] = b.dataset.v;
+    try { localStorage.setItem('HMV', JSON.stringify({ market: _top.market, by: _top.by })); } catch {}
+    _renderTop();
+  });
+}
+
+// 기존 호출부(loadHome·_refreshCurrentView)는 미국 목록을 넘긴다
 function renderVolumeLeaders(stocks) {
-  const top = [...stocks]
-    .filter(s => s.volume > 0)
-    .sort((a, b) => b.volume - a.volume)
-    .slice(0, 10);
+  if (stocks) _top.us = stocks;
+  _renderTop();
+}
+
+function _renderTop() {
+  _topBind();
   const el = document.getElementById('volume-body');
   if (!el) return;
-  el.innerHTML = top.map(s => `
-    <tr onclick="navigateToChart('${s.ticker}')">
-      <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
-      <td class="m-ticker">${s.ticker}</td>
-      <td class="m-name">${s.name}<br><span style="font-size:11px;color:#6e7681">${fmtVol(s.volume)}</span></td>
-      <td class="m-pct ${colorCls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
-    </tr>`).join('');
+  const { market, by } = _top;
+  document.querySelectorAll('#top-market button').forEach(b => b.classList.toggle('active', b.dataset.v === market));
+  document.querySelectorAll('#top-by button').forEach(b => b.classList.toggle('active', b.dataset.v === by));
+
+  const src = market === 'us' ? (_top.us || window._scStocks || []) : (window._krStocks || []);
+  if (market === 'kr' && !src.length) {   // 국내 목록을 아직 안 받았으면 받아서 다시 그림
+    el.innerHTML = '<tr><td style="color:var(--muted)">국내 종목 불러오는 중…</td></tr>';
+    _top.rows = {}; _top.shownMarket = null;
+    api('/api/kr-stocks').then(d => { window._krStocks = d; if (_top.market === 'kr') _renderTop(); }).catch(() => {});
+    return;
+  }
+  const top = src
+    .filter(s => market === 'us' ? !s.non_common : (s.kind || 'stock') === 'stock')
+    .filter(s => _topVal(s, market, by) > 0)
+    .sort((a, b) => _topVal(b, market, by) - _topVal(a, market, by))
+    .slice(0, _TOP_N);
+
+  const anim = _top.shownMarket === market;   // 시장을 바꾼 경우엔 종목이 전부 달라 애니메이션 없이 새로 그림
+  if (!anim) { el.innerHTML = ''; _top.rows = {}; _top.rank = {}; }
+  const oldTop = {};
+  for (const k in _top.rows) oldTop[k] = _top.rows[k].getBoundingClientRect().top;
+
+  const keep = new Set(), newRank = {};
+  top.forEach((s, i) => {
+    const t = s.ticker, rank = i + 1;
+    newRank[t] = rank; keep.add(t);
+    let tr = _top.rows[t];
+    if (!tr) { tr = document.createElement('tr'); _top.rows[t] = tr; tr.onclick = () => navigateToChart(t); }
+    const pr = _top.rank[t], d = pr ? pr - rank : null;
+    const mv = !anim ? '' : pr == null ? '<span class="top-mv top-mv-new">NEW</span>'
+      : d > 0 ? `<span class="top-mv up">▲${d}</span>` : d < 0 ? `<span class="top-mv down">▼${-d}</span>` : '';
+    const code = market === 'kr' ? (s.code || t.split('.')[0]) : t;
+    const name = market === 'kr' ? s.name : s.name + (s.name_ko ? ` (${s.name_ko})` : '');
+    const price = market === 'kr' ? fmtKrw(s.price || 0)
+      : '$' + (s.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    tr.innerHTML = `
+      <td class="top-rank">${rank}${mv}</td>
+      <td onclick="event.stopPropagation()" style="width:28px">${starBtn(t)}</td>
+      <td class="m-ticker">${code}</td>
+      <td class="m-name">${_escHtml(name || '')}<br><span class="top-sub">${_topLabel(s, market, by)}</span></td>
+      <td class="top-price">${price}</td>
+      <td class="m-pct ${colorCls(s.change_pct || 0)}">${fmtPct(s.change_pct || 0)}</td>`;
+    tr.classList.toggle('top-moved', anim && d !== 0);
+    el.appendChild(tr);   // 이미 있는 줄은 새 순서 자리로 옮겨짐
+  });
+  for (const k in _top.rows) if (!keep.has(k)) { _top.rows[k].remove(); delete _top.rows[k]; }
+
+  if (anim) {
+    for (const k in _top.rows) {
+      const tr = _top.rows[k];
+      tr.style.transition = 'none';
+      if (k in oldTop) {
+        const dy = oldTop[k] - tr.getBoundingClientRect().top;
+        tr.style.transform = dy ? `translateY(${dy}px)` : '';
+      } else tr.style.opacity = '0';
+    }
+    el.offsetHeight;   // 시작 위치를 먼저 반영시킨 뒤 원래 자리로 이동
+    for (const k in _top.rows) {
+      const tr = _top.rows[k];
+      tr.style.transition = 'transform .7s ease, opacity .7s ease, background .4s';
+      tr.style.transform = ''; tr.style.opacity = '';
+    }
+    clearTimeout(_top.fadeT);
+    _top.fadeT = setTimeout(() => {
+      el.querySelectorAll('.top-mv').forEach(e => e.classList.add('top-mv-fade'));
+      el.querySelectorAll('tr.top-moved').forEach(e => e.classList.remove('top-moved'));
+    }, 3000);
+  } else {
+    const sc = document.getElementById('top-scroll');
+    if (sc) sc.scrollTop = 0;
+  }
+  _top.rank = newRank; _top.shownMarket = market;
+
+  const cnt = document.getElementById('top-count');
+  if (cnt) cnt.textContent = `· Top ${top.length}`;
+  const foot = document.getElementById('top-foot');
+  if (foot) foot.textContent = (market === 'us' ? '미국 보통주만 (워런트·우선주 제외)' : '국내 주식만 (ETF·ETN 제외)')
+    + ' · 거래대금 = 현재가 × 거래량 · 장중 1분마다 갱신';
 }
 
 function renderMarketStatBar(stocks) {
@@ -1465,6 +1589,8 @@ function initSocketIO() {
       if (_currentView === 'watchlist' && typeof renderWatchlist === 'function' && !_isTypingInTable()) {
         renderWatchlist();
       }
+      if (Array.isArray(krStocks) && krStocks.length) window._krStocks = krStocks;   // 글로벌 검색·홈 상위 종목 공용
+      if (_currentView === 'home' && _top.market === 'kr') _renderTop();
       if (typeof _checkAllAlerts === 'function') _checkAllAlerts(krStocks);
       updateTimestamp();
     } catch {}
