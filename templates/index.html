@@ -424,16 +424,42 @@
         </div>
         <div class="chart-indicator-row">
           <span class="quick-label">지표:</span>
-          <button class="ind-btn ind-ma5"    data-ind="ma5">MA 5</button>
-          <button class="ind-btn ind-ma20"   data-ind="ma20">MA 20</button>
-          <button class="ind-btn ind-ma60"   data-ind="ma60">MA 60</button>
-          <button class="ind-btn ind-ma120"  data-ind="ma120">MA 120</button>
-          <button class="ind-btn ind-ma240"  data-ind="ma240">MA 240</button>
-          <button class="ind-btn ind-bb"     data-ind="bb">BB</button>
-          <button class="ind-btn ind-rsi"    data-ind="rsi">RSI</button>
-          <button class="ind-btn ind-macd"   data-ind="macd">MACD</button>
-          <button class="ind-btn ind-sto"    data-ind="sto">STO</button>
-          <button class="ind-btn ind-volma"  data-ind="volma">거래량 MA</button>
+          <!-- 지표 버튼은 chart.js의 _IND_DEFS 표로 만든다 (설정 창·가이드와 같은 목록) -->
+          <span id="ind-btns" class="ind-btns"></span>
+          <span class="ind-tools">
+            <button id="ind-settings-btn" class="ind-icon-btn" title="지표 설정 — 켜기/끄기" aria-haspopup="dialog">⚙</button>
+            <button id="ind-help-btn" class="ind-icon-btn" title="지표 가이드 — 각 지표의 뜻" aria-haspopup="dialog">?</button>
+          </span>
+          <!-- ⚙ 지표 설정 창 -->
+          <div id="ind-settings" class="ind-settings" role="dialog" aria-label="지표 설정" hidden></div>
+        </div>
+        <!-- ? 지표 가이드 창 -->
+        <div id="ind-guide" class="ind-guide-backdrop" hidden>
+          <div class="ind-guide" role="dialog" aria-modal="true" aria-labelledby="ind-guide-title">
+            <div class="ind-guide-head">
+              <span id="ind-guide-dot"></span>
+              <span id="ind-guide-title" class="ind-guide-title"></span>
+              <span id="ind-guide-cat" class="ind-guide-cat"></span>
+              <button id="ind-guide-close" class="ind-guide-close" aria-label="닫기">✕</button>
+            </div>
+            <div id="ind-guide-tabs" class="ind-guide-tabs"></div>
+            <div id="ind-guide-chips" class="ind-guide-chips"></div>
+            <div class="ind-guide-body">
+              <div class="ind-guide-demo"><svg id="ind-guide-svg" viewBox="0 0 700 300" role="img" aria-label="지표 예시 그림"></svg></div>
+              <dl class="ind-guide-desc">
+                <dt>무엇인가</dt><dd id="ind-guide-what"></dd>
+                <dt>어떻게 읽나</dt><dd id="ind-guide-how"></dd>
+              </dl>
+              <div class="ind-guide-meta">
+                <span id="ind-guide-calc"></span>
+                <span class="ind-guide-spacer"></span>
+                <label class="ind-switch-label">차트에 표시
+                  <button id="ind-guide-switch" class="ind-switch" role="switch" aria-checked="false"></button>
+                </label>
+              </div>
+              <div class="ind-guide-note">예시 그림은 설명용 가상 데이터입니다.</div>
+            </div>
+          </div>
         </div>
         <div class="chart-draw-row">
           <span class="quick-label">그리기:</span>

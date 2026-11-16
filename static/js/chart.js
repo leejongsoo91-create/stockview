@@ -14,9 +14,81 @@ let _candleTimer    = null;
 let _lastOhlcv      = [];
 let _chartIsDummy   = false;  // 현재 표시 중인 OHLCV가 서버 폴백 더미(_dummy 태그)인지
 
+// ── 기술 지표 정의 (지표 버튼 줄 · ⚙ 설정 창 · ? 가이드가 모두 이 표 하나를 쓴다) ──────────
+// tab: 가이드 탭 / period: 이동평균 기간 / color(2): 차트에 실제로 그리는 색과 같게 유지
+const _IND_TABS = [
+  { id: 'ma',   name: '이평선' },
+  { id: 'band', name: '밴드' },
+  { id: 'sub',  name: '보조지표' },
+  { id: 'vol',  name: '거래량' },
+];
+const _IND_DEFS = [
+  { id: 'ma5',   tab: 'ma', name: '5일',   title: '5일 이동평균선',   period: 5,   color: '#f59e0b',
+    calc: '최근 5일 종가 평균', what: '최근 5일 종가 평균. 단기 흐름을 보여주는 선.',
+    how: '가장 빠르게 움직이는 선이에요. 주가가 이 선 위에 붙어 가면 요 며칠 힘이 좋은 거예요.' },
+  { id: 'ma20',  tab: 'ma', name: '20일',  title: '20일 이동평균선',  period: 20,  color: '#22c55e',
+    calc: '최근 20일(약 1개월) 종가 평균', what: '약 1개월 종가 평균. 단기 추세의 중심선.',
+    how: '주가가 이 선 위에 있으면 최근 한 달 평균보다 비싸게 거래되는 중이에요. 선이 위로 휘면 오르는 흐름이에요.' },
+  { id: 'ma60',  tab: 'ma', name: '60일',  title: '60일 이동평균선',  period: 60,  color: '#d0d7de',
+    calc: '최근 60일(약 3개월) 종가 평균', what: '약 3개월 종가 평균. 중기 추세·수급선으로 봐요.',
+    how: '큰 흐름의 바닥이나 천장 역할을 자주 해요. 주가가 이 선 위에서 버티면 중기 흐름이 살아 있는 거예요.' },
+  { id: 'ma112', tab: 'ma', name: '112일', title: '112일 이동평균선', period: 112, color: '#ec4899',
+    calc: '최근 112일(약 6개월) 종가 평균', what: '약 6개월 평균. 중기 추세의 방향을 보여주는 선.',
+    how: '반년 평균이라 천천히 움직여요. 주가가 이 선을 아래에서 위로 넘으면 반년 흐름이 좋아진 것으로 봐요.' },
+  { id: 'ma224', tab: 'ma', name: '224일', title: '224일 이동평균선', period: 224, color: '#a855f7',
+    calc: '최근 224일(약 1년) 종가 평균', what: '약 1년 평균. 이 선 위면 1년 평균보다 비싼 것, 아래면 싼 것.',
+    how: '이 선을 아래에서 위로 넘으면 1년 흐름이 바뀌는 신호로 많이 봐요.' },
+  { id: 'ma448', tab: 'ma', name: '448일', title: '448일 이동평균선', period: 448, color: '#06b6d4',
+    calc: '최근 448일(약 2년) 종가 평균', what: '약 2년 평균. 장기 대세 추세를 판단하는 선.',
+    how: '아주 천천히 움직여요. 주가가 이 선 아래에 오래 있으면 긴 하락 흐름 속에 있는 거예요.' },
+  { id: 'bb',    tab: 'band', name: '볼린저', title: '볼린저밴드', color: 'rgba(188,140,255,0.95)',
+    calc: '20일 평균 ± 표준편차×2', what: '주가의 통계적 범위. 위·아래 밴드를 벗어나면 과열 또는 과매도 신호.',
+    how: '가격은 대부분 두 밴드 사이에서 움직여요. 위 밴드에 닿으면 많이 오른 것, 아래 밴드에 닿으면 많이 빠진 것으로 읽어요.' },
+  { id: 'blue',  tab: 'band', name: '파란점선', title: '파란점선', color: '#2f81f7', dash: true,
+    calc: 'EMA26 + 대표가(고+저+종)/3의 26일 표준편차×2.5, 25봉 앞으로',
+    what: '26일 지수평균에 변동폭을 더해 25봉 앞으로 옮긴 위쪽 선. 그래서 오늘 이후 25봉까지 그려져요.',
+    how: '주가 위에 걸린 "넘어야 할 벽"이에요. 주가가 이 점선을 넘어서면 벽을 깬 거예요.' },
+  { id: 'rsi',   tab: 'sub', name: 'RSI', title: 'RSI (상대강도지수)', color: '#e3b341',
+    calc: '14일 기준, 0~100', what: '0~100. 70 이상이면 과매수(너무 올라 조정 가능), 30 이하면 과매도(너무 빠져 반등 가능).',
+    how: '선이 위쪽 띠(70)를 넘으면 너무 달아오른 것, 아래쪽 띠(30) 밑이면 너무 식은 거예요. 띠 안으로 돌아올 때를 눈여겨봐요.' },
+  { id: 'macd',  tab: 'sub', name: 'MACD', title: 'MACD', color: '#58a6ff', color2: '#ffa64d',
+    calc: 'EMA12 − EMA26, 신호선 EMA9', what: '추세의 방향과 강도를 보는 지표. 0선 위로 올라가면 상승 힘.',
+    how: '파란 MACD선이 주황 신호선을 위로 넘으면 오르는 힘이 붙는 중이에요. 막대가 0선 위에서 커지면 그 힘이 세지는 거예요.' },
+  { id: 'sto',   tab: 'sub', name: '스토캐스틱', title: '스토캐스틱', color: '#c9d1d9', color2: '#ffa64d',
+    calc: '%K 14일, %D 3일', what: '오늘 종가가 최근 14일 범위에서 어디쯤인지(0~100). 80 이상 과매수, 20 이하 과매도.',
+    how: '선이 위쪽(80)에 붙으면 요즘 움직인 범위의 꼭대기, 아래쪽(20)에 붙으면 바닥 근처예요. 두 선이 엇갈릴 때를 눈여겨봐요.' },
+  { id: 'volma', tab: 'vol', name: '거래량 MA', title: '거래량 이동평균', color: 'rgba(255,166,77,0.95)',
+    calc: '최근 20일 거래량 평균', what: '최근 거래량의 평균 수준을 보여주는 선.',
+    how: '오늘 거래량 막대가 이 선보다 훨씬 길면 평소보다 관심이 몰린 날이에요. 가격이 크게 움직일 때 거래량이 같이 늘면 믿을 만한 움직임이에요.' },
+];
+const _IND_MA = _IND_DEFS.filter(d => d.period);
+
+// 켜진 지표 저장 — localStorage 'CHI' = { on: [켜진 id], known: [저장 당시 있던 id] }
+// known에 없는 지표(나중에 새로 생긴 것)는 기본값(켜짐)으로 둔다. 저장값이 없으면 전체 켜짐.
+const _CHI_KEY = 'CHI';
+function _loadActiveInds() {
+  const all = _IND_DEFS.map(d => d.id);
+  try {
+    const saved = JSON.parse(localStorage.getItem(_CHI_KEY) || 'null');
+    if (saved && Array.isArray(saved.on) && Array.isArray(saved.known)) {
+      return new Set(all.filter(id => saved.on.includes(id) || !saved.known.includes(id)));
+    }
+  } catch {}
+  return new Set(all);
+}
+function _saveActiveInds() {
+  try {
+    localStorage.setItem(_CHI_KEY, JSON.stringify({ on: [..._activeInds], known: _IND_DEFS.map(d => d.id) }));
+  } catch {}
+}
+
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
-const _activeInds = new Set(['ma5','ma20','ma60','bb','rsi','macd','sto','volma']);
-const _indSeries  = { ma5: null, ma20: null, ma60: null, ma120: null, ma240: null, bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null };
+const _activeInds = _loadActiveInds();
+const _indSeries  = { bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null, blue: null };
+_IND_MA.forEach(d => { _indSeries[d.id] = null; });
+// 일봉 화면 기간 앞쪽 봉(/api/chart-warmup) — 긴 이평선·파란점선을 화면 첫 봉부터 그리기 위한 계산 전용
+let   _warmOhlcv  = [];
+let   _warmKey    = '';
 let   _rsiChart   = null;
 let   _rsiSeries  = null;
 let   _rsiOb      = null;   // 과매수 기준선
@@ -1065,8 +1137,11 @@ async function loadChart(ticker) {
 
     _chartIsDummy = _isDummyOhlcv(ohlcv);
     _setDummyBanner(_chartIsDummy, ticker);
+    const warmKey = _warmKeyFor(ticker);
+    if (warmKey !== _warmKey) { _warmOhlcv = []; _warmKey = ''; }   // 다른 종목·기간의 앞쪽 봉이 섞이지 않게
     _lastOhlcv = ohlcv;
     _renderCandles(ohlcv);
+    _loadWarmup(ticker, warmKey, stale);   // 긴 이평선용 앞쪽 봉 — 받으면 지표만 다시 그림(기다리지 않음)
     _loadDrawingsForCurrentTicker();
     _renderHeader(stockData);
     renderStockInfo(stockData);
@@ -1103,6 +1178,27 @@ async function loadChart(ticker) {
     document.getElementById('chart-company-label').textContent = '';
     _setNotFound(ticker);
   }
+}
+
+// ── 긴 이동평균선용 앞쪽 봉 (/api/chart-warmup, 일봉만) ─────────────────────────
+function _warmKeyFor(ticker) {
+  if (_currentInterval !== '1d') return '';
+  return `${ticker}|${_currentCustomYears ? _currentCustomYears + 'y' : _currentPeriod}`;
+}
+
+async function _loadWarmup(ticker, key, stale) {
+  if (!key || key === _warmKey || _chartIsDummy) return;
+  const q = _currentCustomYears ? `years=${_currentCustomYears}` : `period=${_currentPeriod}`;
+  try {
+    const warm = await api(`/api/chart-warmup/${encTk(ticker)}?${q}`);
+    if (stale() || _warmKeyFor(_currentTicker) !== key) return;
+    const first = _lastOhlcv.length ? _lastOhlcv[0].time : null;
+    // 서버가 화면 첫 봉보다 앞선 봉만 준다 — 혹시 겹치면 쓰지 않음(선이 어긋나는 것 방지)
+    if (!Array.isArray(warm) || !warm.length || !first || warm[warm.length - 1].time >= first) return;
+    _warmOhlcv = warm;
+    _warmKey   = key;
+    if (!_compareMode) _applyIndicators();
+  } catch {}
 }
 
 // 없는 종목 안내 — 차트 영역 전체를 덮어 이전 종목 차트가 보이지 않게 함. null이면 숨김
@@ -1173,6 +1269,57 @@ function _calcMA(closes, period) {
     if (i < period - 1) return null;
     return closes.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
   });
+}
+
+// 파란점선: EMA26(종가) + 대표가(고+저+종)/3의 26일 표준편차 × 2.5 를 25봉 앞(미래 쪽)으로 옮긴 선.
+// bars = 앞쪽 warmup + 화면 봉, warmLen = 앞쪽 봉 수, times = 화면 봉 시각.
+// 반환: Lightweight Charts 선 데이터 — 화면 기간 + 마지막 봉 이후 25개 미래 시각까지.
+// 화면 표시 전용(신호 계산에는 쓰지 않음 → data_fetcher.py 이중 구현 대상 아님)
+const _BLUE_SHIFT = 25;
+function _calcBlueDotted(bars, warmLen, times) {
+  const n = 26, k = 2.5;
+  const closes = bars.map(b => b.close);
+  const tp     = bars.map(b => (b.high + b.low + b.close) / 3);
+  const ema    = _calcEMA(closes, n);
+  const out = [];
+  const future = _futureTimes(times, _BLUE_SHIFT);
+  for (let i = n - 1; i < bars.length; i++) {
+    if (ema[i] == null) continue;
+    const s = tp.slice(i - n + 1, i + 1);
+    const m = s.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(s.reduce((a, b) => a + (b - m) ** 2, 0) / n);
+    const j = i + _BLUE_SHIFT - warmLen;          // 화면 봉 기준 위치
+    if (j < 0) continue;
+    const t = j < times.length ? times[j] : future[j - times.length];
+    if (t == null) continue;
+    out.push({ time: t, value: +(ema[i] + k * sd).toFixed(4) });
+  }
+  return out;
+}
+
+// 마지막 봉 다음부터 count개의 미래 시각. 일봉은 주말 건너뜀(공휴일은 모름), 월봉·연봉은 달·해 단위,
+// 분봉·시봉(숫자 시각)은 마지막 간격만큼.
+function _futureTimes(times, count) {
+  if (!times.length) return [];
+  const last = times[times.length - 1];
+  const res = [];
+  if (typeof last === 'number') {
+    const step = times.length > 1 ? last - times[times.length - 2] : 60;
+    for (let i = 1; i <= count; i++) res.push(last + step * i);
+    return res;
+  }
+  const d = new Date(last + 'T00:00:00Z');
+  const fmt = x => x.toISOString().slice(0, 10);
+  while (res.length < count) {
+    if (_currentInterval === 'mo')      d.setUTCMonth(d.getUTCMonth() + 1);
+    else if (_currentInterval === 'yr') d.setUTCFullYear(d.getUTCFullYear() + 1);
+    else {
+      d.setUTCDate(d.getUTCDate() + 1);
+      if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+    }
+    res.push(fmt(d));
+  }
+  return res;
 }
 
 function _calcBB(closes, period = 20, mult = 2) {
@@ -1407,35 +1554,29 @@ function _applyIndicators() {
   };
   const _toData = (vals) => vals.map((v, i) => v != null ? { time: times[i], value: +v.toFixed(4) } : null).filter(Boolean);
 
-  // MA5
-  if (_activeInds.has('ma5')) {
-    _setLine('ma5', '#f0c040');
-    _indSeries.ma5.setData(_toData(_calcMA(closes, 5)));
-  } else { _rmLine('ma5'); }
+  // 이동평균선 6개 (5·20·60·112·224·448) — 일봉이면 화면 앞쪽 봉(warmup)까지 이어 붙여 계산하고
+  // 화면 기간 부분만 그린다. 그래서 1년 화면에서도 448일선이 첫 봉부터 나온다.
+  const warm     = _currentInterval === '1d' ? _warmOhlcv : [];
+  const fullBars = warm.length ? warm.concat(_lastOhlcv) : _lastOhlcv;
+  const fullC    = fullBars.map(d => d.close);
+  const visible  = vals => vals.slice(warm.length);   // 계산 결과에서 화면 기간만
+  for (const d of _IND_MA) {
+    if (_activeInds.has(d.id) && fullC.length >= d.period) {
+      _setLine(d.id, d.color, d.period >= 112 ? 1.6 : 1.5);
+      _indSeries[d.id].setData(_toData(visible(_calcMA(fullC, d.period))));
+    } else { _rmLine(d.id); }
+  }
 
-  // MA20
-  if (_activeInds.has('ma20')) {
-    _setLine('ma20', '#58a6ff');
-    _indSeries.ma20.setData(_toData(_calcMA(closes, 20)));
-  } else { _rmLine('ma20'); }
-
-  // MA60
-  if (_activeInds.has('ma60') && closes.length >= 60) {
-    _setLine('ma60', '#ff7b72');
-    _indSeries.ma60.setData(_toData(_calcMA(closes, 60)));
-  } else { _rmLine('ma60'); }
-
-  // MA120
-  if (_activeInds.has('ma120') && closes.length >= 120) {
-    _setLine('ma120', '#3fb950');
-    _indSeries.ma120.setData(_toData(_calcMA(closes, 120)));
-  } else { _rmLine('ma120'); }
-
-  // MA240
-  if (_activeInds.has('ma240') && closes.length >= 240) {
-    _setLine('ma240', '#f778ba');
-    _indSeries.ma240.setData(_toData(_calcMA(closes, 240)));
-  } else { _rmLine('ma240'); }
+  // 파란점선 — EMA26(종가) + 대표가 26일 표준편차×2.5, 25봉 앞으로 옮김(오늘 이후 25봉까지 그려짐)
+  if (_activeInds.has('blue') && fullBars.length >= 27) {
+    if (!_indSeries.blue) {
+      _indSeries.blue = _lwChart.addLineSeries({
+        color: '#2f81f7', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+    }
+    _indSeries.blue.setData(_calcBlueDotted(fullBars, warm.length, times));
+  } else { _rmLine('blue'); }
 
   // Bollinger Bands
   if (_activeInds.has('bb')) {
@@ -1997,23 +2138,229 @@ function _createSTOChart() {
   });
 }
 
-// ── 지표 버튼 이벤트 ─────────────────────────────────────────────────────────
-function _bindIndicatorEvents() {
-  document.querySelectorAll('.ind-btn').forEach(btn => {
-    // 초기 상태: _activeInds에 있으면 버튼 active 표시
-    if (_activeInds.has(btn.dataset.ind)) btn.classList.add('active');
-    btn.addEventListener('click', () => {
-      const ind = btn.dataset.ind;
-      if (_activeInds.has(ind)) {
-        _activeInds.delete(ind);
-        btn.classList.remove('active');
-      } else {
-        _activeInds.add(ind);
-        btn.classList.add('active');
-      }
-      _applyIndicators();
-    });
+// ── 지표 버튼 줄 · ⚙ 설정 창 · ? 가이드 ──────────────────────────────────────
+// 셋 다 _IND_DEFS 하나로 만들고, 켜기/끄기는 _setIndicator() 한 곳에서 처리해 서로 연동된다.
+const _indDot = d => {
+  if (d.dash)   return `<span class="ind-dot ind-dot-dash" style="border-color:${d.color}"></span>`;
+  if (d.color2) return `<span class="ind-dot" style="background:linear-gradient(90deg,${d.color} 50%,${d.color2} 50%)"></span>`;
+  return `<span class="ind-dot" style="background:${d.color}"></span>`;
+};
+
+function _setIndicator(id, on) {
+  if (on) _activeInds.add(id); else _activeInds.delete(id);
+  _saveActiveInds();
+  _syncIndicatorUI();
+  if (!_compareMode) _applyIndicators();
+}
+
+function _syncIndicatorUI() {
+  document.querySelectorAll('.ind-btn[data-ind]').forEach(b => b.classList.toggle('active', _activeInds.has(b.dataset.ind)));
+  document.querySelectorAll('.ind-switch[data-ind]').forEach(s => {
+    const on = _activeInds.has(s.dataset.ind);
+    s.classList.toggle('on', on);
+    s.setAttribute('aria-checked', on);
   });
+  const gs = document.getElementById('ind-guide-switch');
+  if (gs && _guideCur) {
+    const on = _activeInds.has(_guideCur);
+    gs.classList.toggle('on', on);
+    gs.setAttribute('aria-checked', on);
+  }
+}
+
+function _bindIndicatorEvents() {
+  // 지표 버튼 줄 (범례 겸 빠른 켜기/끄기)
+  const wrap = document.getElementById('ind-btns');
+  if (wrap) {
+    wrap.innerHTML = _IND_DEFS.map(d =>
+      `<button class="ind-btn" data-ind="${d.id}" title="${_escHtml(d.title + ' — ' + d.what)}">${_indDot(d)}${d.name}</button>`).join('');
+    wrap.addEventListener('click', e => {
+      const b = e.target.closest('.ind-btn');
+      if (b && !b.disabled) _setIndicator(b.dataset.ind, !_activeInds.has(b.dataset.ind));
+    });
+  }
+  _bindIndicatorSettings();
+  _bindIndicatorGuide();
+  _syncIndicatorUI();
+}
+
+// ⚙ 지표 설정 창 — 탭별 묶음 + 켜기/끄기 스위치, ⓘ는 가이드의 해당 지표로 이동
+function _bindIndicatorSettings() {
+  const btn = document.getElementById('ind-settings-btn');
+  const box = document.getElementById('ind-settings');
+  if (!btn || !box) return;
+  box.innerHTML = `
+    <div class="ind-set-head">
+      <span class="ind-set-title">지표 설정</span>
+      <button class="ind-set-close" data-act="close" aria-label="닫기">✕</button>
+    </div>
+    ${_IND_TABS.map(t => `
+      <div class="ind-set-group">
+        <div class="ind-set-group-name">${t.name}</div>
+        ${_IND_DEFS.filter(d => d.tab === t.id).map(d => `
+          <div class="ind-set-row">
+            ${_indDot(d)}<span class="ind-set-name">${d.name}</span>
+            <span class="ind-set-sub">${_escHtml(d.calc)}</span>
+            <button class="ind-set-info" data-info="${d.id}" title="${_escHtml(d.title)} 뜻 보기" aria-label="${_escHtml(d.title)} 뜻 보기">ⓘ</button>
+            <button class="ind-switch" data-ind="${d.id}" role="switch" aria-checked="false" aria-label="${_escHtml(d.title)}"></button>
+          </div>`).join('')}
+      </div>`).join('')}
+    <div class="ind-set-foot">
+      <button class="ind-set-btn" data-act="all-on">전체 켜기</button>
+      <button class="ind-set-btn" data-act="all-off">전체 끄기</button>
+    </div>`;
+
+  const close = () => { box.hidden = true; btn.classList.remove('active'); };
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    box.hidden = !box.hidden;
+    btn.classList.toggle('active', !box.hidden);
+  });
+  box.addEventListener('click', e => {
+    e.stopPropagation();
+    const sw = e.target.closest('.ind-switch');
+    if (sw) { if (!_compareMode) _setIndicator(sw.dataset.ind, !_activeInds.has(sw.dataset.ind)); return; }
+    const info = e.target.closest('.ind-set-info');
+    if (info) { close(); _openIndicatorGuide(info.dataset.info); return; }
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') close();
+    if (act === 'all-on' || act === 'all-off') {
+      if (_compareMode) return;
+      _IND_DEFS.forEach(d => act === 'all-on' ? _activeInds.add(d.id) : _activeInds.delete(d.id));
+      _saveActiveInds(); _syncIndicatorUI(); _applyIndicators();
+    }
+  });
+  document.addEventListener('click', () => { if (!box.hidden) close(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !box.hidden) close(); });
+}
+
+// ? 지표 가이드 — 탭(이평선·밴드·보조지표·거래량) → 지표 칩 → 예시 그림 + 무엇인가/어떻게 읽나
+let _guideTab = 'ma';
+let _guideCur = null;
+
+function _openIndicatorGuide(id) {
+  const d = _IND_DEFS.find(x => x.id === id) || _IND_DEFS[0];
+  _guideTab = d.tab; _guideCur = d.id;
+  document.getElementById('ind-guide').hidden = false;
+  _renderIndicatorGuide();
+  document.getElementById('ind-guide-close').focus();
+}
+
+function _bindIndicatorGuide() {
+  const bd = document.getElementById('ind-guide');
+  if (!bd) return;
+  const close = () => { bd.hidden = true; };
+  document.getElementById('ind-help-btn')?.addEventListener('click', () => _openIndicatorGuide(_guideCur || 'ma5'));
+  document.getElementById('ind-guide-close').addEventListener('click', close);
+  bd.addEventListener('click', e => { if (e.target === bd) close(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !bd.hidden) close(); });
+  document.getElementById('ind-guide-tabs').addEventListener('click', e => {
+    const t = e.target.closest('[data-tab]'); if (!t) return;
+    _guideTab = t.dataset.tab;
+    _guideCur = _IND_DEFS.find(d => d.tab === _guideTab).id;
+    _renderIndicatorGuide();
+  });
+  document.getElementById('ind-guide-chips').addEventListener('click', e => {
+    const c = e.target.closest('[data-ind]'); if (!c) return;
+    _guideCur = c.dataset.ind; _renderIndicatorGuide();
+  });
+  document.getElementById('ind-guide-switch').addEventListener('click', () => {
+    if (_guideCur && !_compareMode) _setIndicator(_guideCur, !_activeInds.has(_guideCur));
+  });
+}
+
+function _renderIndicatorGuide() {
+  const d = _IND_DEFS.find(x => x.id === _guideCur);
+  if (!d) return;
+  document.getElementById('ind-guide-tabs').innerHTML = _IND_TABS.map(t =>
+    `<button class="ind-guide-tab${t.id === _guideTab ? ' active' : ''}" data-tab="${t.id}">${t.name}</button>`).join('');
+  document.getElementById('ind-guide-chips').innerHTML = _IND_DEFS.filter(x => x.tab === _guideTab).map(x =>
+    `<button class="ind-guide-chip${x.id === d.id ? ' active' : ''}" data-ind="${x.id}">${_indDot(x)}${x.name}</button>`).join('');
+  document.getElementById('ind-guide-dot').innerHTML   = _indDot(d);
+  document.getElementById('ind-guide-title').textContent = d.title;
+  document.getElementById('ind-guide-cat').textContent   = _IND_TABS.find(t => t.id === d.tab).name;
+  document.getElementById('ind-guide-what').textContent  = d.what;
+  document.getElementById('ind-guide-how').textContent   = d.how;
+  document.getElementById('ind-guide-calc').textContent  = '계산: ' + d.calc;
+  _syncIndicatorUI();
+  document.getElementById('ind-guide-svg').innerHTML = _guideSvg(d);
+}
+
+// 가이드 예시 그림 — 고정된 가상 시세(하락 → 횡보 → 상승)로 그린 설명용 SVG.
+// 긴 이평선은 짧은 예시 데이터 안에 들어가도록 기간을 줄여 그린다(모양 설명용).
+let _guideBars = null;
+function _guideData() {
+  if (_guideBars) return _guideBars;
+  const bars = []; let p = 100, s = 7;
+  const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 140; i++) {
+    const drift = i < 60 ? -0.25 : i < 95 ? 0.02 : 0.45;
+    const o = p, c = p + drift + (rnd() - .5) * 2.2;
+    bars.push({ open: o, close: c, high: Math.max(o, c) + rnd() * 1.2, low: Math.min(o, c) - rnd() * 1.2,
+                volume: 50 + rnd() * 60 + (i > 95 ? 40 : 0) });
+    p = c;
+  }
+  return (_guideBars = bars);
+}
+
+function _guideSvg(ind) {
+  const bars = _guideData(), N = bars.length, closes = bars.map(b => b.close);
+  const W = 700, isBlue = ind.id === 'blue', sub = ind.tab === 'sub' || ind.tab === 'vol';
+  const priceH = sub ? 180 : 280, subTop = 195, subH = 95;
+  const span = N - 1 + (isBlue ? _BLUE_SHIFT : 0);
+  const x = i => 10 + (i / span) * (W - 20);
+  const std = (a, n) => a.map((_, i) => { if (i < n - 1) return null; const s = a.slice(i - n + 1, i + 1), m = s.reduce((p, q) => p + q, 0) / n; return Math.sqrt(s.reduce((p, q) => p + (q - m) ** 2, 0) / n); });
+  const SHOW = { ma5: 5, ma20: 20, ma60: 40, ma112: 60, ma224: 80, ma448: 100 };
+  const over = [];
+  if (ind.tab === 'ma') _IND_MA.forEach(m => over.push({ vals: _calcMA(closes, SHOW[m.id]), color: m.color, bold: m.id === ind.id, name: m.name + '선' }));
+  if (ind.id === 'bb') { const b = _calcBB(closes);
+    over.push({ vals: b.upper, color: ind.color, bold: true, label: '위 밴드' }, { vals: b.mid, color: ind.color, thin: true }, { vals: b.lower, color: ind.color, bold: true, label: '아래 밴드' }); }
+  if (isBlue) { const tp = bars.map(b => (b.high + b.low + b.close) / 3), e = _calcEMA(closes, 26), s = std(tp, 26);
+    over.push({ vals: [...Array(_BLUE_SHIFT).fill(null), ...e.map((v, i) => v == null ? null : v + 2.5 * s[i])], color: ind.color, bold: true, dash: true, label: '넘어야 할 벽' }); }
+  let lo = Math.min(...bars.map(b => b.low)), hi = Math.max(...bars.map(b => b.high));
+  over.forEach(o => o.vals.forEach(v => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+  const y = v => 10 + (1 - (v - lo) / (hi - lo)) * (priceH - 20);
+  const out = [];
+  for (let g = 0; g < 4; g++) { const gy = 10 + g * (priceH - 20) / 3; out.push(`<line x1="0" x2="${W}" y1="${gy}" y2="${gy}" stroke="#21262d"/>`); }
+  const bw = Math.max(1.5, (W - 20) / span * 0.6), fade = ind.tab === 'ma' || ind.tab === 'band' ? .5 : .8;
+  if (ind.id === 'bb') { const [u, , l] = over, pts = [];
+    u.vals.forEach((v, i) => v != null && pts.push(`${x(i)},${y(v)}`));
+    l.vals.map((v, i) => [v, i]).reverse().forEach(([v, i]) => v != null && pts.push(`${x(i)},${y(v)}`));
+    out.push(`<polygon points="${pts.join(' ')}" fill="${ind.color}" opacity=".08"/>`); }
+  bars.forEach((b, i) => { const col = b.close >= b.open ? '#3fb950' : '#f85149';
+    out.push(`<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.high)}" y2="${y(b.low)}" stroke="${col}" opacity="${fade}"/>`,
+      `<rect x="${x(i) - bw / 2}" y="${y(Math.max(b.open, b.close))}" width="${bw}" height="${Math.max(1, Math.abs(y(b.open) - y(b.close)))}" fill="${col}" opacity="${fade}"/>`); });
+  const pts = vals => vals.map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean).join(' ');
+  over.forEach(o => {
+    out.push(`<polyline points="${pts(o.vals)}" fill="none" stroke="${o.color}" stroke-width="${o.bold ? 3 : o.thin ? 1 : 1.2}" opacity="${o.bold ? 1 : .35}"${o.dash ? ' stroke-dasharray="7 5"' : ''}/>`);
+    const at = o.label ? Math.round((o.vals.length - 1) * .45) : o.vals.length - 1;
+    if (o.label && o.vals[at] != null) out.push(`<text x="${x(at)}" y="${y(o.vals[at]) - 8}" class="ind-guide-svg-label">${o.label}</text>`);
+    else if (o.bold && o.name) out.push(`<text x="${x(at) - 60}" y="${y(o.vals[at]) - 10}" class="ind-guide-svg-label">${o.name}</text>`);
+  });
+  if (isBlue) out.push(`<line x1="${x(N - 1)}" x2="${x(N - 1)}" y1="5" y2="${priceH}" stroke="#30363d" stroke-dasharray="3 3"/>`,
+    `<text x="${x(N - 1) + 6}" y="20" class="ind-guide-svg-note">오늘 → 25봉 앞</text>`);
+  if (sub) {
+    out.push(`<line x1="0" x2="${W}" y1="${subTop - 6}" y2="${subTop - 6}" stroke="#30363d"/>`);
+    const sy = (v, a, b) => subTop + (1 - (v - a) / (b - a)) * subH;
+    const pl = (vals, a, b, col) => `<polyline points="${vals.map((v, i) => v == null ? null : `${x(i)},${sy(v, a, b)}`).filter(Boolean).join(' ')}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    const band = (v, a, b, t) => `<line x1="0" x2="${W}" y1="${sy(v, a, b)}" y2="${sy(v, a, b)}" stroke="#6e7681" stroke-dasharray="4 4"/><text x="6" y="${sy(v, a, b) - 4}" class="ind-guide-svg-note">${t}</text>`;
+    if (ind.id === 'rsi') out.push(band(70, 0, 100, '70 과열'), band(30, 0, 100, '30 침체'), pl(_calcRSI(closes), 0, 100, ind.color));
+    if (ind.id === 'macd') {
+      const e12 = _calcEMA(closes, 12), e26 = _calcEMA(closes, 26);
+      const m = e12.map((v, i) => v == null || e26[i] == null ? null : v - e26[i]);
+      const mv = m.filter(v => v != null), sg = [...Array(m.length - mv.length).fill(null), ..._calcEMA(mv, 9)];
+      const a = Math.min(...mv) - .5, b = Math.max(...mv) + .5;
+      m.forEach((v, i) => { if (v == null || sg[i] == null) return; const h = v - sg[i];
+        out.push(`<rect x="${x(i) - bw / 2}" y="${Math.min(sy(h, a, b), sy(0, a, b))}" width="${bw}" height="${Math.abs(sy(h, a, b) - sy(0, a, b))}" fill="${h >= 0 ? '#3fb950' : '#f85149'}" opacity=".4"/>`); });
+      out.push(band(0, a, b, '0선'), pl(m, a, b, ind.color), pl(sg, a, b, ind.color2));
+    }
+    if (ind.id === 'sto') { const s = _calcStochastic(bars);
+      out.push(band(80, 0, 100, '80 과매수'), band(20, 0, 100, '20 과매도'), pl(s.k, 0, 100, ind.color), pl(s.d, 0, 100, ind.color2)); }
+    if (ind.id === 'volma') { const vs = bars.map(b => b.volume), top = Math.max(...vs) * 1.1;
+      bars.forEach((b, i) => out.push(`<rect x="${x(i) - bw / 2}" y="${sy(b.volume, 0, top)}" width="${bw}" height="${subTop + subH - sy(b.volume, 0, top)}" fill="${b.close >= b.open ? '#3fb950' : '#f85149'}" opacity=".45"/>`));
+      out.push(pl(_calcMA(vs, 20), 0, top, ind.color)); }
+  }
+  return out.join('');
 }
 
 // ── 가격 알림 ─────────────────────────────────────────────────────────────────

@@ -14,6 +14,8 @@
   --accent2:    #388bfd;
   --header-h:   48px;
   --tape-h:     28px;
+  --chart-canvas:      #161b22;  /* Lightweight Charts 캔버스(항상 어두움)와 같은 색 — 지표 가이드 예시 그림 배경 */
+  --chart-canvas-text: #e6edf3;
 }
 body.light-theme {
   --bg:         #f5f6fa;
@@ -28,6 +30,8 @@ body.light-theme {
   --red-bg:     rgba(207,34,46,.12);
   --accent:     #0969da;
   --accent2:    #0550ae;
+  --chart-canvas:      #161b22;  /* 라이트 테마에서도 차트 캔버스는 어두움 */
+  --chart-canvas-text: #e6edf3;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 13px; }
@@ -1421,14 +1425,104 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   transition: border-color .15s, color .15s, background .15s;
 }
 .ind-btn:hover { opacity: .85; }
-.ind-ma5.active  { border-color: #f0c040; color: #f0c040; background: rgba(240,192,64,.12); }
-.ind-ma20.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,.12); }
-.ind-ma60.active { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,.12); }
-.ind-ma120.active { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.12); }
-.ind-ma240.active { border-color: #f778ba; color: #f778ba; background: rgba(247,120,186,.12); }
-.ind-bb.active   { border-color: #bc8cff; color: #bc8cff; background: rgba(188,140,255,.12); }
-.ind-rsi.active   { border-color: #e3b341; color: #e3b341; background: rgba(227,179,65,.12); }
-.ind-volma.active { border-color: #ffa64d; color: #ffa64d; background: rgba(255,166,77,.12); }
+.ind-btn { display: inline-flex; align-items: center; gap: 5px; }
+.ind-btn.active { border-color: var(--accent); color: var(--text); background: var(--bg-card); }
+.ind-btn:not(.active) .ind-dot { opacity: .35; }
+.ind-btns { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+/* 지표 색 점 (색은 JS가 차트 선 색과 같게 넣음) */
+.ind-dot { display: inline-block; width: 12px; height: 3px; border-radius: 2px; flex: none; }
+.ind-dot-dash { height: 0; border-top: 2px dashed; background: none; }
+
+/* ⚙ 설정 · ? 가이드 버튼 */
+.chart-indicator-row { position: relative; }
+.ind-tools { display: inline-flex; gap: 4px; margin-left: auto; }
+.ind-icon-btn {
+  width: 26px; height: 24px; border-radius: 4px;
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--muted);
+  font-size: 13px; font-weight: 700; cursor: pointer; line-height: 1;
+}
+.ind-icon-btn:hover, .ind-icon-btn.active { border-color: var(--accent); color: var(--accent); }
+
+/* ⚙ 지표 설정 창 (지표 줄 오른쪽 아래로 펼침) */
+.ind-settings {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+  width: 340px; max-width: calc(100vw - 32px); max-height: 70vh; overflow-y: auto;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.35); padding: 10px 12px; font-size: 12px;
+}
+.ind-set-head { display: flex; align-items: center; margin-bottom: 4px; }
+.ind-set-title { font-weight: 700; font-size: 13px; color: var(--text); }
+.ind-set-close { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; }
+.ind-set-group { padding: 6px 0; border-top: 1px solid var(--border); }
+.ind-set-group:first-of-type { border-top: none; }
+.ind-set-group-name { color: var(--muted); font-size: 11px; font-weight: 700; margin-bottom: 2px; }
+.ind-set-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.ind-set-name { color: var(--text); min-width: 58px; }
+.ind-set-sub { color: var(--muted); font-size: 11px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ind-set-info { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.ind-set-info:hover { color: var(--accent); }
+.ind-set-foot { display: flex; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.ind-set-btn {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 0; font-size: 12px; cursor: pointer;
+}
+.ind-set-btn:hover { border-color: var(--accent); }
+
+/* 켜기/끄기 스위치 (설정 창 · 가이드 공용) */
+.ind-switch {
+  position: relative; width: 34px; height: 20px; flex: none; padding: 0;
+  border-radius: 999px; border: none; background: var(--border); cursor: pointer; transition: background .15s;
+}
+.ind-switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--bg-card); transition: left .15s;
+}
+.ind-switch.on { background: var(--accent); }
+.ind-switch.on::after { left: 17px; }
+
+/* ? 지표 가이드 (가운데 창) */
+.ind-guide-backdrop {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.55);
+  display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow-y: auto;
+}
+.ind-guide-backdrop[hidden] { display: none; }
+.ind-guide {
+  width: 100%; max-width: 760px; background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.45);
+}
+.ind-guide-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px 6px; }
+.ind-guide-head .ind-dot { width: 18px; height: 4px; }
+.ind-guide-head .ind-dot-dash { height: 0; }
+.ind-guide-title { font-size: 19px; font-weight: 700; }
+.ind-guide-cat { color: var(--muted); font-size: 13px; }
+.ind-guide-close { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+.ind-guide-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 20px 0; padding: 4px; width: fit-content; max-width: calc(100% - 40px); background: var(--bg-input); border-radius: 10px; }
+.ind-guide-tab { border: none; background: none; color: var(--muted); padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.ind-guide-tab.active { background: var(--bg-card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.ind-guide-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+.ind-guide-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-input); color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.ind-guide-chip.active { background: var(--text); color: var(--bg-card); border-color: var(--text); font-weight: 700; }
+.ind-guide-body { padding: 16px 20px 18px; }
+.ind-guide-demo { background: var(--chart-canvas); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.ind-guide-demo svg { display: block; width: 100%; height: auto; }
+.ind-guide-svg-label { fill: var(--chart-canvas-text); font-size: 13px; font-weight: 700; }
+.ind-guide-svg-note  { fill: var(--chart-canvas-text); font-size: 11px; opacity: .6; }
+.ind-guide-desc { display: grid; grid-template-columns: 84px 1fr; gap: 6px 12px; margin: 14px 0 0; font-size: 14px; }
+.ind-guide-desc dt { font-weight: 700; }
+.ind-guide-desc dd { margin: 0; color: var(--text); opacity: .85; line-height: 1.55; }
+.ind-guide-meta { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.ind-guide-spacer { flex: 1; }
+.ind-switch-label { display: inline-flex; align-items: center; gap: 8px; }
+.ind-guide-note { margin-top: 8px; color: var(--muted); font-size: 11px; }
+@media (max-width: 600px) {
+  .ind-guide-backdrop { padding: 16px 8px; }
+  .ind-guide-desc { grid-template-columns: 1fr; }
+  .ind-settings { right: auto; left: 0; }
+}
 
 /* 차트 그리기 도구 */
 .chart-draw-row {

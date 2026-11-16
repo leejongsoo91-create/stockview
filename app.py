@@ -1248,16 +1248,51 @@ def chart(ticker):
     if interval not in VALID_INTERVALS: interval = "1d"
     if years is not None and years not in _CUSTOM_YEARS_RANGE:
         years = None
+    ohlcv = _chart_rows(t, period, interval, years)
+    return jsonify(ohlcv if ohlcv else _generate_ohlcv_dummy(t))
+
+
+def _chart_rows(t: str, period: str, interval: str, years: int | None) -> list[dict]:
+    """차트 OHLCV (캐시 우선). /api/chart와 /api/chart-warmup 공용. 실패 시 []."""
     ttl  = _CHART_TTL.get(interval, 300)
     key  = f"chart_{t}_{interval}_{years}y-custom" if years else f"chart_{t}_{interval}_{period}"
     cached = cache.get_fresh(key)
     if cached:
-        return jsonify(cached)
+        return cached
     ohlcv = df.fetch_ohlcv(t, period=period, interval=interval, years=years)
     if ohlcv:
         cache.set(key, ohlcv, ttl=ttl)
-        return jsonify(ohlcv)
-    return jsonify(_generate_ohlcv_dummy(t))
+    return ohlcv or []
+
+
+# 기간 버튼 → 연수 (warmup 조회 범위 계산용)
+_PERIOD_YEARS = {"1mo": 1, "3mo": 1, "6mo": 1, "1y": 1, "2y": 2}
+_WARMUP_BARS  = 460   # 448일선 + 여유. 화면 첫 봉부터 긴 이평선이 그려지도록 그 앞 데이터를 따로 준다
+
+
+@app.route("/api/chart-warmup/<ticker>")
+def chart_warmup(ticker):
+    """일봉 차트의 화면 기간 **앞쪽** 봉(최대 460개). 긴 이동평균선·파란점선 계산에만 쓰고 화면엔 안 그린다.
+    /api/chart 응답 모양을 바꾸지 않으려고 따로 둔 엔드포인트 — 일봉(1d)만 지원, 그 외는 []."""
+    t        = _canon_us_ticker(ticker)
+    period   = request.args.get("period", "1y")
+    years    = request.args.get("years", type=int)
+    if period not in VALID_PERIODS: period = "1y"
+    if years is not None and years not in _CUSTOM_YEARS_RANGE:
+        years = None
+    rows = _chart_rows(t, period, "1d", years)
+    if not rows:
+        return jsonify([])
+    key = f"chartwarm_{t}_{years}y-custom" if years else f"chartwarm_{t}_{period}"
+    hit = cache.get_fresh(key)
+    if hit is not None:
+        return jsonify(hit)
+    ext_years = (years or _PERIOD_YEARS.get(period, 1)) + 2   # 448거래일 ≈ 1.8년
+    ext  = df.fetch_ohlcv(t, interval="1d", years=ext_years, _kr_fill=False)
+    first = rows[0]["time"]
+    warm = [r for r in ext if r["time"] < first][-_WARMUP_BARS:]
+    cache.set(key, warm, ttl=6 * 3600 if warm else 300)   # 과거 봉이라 자주 안 바뀜
+    return jsonify(warm)
 
 
 def _canon_us_ticker(raw: str) -> str:
