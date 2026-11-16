@@ -431,17 +431,31 @@
               <option value="auto" selected>자동</option><option value="all">지표 포함</option>
               <option value="log">로그</option><option value="pct">퍼센트</option>
             </select>
+            <select id="chart-volbar-sel" class="chart-sel" title="아래 막대 — 거래량 또는 거래대금(대표가×거래량 추정)" aria-label="아래 막대">
+              <option value="vol" selected>거래량 막대</option><option value="amt">거래대금 막대</option>
+            </select>
           </span>
           <span class="chart-sep">|</span>
           <!-- 지표 켜기/끄기는 ⚙ 설정 창에서만 (11-17 지표 버튼 줄 삭제) -->
           <span class="ind-tools">
             <button id="ind-settings-btn" class="ind-icon-btn ind-settings-open" title="지표 설정 — 켜기/끄기" aria-haspopup="dialog">⚙ 지표</button>
             <button id="ind-help-btn" class="ind-icon-btn" title="지표 가이드 — 각 지표의 뜻" aria-haspopup="dialog">?</button>
+            <button id="vol-trend-btn" class="ind-icon-btn" title="거래 추이 — 최근 20·60일 일별 거래량·거래대금" aria-haspopup="dialog">📊 거래 추이</button>
           </span>
           <span id="chart-live-badge" class="chart-live-badge" style="display:none">● 실시간</span>
           <span id="chart-updated-at" class="chart-updated-at"></span>
           <!-- ⚙ 지표 설정 창 -->
           <div id="ind-settings" class="ind-settings" role="dialog" aria-label="지표 설정" hidden></div>
+        </div>
+        <!-- 📊 거래 추이 창 (11-17) -->
+        <div id="vt-modal" class="fg-modal-overlay" hidden>
+          <div class="fg-modal-box vt-modal-box" role="dialog" aria-modal="true" aria-labelledby="vt-modal-title">
+            <div class="fg-modal-head">
+              <h3 id="vt-modal-title">📊 거래 추이<small id="vt-modal-sub"></small></h3>
+              <button type="button" class="fg-modal-close" id="vt-modal-close" aria-label="닫기">✕</button>
+            </div>
+            <div class="fg-modal-body" id="vt-modal-body"></div>
+          </div>
         </div>
         <!-- ? 지표 가이드 창 -->
         <div id="ind-guide" class="ind-guide-backdrop" hidden>

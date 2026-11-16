@@ -11,9 +11,10 @@ let _currentCustomYears = null; // 기간 직접 입력(연수) — period 버�
 let _currentInterval = '1d';
 let _chartType      = 'candle';  // 차트 종류: candle | line | bar
 let _scaleMode      = 'auto';    // 세로 범위: auto(캔들 기준) | all(지표 포함) | log | pct
+let _volBarMode     = 'vol';     // 아래 막대: vol(거래량) | amt(거래대금 추정) — 11-17
 const _RIGHT_PAD_BARS = 10;      // 처음 화면에서 마지막 봉 오른쪽에 둘 빈 칸 수(파란점선 미래 일부가 보이는 정도)
 
-// 차트 보기 설정 저장 — localStorage 'CHV' = { iv, period, years, type, scale }
+// 차트 보기 설정 저장 — localStorage 'CHV' = { iv, period, years, type, scale, vb }
 const _CHV_KEY = 'CHV';
 const _CHV_INTERVALS = ['1m', '5m', '15m', '30m', '60m', '1d', 'mo', 'yr'];
 (function _loadChartView() {
@@ -25,14 +26,78 @@ const _CHV_INTERVALS = ['1m', '5m', '15m', '30m', '60m', '1d', 'mo', 'yr'];
     if (Number.isInteger(v.years) && v.years >= 1 && v.years <= 30) _currentCustomYears = v.years;
     if (['candle', 'line', 'bar'].includes(v.type)) _chartType = v.type;
     if (['auto', 'all', 'log', 'pct'].includes(v.scale)) _scaleMode = v.scale;
+    if (['vol', 'amt'].includes(v.vb)) _volBarMode = v.vb;
   } catch {}
 })();
 function _saveChartView() {
   try {
     localStorage.setItem(_CHV_KEY, JSON.stringify({
       iv: _currentInterval, period: _currentPeriod, years: _currentCustomYears, type: _chartType, scale: _scaleMode,
+      vb: _volBarMode,
     }));
   } catch {}
+}
+
+// ── 거래량·거래대금 (11-17) ─────────────────────────────────────────────────
+// 거래대금은 서버에 따로 없어 봉마다 대표가((고+저+종)÷3) × 거래량으로 추정한다(거래소 공식 값과 몇 % 차이 가능).
+function _barAmt(d) { return ((d.high + d.low + d.close) / 3) * (d.volume || 0); }
+function _volBarVal(d) { return _volBarMode === 'amt' ? _barAmt(d) : (d.volume || 0); }
+function _volPoint(d) {
+  return { time: d.time, value: _volBarVal(d), color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)' };
+}
+function _fmtAmt(v, isKr) {
+  if (!v) return '—';
+  if (isKr) {
+    if (v >= 1e12) return (v / 1e12).toFixed(2) + '조원';
+    if (v >= 1e8)  return Math.round(v / 1e8).toLocaleString() + '억원';
+    if (v >= 1e4)  return Math.round(v / 1e4).toLocaleString() + '만원';
+    return Math.round(v).toLocaleString() + '원';
+  }
+  if (v >= 1e12) return '$' + (v / 1e12).toFixed(2) + 'T';
+  if (v >= 1e9)  return '$' + (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6)  return '$' + (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3)  return '$' + (v / 1e3).toFixed(1) + 'K';
+  return '$' + Math.round(v).toLocaleString();
+}
+function _fmtVolN(v, isKr) {
+  if (!v) return '—';
+  if (!isKr) return fmtVol(v);
+  if (v >= 1e8) return (v / 1e8).toFixed(2) + '억주';
+  if (v >= 1e4) return Math.round(v / 1e4).toLocaleString() + '만주';
+  return v.toLocaleString() + '주';
+}
+// 봉 i의 앞 n개(자기 제외) 평균 — 오늘 거래가 평소의 몇 배인지 볼 때 쓴다
+function _avgBefore(arr, i, n, f) {
+  if (i < n) return null;
+  let sum = 0;
+  for (let k = i - n; k < i; k++) sum += f(arr[k]);
+  return sum / n;
+}
+function _barTimeLabel(t) {
+  if (typeof t === 'string') return t.slice(2).replace(/-/g, '.');          // 26.11.16
+  const d = new Date(t * 1000);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// 차트 왼쪽 위 작은 글자: 마우스가 가리킨 봉(없으면 마지막 봉)의 거래량·거래대금·평소 대비 배수
+let _volLegendEl = null;
+function _updateVolLegend(i) {
+  const el = _volLegendEl;
+  if (!el) return;
+  const n = _lastOhlcv.length;
+  if (i == null || i < 0 || i >= n) i = n - 1;
+  const d = _lastOhlcv[i];
+  if (_compareMode || !d || !d.volume) { el.hidden = true; return; }
+  const isKr = _isKrStock(_currentTicker || '');
+  const avg = _avgBefore(_lastOhlcv, i, 20, b => b.volume || 0);
+  const ratio = avg ? d.volume / avg : null;
+  const unit = _currentInterval === '1d' ? '20일' : '20봉';
+  el.hidden = false;
+  el.innerHTML =
+    `<span class="cvl-date">${_barTimeLabel(d.time)}</span>` +
+    `<span>거래량 <b>${_fmtVolN(d.volume, isKr)}</b></span>` +
+    `<span>거래대금 <b>${_fmtAmt(_barAmt(d), isKr)}</b><small>추정</small></span>` +
+    (ratio != null ? `<span class="${ratio >= 2 ? 'cvl-hot' : ''}">${unit} 평균의 <b>${ratio.toFixed(1)}배</b></span>` : '');
 }
 let _priceTimer     = null;
 let _candleTimer    = null;
@@ -416,8 +481,10 @@ function _createLWChart() {
     if (!param.point) {
       if (_rsiChart)  _rsiChart.clearCrosshairPosition();
       if (_macdChart) _macdChart.clearCrosshairPosition();
+      _updateVolLegend(null);
       return;
     }
+    _updateVolLegend(param.logical != null ? Math.round(param.logical) : null);
     const x = param.point.x;
     if (_rsiChart  && _rsiSeries)  _rsiChart.setCrosshairPosition(x, 50, _rsiSeries);
     if (_macdChart && _macdLine)   _macdChart.setCrosshairPosition(x, 0,  _macdLine);
@@ -440,6 +507,12 @@ function _createLWChart() {
   container.appendChild(_drawCanvas);
   _drawCtx = _drawCanvas.getContext('2d');
   _resizeDrawCanvas();
+
+  // 거래량·거래대금 표시 (마우스 따라 갱신)
+  _volLegendEl = document.createElement('div');
+  _volLegendEl.className = 'chart-vol-legend';
+  _volLegendEl.hidden = true;
+  container.appendChild(_volLegendEl);
 }
 
 // ── 국내 HTS 방식 구간 확대/축소 (왼쪽 드래그 방향 감지) ────────────────────────
@@ -1273,6 +1346,8 @@ function _bindPeriodEvents() {
   ivSel.value = _currentInterval;
   typeSel.value = _chartType;
   scaleSel.value = _scaleMode;
+  const volbarSel = document.getElementById('chart-volbar-sel');
+  volbarSel.value = _volBarMode;
   _renderPeriodSelect();
 
   const reload = () => { _saveChartView(); if (_currentTicker) loadChart(_currentTicker); };
@@ -1317,6 +1392,138 @@ function _bindPeriodEvents() {
     _scaleMode = scaleSel.value;
     _applyScaleMode();
     _saveChartView();
+  });
+
+  volbarSel.addEventListener('change', () => {
+    _volBarMode = volbarSel.value;
+    _saveChartView();
+    if (_volSeries && _lastOhlcv.length) { _volSeries.setData(_lastOhlcv.map(_volPoint)); _applyIndicators(); }
+  });
+
+  document.getElementById('vol-trend-btn').addEventListener('click', _openVolTrend);
+  document.getElementById('vt-modal-close').addEventListener('click', _closeVolTrend);
+  document.getElementById('vt-modal').addEventListener('click', e => { if (e.target.id === 'vt-modal') _closeVolTrend(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.getElementById('vt-modal').hidden) _closeVolTrend();
+  });
+}
+
+// ── 📊 거래 추이 창 (11-17) — 일봉 기준 최근 20·60일 거래량·거래대금 ──────────
+const _vt = { days: 20, by: 'amt', ticker: null, bars: null };
+async function _openVolTrend() {
+  const t = _currentTicker;
+  if (!t) return;
+  const ov = document.getElementById('vt-modal'), body = document.getElementById('vt-modal-body');
+  const name = document.getElementById('chart-company-label')?.textContent || '';
+  document.getElementById('vt-modal-sub').textContent = `${t}${name && name !== '…' ? ' · ' + name : ''} · 일봉`;
+  ov.hidden = false;
+  if (_vt.ticker !== t || !_vt.bars) {
+    body.innerHTML = '<div class="vt-empty">불러오는 중…</div>';
+    try {
+      // 지금 차트가 일봉이고 80봉 이상이면 그대로, 아니면 일봉 6개월을 따로 받음
+      const bars = (_currentInterval === '1d' && _lastOhlcv.length >= 80 && !_chartIsDummy)
+        ? _lastOhlcv : await api(`/api/chart/${encTk(t)}?interval=1d&period=6mo`);
+      if (_currentTicker !== t) return;
+      _vt.ticker = t;
+      _vt.bars = (bars || []).filter(b => !b._dummy);
+    } catch {
+      body.innerHTML = '<div class="vt-empty">거래 데이터를 불러오지 못했습니다.</div>';
+      return;
+    }
+  }
+  _renderVolTrend();
+}
+function _closeVolTrend() { document.getElementById('vt-modal').hidden = true; }
+
+function _renderVolTrend() {
+  const body = document.getElementById('vt-modal-body');
+  const all = _vt.bars || [];
+  const isKr = _isKrStock(_vt.ticker || '');
+  if (!all.length || !all.some(b => b.volume)) {
+    body.innerHTML = '<div class="vt-empty">이 종목은 거래량 정보가 없습니다.</div>';
+    return;
+  }
+  const valOf = b => _vt.by === 'amt' ? _barAmt(b) : (b.volume || 0);
+  const fmtV  = v => _vt.by === 'amt' ? _fmtAmt(v, isKr) : _fmtVolN(v, isKr);
+  const start = Math.max(0, all.length - _vt.days);
+  const rows = [];
+  for (let i = start; i < all.length; i++) {
+    const b = all[i], p = all[i - 1];
+    const avgV = _avgBefore(all, i, 20, x => x.volume || 0);
+    rows.push({
+      b, i,
+      chg: p && p.close ? (b.close / p.close - 1) * 100 : null,
+      vsPrev: p && p.volume ? (b.volume / p.volume - 1) * 100 : null,
+      ratio: avgV ? b.volume / avgV : null,
+    });
+  }
+
+  // 요약: 마지막 날·최근 5일 평균을 그 전 20일 평균과 비교
+  const last = rows[rows.length - 1];
+  const avg20 = _avgBefore(all, all.length - 1, 20, valOf);
+  const avg5  = all.length >= 5 ? all.slice(-5).reduce((s, b) => s + valOf(b), 0) / 5 : null;
+  const prev20 = _avgBefore(all, all.length - 5, 20, valOf);
+  const r5 = avg5 && prev20 ? avg5 / prev20 : null;
+
+  // 막대 그래프 (SVG) — 오른 날 초록·내린 날 빨강, 20일 평균 점선
+  const W = 700, H = 150, padB = 18, n = rows.length;
+  const vals = rows.map(r => valOf(r.b));
+  const avgs = rows.map(r => _avgBefore(all, r.i, 20, valOf));
+  const max = Math.max(...vals, ...avgs.filter(Boolean)) * 1.08 || 1;
+  const bw = W / n, y = v => (H - padB) * (1 - v / max);
+  const bars = rows.map((r, k) => {
+    const up = !r.chg || r.chg >= 0, v = vals[k];
+    return `<rect x="${(k * bw + bw * 0.15).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" ` +
+      `height="${(H - padB - y(v)).toFixed(1)}" class="${up ? 'vt-up' : 'vt-down'}${r.ratio >= 2 ? ' vt-hot' : ''}">` +
+      `<title>${r.b.time}  ${fmtV(v)}${r.ratio ? ` · 20일 평균의 ${r.ratio.toFixed(1)}배` : ''}</title></rect>`;
+  }).join('');
+  const avgPts = avgs.map((a, k) => a ? `${(k * bw + bw / 2).toFixed(1)},${y(a).toFixed(1)}` : null).filter(Boolean).join(' ');
+  const lbl = k => `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${rows[k].b.time.slice(5).replace('-', '/')}</text>`;
+  const step = Math.max(1, Math.ceil(n / 8));
+  const labels = rows.map((_, k) => (k % step === 0 || k === n - 1) ? lbl(k) : '').join('');
+
+  const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'vt-pos' : v < 0 ? 'vt-neg' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
+  const price = v => isKr ? Math.round(v).toLocaleString() : v.toFixed(2);
+  const trs = rows.slice().reverse().map(r => `
+    <tr class="${r.ratio >= 2 ? 'vt-row-hot' : ''}">
+      <td>${r.b.time.slice(2).replace(/-/g, '.')}</td>
+      <td>${price(r.b.close)}</td><td>${pct(r.chg)}</td>
+      <td>${_fmtVolN(r.b.volume, isKr)}</td><td>${_fmtAmt(_barAmt(r.b), isKr)}</td>
+      <td>${pct(r.vsPrev)}</td>
+      <td>${r.ratio == null ? '—' : `<b>${r.ratio.toFixed(1)}배</b>`}</td>
+    </tr>`).join('');
+
+  const byName = _vt.by === 'amt' ? '거래대금' : '거래량';
+  body.innerHTML = `
+    <div class="vt-ctrls">
+      <span class="vt-seg" data-k="days"><button data-v="20">20일</button><button data-v="60">60일</button></span>
+      <span class="vt-seg" data-k="by"><button data-v="amt">거래대금</button><button data-v="vol">거래량</button></span>
+    </div>
+    <div class="vt-summary">
+      <div><small>최근 거래일 ${byName}</small><b>${fmtV(valOf(last.b))}</b>
+        <small>${avg20 ? `20일 평균 ${fmtV(avg20)}의 <b class="${valOf(last.b) / avg20 >= 2 ? 'vt-hot-t' : ''}">${(valOf(last.b) / avg20).toFixed(1)}배</b>` : ''}</small></div>
+      <div><small>최근 5일 평균 ${byName}</small><b>${avg5 ? fmtV(avg5) : '—'}</b>
+        <small>${r5 ? `그 전 20일보다 <b>${r5 >= 1 ? '+' : ''}${((r5 - 1) * 100).toFixed(0)}%</b>` : ''}</small></div>
+    </div>
+    <svg class="vt-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 ${byName} 막대 그래프">
+      ${bars}
+      ${avgPts ? `<polyline points="${avgPts}" class="vt-avg"/>` : ''}
+      ${labels}
+    </svg>
+    <div class="vt-legend"><span><i class="vt-lg-up"></i>오른 날</span><span><i class="vt-lg-down"></i>내린 날</span><span><i class="vt-lg-avg"></i>20일 평균</span><span><i class="vt-lg-hot"></i>평소의 2배 이상</span></div>
+    <div class="vt-table-wrap">
+      <table class="vt-table">
+        <thead><tr><th>날짜</th><th>종가</th><th>등락</th><th>거래량</th><th>거래대금<small>추정</small></th><th>거래량<br>전일 대비</th><th>20일 평균<br>대비</th></tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>
+    <p class="vt-note">거래대금은 하루 대표가((고가+저가+종가)÷3) × 거래량으로 계산한 추정값이라 거래소 공식 값과 몇 % 다를 수 있습니다. "20일 평균 대비"는 그날 거래량 ÷ 그 전 20거래일 평균 거래량입니다.</p>`;
+  body.querySelectorAll('.vt-seg').forEach(seg => {
+    const k = seg.dataset.k;
+    seg.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', String(_vt[k]) === b.dataset.v);
+      b.onclick = () => { _vt[k] = k === 'days' ? +b.dataset.v : b.dataset.v; _renderVolTrend(); };
+    });
   });
 }
 
@@ -1519,14 +1726,11 @@ function _setDummyBanner(show, ticker) {
 
 function _renderCandles(ohlcv, { fit = true } = {}) {
   _candleSeries.setData(ohlcv.map(_mainPoint));
-  _volSeries.setData(ohlcv.map(d => ({
-    time:  d.time,
-    value: d.volume,
-    color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
-  })));
+  _volSeries.setData(ohlcv.map(_volPoint));   // 거래량 또는 거래대금(보기 설정 '아래 막대')
   // 지표(파란점선의 미래 25칸 포함)를 먼저 붙인 뒤 화면을 맞춰야 맞춘 범위가 밀리지 않는다
   _applyIndicators();
   if (fit) { _fitChart(); _prevVisibleRange = null; _syncFocusBtn(); }
+  _updateVolLegend(null);
 }
 
 // ── 기술 지표 계산 ────────────────────────────────────────────────────────────
@@ -2030,7 +2234,7 @@ function _applyIndicators() {
 
   // Volume MA (20일, vol 스케일에 오버레이)
   if (_activeInds.has('volma')) {
-    const volumes = _lastOhlcv.map(d => d.volume);
+    const volumes = _lastOhlcv.map(_volBarVal);   // 아래 막대가 거래대금이면 거래대금 20일 평균
     const volMaVals = _calcMA(volumes, 20);
     if (!_indSeries.volma) {
       _indSeries.volma = _lwChart.addLineSeries({
@@ -3181,11 +3385,7 @@ function _startAutoRefresh() {
       if (prev && latest.time === prev.time) {
         // 같은 날짜: 마지막 캔들만 업데이트 (화면 깜빡임 없음)
         _candleSeries.update(_mainPoint(latest));
-        _volSeries.update({
-          time:  latest.time,
-          value: latest.volume,
-          color: latest.close >= latest.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)',
-        });
+        _volSeries.update(_volPoint(latest));
       } else {
         // 새 날짜 캔들 추가: 데이터만 갱신, 사용자가 맞춰둔 확대/스크롤 위치는 유지
         _lastOhlcv = ohlcv;
@@ -3193,6 +3393,7 @@ function _startAutoRefresh() {
       }
 
       _lastOhlcv = ohlcv;
+      _updateVolLegend(null);
       _setUpdatedAt(new Date().toLocaleTimeString('ko-KR'));
     } catch {}
   }, candleMs);
