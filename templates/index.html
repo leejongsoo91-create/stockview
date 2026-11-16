@@ -420,11 +420,9 @@
             </select>
           </span>
           <span class="chart-sep">|</span>
-          <span class="quick-label">지표:</span>
-          <!-- 지표 버튼은 chart.js의 _IND_DEFS 표로 만든다 (설정 창·가이드와 같은 목록) -->
-          <span id="ind-btns" class="ind-btns"></span>
+          <!-- 지표 켜기/끄기는 ⚙ 설정 창에서만 (11-17 지표 버튼 줄 삭제) -->
           <span class="ind-tools">
-            <button id="ind-settings-btn" class="ind-icon-btn" title="지표 설정 — 켜기/끄기" aria-haspopup="dialog">⚙</button>
+            <button id="ind-settings-btn" class="ind-icon-btn ind-settings-open" title="지표 설정 — 켜기/끄기" aria-haspopup="dialog">⚙ 지표</button>
             <button id="ind-help-btn" class="ind-icon-btn" title="지표 가이드 — 각 지표의 뜻" aria-haspopup="dialog">?</button>
           </span>
           <span id="chart-live-badge" class="chart-live-badge" style="display:none">● 실시간</span>

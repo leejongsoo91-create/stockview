@@ -2305,8 +2305,8 @@ function _createSTOChart() {
   });
 }
 
-// ── 지표 버튼 줄 · ⚙ 설정 창 · ? 가이드 ──────────────────────────────────────
-// 셋 다 _IND_DEFS 하나로 만들고, 켜기/끄기는 _setIndicator() 한 곳에서 처리해 서로 연동된다.
+// ── ⚙ 설정 창 · ? 가이드 ────────────────────────────────────────────────────
+// 둘 다 _IND_DEFS 하나로 만들고, 켜기/끄기는 _setIndicator() 한 곳에서 처리해 서로 연동된다.
 const _indDot = d => {
   if (d.dash)   return `<span class="ind-dot ind-dot-dash" style="border-color:${d.color}"></span>`;
   if (d.color2) return `<span class="ind-dot" style="background:linear-gradient(90deg,${d.color} 50%,${d.color2} 50%)"></span>`;
@@ -2321,7 +2321,6 @@ function _setIndicator(id, on) {
 }
 
 function _syncIndicatorUI() {
-  document.querySelectorAll('.ind-btn[data-ind]').forEach(b => b.classList.toggle('active', _activeInds.has(b.dataset.ind)));
   document.querySelectorAll('.ind-switch[data-ind]').forEach(s => {
     const on = _activeInds.has(s.dataset.ind);
     s.classList.toggle('on', on);
@@ -2336,16 +2335,7 @@ function _syncIndicatorUI() {
 }
 
 function _bindIndicatorEvents() {
-  // 지표 버튼 줄 (범례 겸 빠른 켜기/끄기)
-  const wrap = document.getElementById('ind-btns');
-  if (wrap) {
-    wrap.innerHTML = _IND_DEFS.map(d =>
-      `<button class="ind-btn" data-ind="${d.id}" title="${_escHtml(d.title + ' — ' + d.what)}">${_indDot(d)}${d.name}</button>`).join('');
-    wrap.addEventListener('click', e => {
-      const b = e.target.closest('.ind-btn');
-      if (b && !b.disabled) _setIndicator(b.dataset.ind, !_activeInds.has(b.dataset.ind));
-    });
-  }
+  // 지표 켜기/끄기는 ⚙ 설정 창에서만 (11-17 지표 버튼 줄 삭제)
   _bindIndicatorSettings();
   _bindIndicatorGuide();
   _syncIndicatorUI();
@@ -2673,7 +2663,7 @@ async function _loadCompareChart(ticker2) {
   document.getElementById('rsi-panel').style.display  = 'none';
   document.getElementById('macd-panel').style.display = 'none';
   document.getElementById('sto-panel').style.display  = 'none';
-  document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = true; b.style.opacity = '.4'; });
+  document.querySelectorAll('#ind-settings-btn').forEach(b => { b.disabled = true; b.style.opacity = '.4'; });
 
   // 기존 비교 시리즈 제거
   if (_cmpMainSeries) { _lwChart.removeSeries(_cmpMainSeries); _cmpMainSeries = null; }
@@ -2723,7 +2713,7 @@ function _exitCompare() {
   if (_activeInds.has('macd')) document.getElementById('macd-panel').style.display = '';
   if (_activeInds.has('sto'))  document.getElementById('sto-panel').style.display  = '';
 
-  document.querySelectorAll('.ind-btn').forEach(b => { b.disabled = false; b.style.opacity = ''; });
+  document.querySelectorAll('#ind-settings-btn').forEach(b => { b.disabled = false; b.style.opacity = ''; });
 
   const row = document.getElementById('chart-compare-row');
   if (row) row.style.display = 'none';

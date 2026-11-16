@@ -1429,21 +1429,6 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   margin-top: 0;
   flex-wrap: wrap;
 }
-.ind-btn {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 4px;
-  padding: 2px 9px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color .15s, color .15s, background .15s;
-}
-.ind-btn:hover { opacity: .85; }
-.ind-btn { display: inline-flex; align-items: center; gap: 5px; }
-.ind-btn.active { border-color: var(--accent); color: var(--text); background: var(--bg-card); }
-.ind-btn:not(.active) .ind-dot { opacity: .35; }
-.ind-btns { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 
 /* 지표 색 점 (색은 JS가 차트 선 색과 같게 넣음) */
 .ind-dot { display: inline-block; width: 12px; height: 3px; border-radius: 2px; flex: none; }
@@ -1451,7 +1436,8 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 
 /* ⚙ 설정 · ? 가이드 버튼 */
 .chart-indicator-row { position: relative; }
-.ind-tools { display: inline-flex; gap: 4px; margin-left: auto; }
+.ind-tools { display: inline-flex; gap: 4px; }
+.ind-icon-btn.ind-settings-open { width: auto; padding: 0 9px; font-size: 12px; }
 .ind-icon-btn {
   width: 26px; height: 24px; border-radius: 4px;
   background: var(--bg-input); border: 1px solid var(--border); color: var(--muted);
