@@ -98,6 +98,10 @@ const _IND_DEFS = [
     calc: '112<224<448일선(장기 역배열) · 최근 20일 안에 거래량 2배↑ 양봉 · 종가가 파란점선/112·224일선 ±3% · 몸통 2% 이하 양봉',
     what: '"역배열 매집 공략" 표시. 오래 내려온(장기 역배열) 종목에서 매집 흔적이 있고, 주가가 파란점선·장기 이평 근처에서 작은 양봉을 만들면 캔들 아래 네모를 찍어요. 매집 거래량이 평균 3배 이상이면 초록, 아니면 노랑.',
     how: '오래 내려간 뒤 바닥에서 조용히 모으는 흔적이 보일 때 찍혀요. 네모가 여러 번 나오면 바닥을 다지는 중일 수 있어요. 화면 표시 전용 — 매수·매도 신호 계산에는 들어가지 않아요.' },
+  { id: 'ggr',   tab: 'pro', name: '공구리', title: '공구리 (단테공구리)', color: '#f5c518', defaultOn: false,
+    calc: '키움 수식 기준(P2=5): 5일 신고가가 나온 뒤 3봉 동안 그 고가를 못 넘으면 그 고가를 TOP으로 확정, 다음 확정까지 계단선으로 유지',
+    what: '직전 반등 고점을 다시 돌파하며 만든 새 지지대. 바닥이 단단해졌다는 신호.',
+    how: '한번 넘은 옛 고점이 이제 바닥이 돼요. 주가가 이 선 위에서 버티면 바닥이 단단한 거예요.' },
 ];
 const _IND_MA = _IND_DEFS.filter(d => d.period);
 
@@ -124,7 +128,7 @@ function _saveActiveInds() {
 // ── 기술 지표 상태 ────────────────────────────────────────────────────────────
 const _activeInds = _loadActiveInds();
 const _indSeries  = { bbFill: null, bbMask: null, bbU: null, bbM: null, bbL: null, volma: null, blue: null,
-                      ichiT: null, ichiK: null, ichiA: null, ichiB: null, ichiC: null };
+                      ichiT: null, ichiK: null, ichiA: null, ichiB: null, ichiC: null, ggr: null };
 _IND_MA.forEach(d => { _indSeries[d.id] = null; });
 // 일봉 화면 기간 앞쪽 봉(/api/chart-warmup) — 긴 이평선·파란점선을 화면 첫 봉부터 그리기 위한 계산 전용
 let   _warmOhlcv  = [];
@@ -1587,6 +1591,28 @@ function _calcIchimoku(bars) {
   return { tenkan, kijun, spanA, spanB, chikou: bars.map(b => b.close) };
 }
 
+// 공구리(단테공구리) — 키움증권 수식 그대로 (P2=5). 화면 표시 전용.
+//   HT = HIGHEST(H,P2), NewH = VALUEWHEN(1, H>HT(1), H)            ← 5일 신고가가 나온 봉의 고가
+//   BOX1 = HIGHEST(H,P2-2) < HIGHEST(H,P2-1)                        ← 3봉 전 고가가 그 뒤 3봉보다 높음
+//   TOP = VALUEWHEN(1, BarsSince(H>HT(1))==P2-2 AND BOX1, NewH)     ← 신고가 뒤 3봉 동안 안 깨지면 확정
+// (원본 수식 첫 줄 shift((고9+저9+고26+저26)/4, 25)는 출력에 쓰이지 않아 제외 — 일목 선행스팬1과 같은 값)
+const _GGR_P2 = 5;
+function _calcGongguri(bars, p2 = _GGR_P2) {
+  const n = bars.length, H = bars.map(b => b.high);
+  const hiN = (i, len) => { let m = -Infinity; for (let k = Math.max(0, i - len + 1); k <= i; k++) if (H[k] > m) m = H[k]; return m; };
+  const newHigh = H.map((h, i) => i >= p2 && h > hiN(i - 1, p2));      // H > HT(1)
+  const top = new Array(n).fill(null);
+  let lastNew = -1, cur = null;
+  for (let i = 0; i < n; i++) {
+    if (newHigh[i]) lastNew = i;
+    const barsSince = lastNew < 0 ? -1 : i - lastNew;
+    const box1 = i >= p2 - 1 && hiN(i, p2 - 2) < hiN(i, p2 - 1);
+    if (barsSince === p2 - 2 && box1) cur = H[lastNew];               // NewH = 그 신고가 봉의 고가
+    top[i] = cur;
+  }
+  return top;
+}
+
 // 역매공파(역배열 매집 공략) — 화면 표시 전용, 매수·매도 신호 계산과 무관(data_fetcher.py 이중 구현 대상 아님).
 // 조건: ① 112<224<448일선 ② 최근 20일 안에 거래량이 직전 20일 평균의 2배 이상인 양봉
 //       ③ 종가가 파란점선 또는 112·224일선의 ±3% 안 ④ 몸통 2% 이하 양봉. 매집 거래량 3배↑면 초록, 아니면 노랑.
@@ -1932,6 +1958,15 @@ function _applyIndicators() {
     ICHI_KEYS.forEach(_rmLine);
     _ichiCloud = null;
   }
+
+  // 공구리 — 노란 계단선
+  if (_activeInds.has('ggr') && fullBars.length > _GGR_P2 + 3) {
+    if (!_indSeries.ggr) {
+      _setLine('ggr', '#f5c518', 2);
+      _indSeries.ggr.applyOptions({ lineType: LightweightCharts.LineType.WithSteps });
+    }
+    _indSeries.ggr.setData(_shiftedData(_calcGongguri(fullBars), 0, warm.length, times));
+  } else { _rmLine('ggr'); }
 
   // 역매공파 표시(네모) — 신호 화살표와 함께 _setMainMarkers()에서 붙인다
   _ymgpMarkers = _activeInds.has('ymgp') && !_chartIsDummy ? _calcYmgpMarkers(fullBars, warm.length, times) : [];
@@ -2710,6 +2745,14 @@ function _guideSvg(ind) {
     bins.forEach((v, k) => { const top = y(lo + step * (k + 1)) + 1, h = Math.max(1, y(lo + step * k) - y(lo + step * (k + 1)) - 2), len = v / mx * W * 0.24;
       out.push(`<rect x="${W - 10 - len}" y="${top}" width="${len}" height="${h}" fill="${k === poc ? '#58a6ff' : '#8b949e'}" opacity="${k === poc ? .45 : .3}"/>`); });
     out.push(`<text x="${W - 150}" y="${y(lo + step * (poc + 1)) - 6}" class="ind-guide-svg-label">많이 거래된 가격대</text>`);
+  }
+  if (ind.id === 'ggr') {    // 공구리: 확정 고점 계단선
+    const top = _calcGongguri(bars);
+    let d = '', prev = null;
+    top.forEach((v, i) => { if (v == null) return; d += prev == null ? `M${x(i)},${y(v)}` : (v !== prev ? `L${x(i)},${y(prev)} L${x(i)},${y(v)}` : `L${x(i)},${y(v)}`); prev = v; });
+    out.push(`<path d="${d}" fill="none" stroke="${ind.color}" stroke-width="3"/>`);
+    const li = Math.round(N * 0.8);
+    if (top[li] != null) out.push(`<text x="${x(li)}" y="${y(top[li]) - 10}" class="ind-guide-svg-label">공구리</text>`);
   }
   if (ind.id === 'ymgp') {   // 역매공파: 바닥권의 작은 양봉 아래 네모 (설명용 위치)
     let last = -99, n = 0;
