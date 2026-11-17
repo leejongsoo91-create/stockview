@@ -1002,6 +1002,7 @@ async function loadHome() {
   loadSectorPerf(_sectorPeriod, true);
   renderVolumeLeaders(stocks);
   renderHomeNews(news);
+  buildNewsTape(news);
   renderMarketStatBar(stocks);
   loadEconomicCalendar();
   renderHomeWatchlistSummary();
@@ -1035,6 +1036,35 @@ function buildTickerTape(indices, stocks) {
      </span>`
   ).join('');
   tape.innerHTML = html + html; // 끊김 없는 루프를 위해 복제
+}
+
+// ── 테이프 오른쪽 절반: 한글 뉴스 헤드라인 (11-18) ─────────────────────────────
+// 번역 없이 국내 출처(market KR) 중 한글 제목만 최신 20개. 누르면 기사 새 탭, 길이에 맞춰 흐름 속도 조절.
+function buildNewsTape(news) {
+  const el = document.getElementById('news-inner');
+  if (!el || !Array.isArray(news)) return;
+  const items = news
+    .filter(n => n.market === 'KR' && /[가-힣]/.test(n.title || '') && /^https?:\/\//.test(n.url || ''))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .slice(0, 20);
+  if (!items.length) {
+    el.style.animation = 'none';
+    el.innerHTML = '<span class="news-tape-item"><span class="nt-src">한글 뉴스 불러오는 중…</span></span>';
+    return;
+  }
+  const html = items.map(n =>
+    `<a class="news-tape-item" href="${_escHtml(n.url)}" target="_blank" rel="noopener noreferrer">` +
+      `<span class="nt-src">${_escHtml(n.source || '')}</span>` +
+      `<span class="nt-title">${_escHtml(n.title)}</span>` +
+      `<span class="nt-time">${_escHtml(n.time || '')}</span></a>`
+  ).join('');
+  el.style.animation = '';
+  el.innerHTML = html + html;   // 끊김 없는 루프를 위해 복제
+  // 글자 길이에 맞춰 1초에 약 45px 흐르게 (최소 60초) — 헤드라인이 길어 시세 띠와 같은 속도면 읽기 어려움
+  requestAnimationFrame(() => {
+    const half = el.scrollWidth / 2;
+    if (half > 0) el.style.animationDuration = Math.max(60, Math.round(half / 45)) + 's';
+  });
 }
 
 // 지수 이름 → Yahoo Finance 심볼 매핑
@@ -1731,6 +1761,7 @@ function initSocketIO() {
   socket.on('news_update', async () => {
     try {
       const news = await api('/api/news');
+      buildNewsTape(news);   // 테이프 뉴스 띠는 어느 탭에서나 보임
       if (_currentView === 'home')  renderHomeNews(news);
       if (_currentView === 'news') { _allNews = news; _populateSourceFilter(news); renderNews(); }
       updateTimestamp();

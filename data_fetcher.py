@@ -17,6 +17,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+import html
 from html.parser import HTMLParser
 
 import feedparser
@@ -70,8 +71,10 @@ AV_KEY       = _load_api_key("alphavantage.txt")
 FINNHUB_KEY  = _load_api_key("finnhub.txt")
 
 RSS_FEEDS = [
-    # 기존 7개
-    {"url": "https://finance.yahoo.com/news/rssindex",                             "source": "Yahoo Finance"},
+    # 11-18 정리: Yahoo 전체 피드(rssindex 404) → 종목 헤드라인 피드(SPY·QQQ)로 교체,
+    # WSJ Markets(1.8년 전에 멈춤)·Reddit 3개(404·429 차단) 제거, CNBC 2·Investing·Nasdaq 추가 — 모두 실제 접속 확인
+    {"url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=SPY&region=US&lang=en-US", "source": "Yahoo Finance"},
+    {"url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=QQQ&region=US&lang=en-US", "source": "Yahoo Finance"},
     {"url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",              "source": "CNBC"},
     {"url": "https://feeds.marketwatch.com/marketwatch/topstories/",              "source": "MarketWatch"},
     {"url": "https://seekingalpha.com/market_currents.xml",                       "source": "Seeking Alpha"},
@@ -81,11 +84,10 @@ RSS_FEEDS = [
     # 추가 5개
     {"url": "https://www.thestreet.com/.rss/full",                                "source": "TheStreet"},
     {"url": "https://www.benzinga.com/feed",                                      "source": "Benzinga"},
-    {"url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",                      "source": "WSJ Markets"},
-    # Reddit 커뮤니티 3개 (User-Agent 필요)
-    {"url": "https://www.reddit.com/r/stocks/top/.rss?t=day",                    "source": "Reddit r/stocks",   "reddit": True},
-    {"url": "https://www.reddit.com/r/investing/top/.rss?t=day",                 "source": "Reddit r/investing","reddit": True},
-    {"url": "https://www.reddit.com/r/wallstreetbets/top/.rss?t=day",            "source": "Reddit r/wsb",      "reddit": True},
+    {"url": "https://www.cnbc.com/id/15839069/device/rss/rss.html",               "source": "CNBC Markets"},
+    {"url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",               "source": "CNBC Economy"},
+    {"url": "https://www.investing.com/rss/news.rss",                             "source": "Investing.com"},
+    {"url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",           "source": "Nasdaq"},
     # 테크/앱 비즈니스 인사이트
     {"url": "https://www.appeconomyinsights.com/feed",                            "source": "App Economy Insights"},
 ]
@@ -102,6 +104,13 @@ KR_RSS_FEEDS = [
     # naive_tz: 발행 시각에 시간대 표시가 없을 때의 기준 시각. 인포스탁은 "2026-11-09 17:11:16"(KST)을 줘서
     # feedparser가 UTC로 읽으면 9시간 미래 → "-4시간 전" 표시(11-09 수정). Investing.com 한국은 시간대 없이 UTC라 그대로.
     {"url": "https://www.infostockdaily.co.kr/rss/allArticle.xml",                "source": "인포스탁데일리", "naive_tz": "KST"},
+    # 11-18 추가 (실제 접속 확인: 각 9~100건, 최신 글 몇 시간 이내). 머니투데이(1년 전 멈춤)·파이낸셜뉴스(발행 시각 없음)·
+    # 뉴스핌·비즈니스포스트·머니S(404)·헤럴드경제(증권 외 기사 섞임)는 제외
+    {"url": "https://www.hankyung.com/feed/finance",                              "source": "한국경제 증권"},
+    {"url": "https://www.mk.co.kr/rss/50200011/",                                 "source": "매일경제 증권"},
+    {"url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/stock/?outputType=xml", "source": "조선비즈 증권"},
+    {"url": "https://rss.etoday.co.kr/eto/etoday_news_all.xml",                   "source": "이투데이"},
+    {"url": "https://news.einfomax.co.kr/rss/allArticle.xml",                     "source": "연합인포맥스", "naive_tz": "KST"},
 ]
 
 REPORT_FEEDS = [
@@ -2620,24 +2629,30 @@ def fetch_news() -> list[dict]:
     seen: set[str] = set()
     results: list[dict] = []
 
-    _HEADERS = {"User-Agent": "StockView/1.0 (finviz-clone; educational project)"}
+    # 11-18: MarketWatch가 이 앱 이름 User-Agent에 400을 줘서 일반 브라우저 이름으로 (다른 피드도 모두 정상 확인)
+    _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"}
     _TIMEOUT = 8  # 소스당 최대 8초 대기
 
-    def _fetch_feed(url: str) -> "feedparser.FeedParserDict":
-        """requests로 타임아웃 적용 후 feedparser에 전달"""
-        resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-        resp.raise_for_status()
-        return feedparser.parse(resp.text)
-
-    for feed_info in RSS_FEEDS:
+    def _fetch_feed(feed_info: dict):
+        """피드 1개 조회 — 여러 개를 동시에 받는다(11-18, 예전엔 하나씩 + Reddit 5초 대기)"""
         try:
-            if feed_info.get("reddit"):
-                time.sleep(5)  # Reddit IP 단위 연속 요청 429 방지
-            feed = _fetch_feed(feed_info["url"])
+            resp = requests.get(feed_info["url"], headers=_HEADERS, timeout=_TIMEOUT)
+            resp.raise_for_status()
+            return feed_info, feedparser.parse(resp.text), None
+        except Exception as e:
+            return feed_info, None, e
 
-            for entry in feed.entries[:6]:
-                title = entry.get("title", "").strip()
-                if not title or title in seen:
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fetched = list(ex.map(_fetch_feed, RSS_FEEDS))   # 입력 순서 유지
+
+    for feed_info, feed, err in fetched:
+        if err is not None:
+            log.warning(f"RSS({feed_info['source']}): {err}")
+            continue
+        try:
+            for entry in feed.entries[:_NEWS_PER_FEED]:
+                title = html.unescape(entry.get("title", "")).strip()   # &quot; 등 HTML 기호 풀기
+                if not title or title in seen or _too_old(entry.get("published_parsed")):
                     continue
                 seen.add(title)
 
@@ -2664,7 +2679,22 @@ def fetch_news() -> list[dict]:
         except Exception as e:
             log.warning(f"RSS({feed_info['source']}): {e}")
 
-    return results[:100]
+    results.sort(key=lambda x: x["timestamp"], reverse=True)   # 피드 순서가 아니라 최신순으로 자른다
+    return results[:_NEWS_MAX]
+
+
+_NEWS_PER_FEED = 15     # 피드당 기사 수 (11-18 미국 6·국내 10 → 15)
+_NEWS_MAX      = 200    # 시장별 최대 기사 수 (11-18 100 → 미국 200·국내 200)
+_NEWS_MAX_AGE  = 7 * 86400   # 이보다 오래된 기사는 버림 — 갱신이 멈춘 피드의 옛 글이 섞이지 않게
+
+
+def _too_old(published_parsed) -> bool:
+    if not published_parsed:
+        return False
+    try:
+        return time.time() - calendar.timegm(published_parsed) > _NEWS_MAX_AGE
+    except Exception:
+        return False
 
 
 def fetch_kr_market_news() -> list[dict]:
@@ -2680,7 +2710,7 @@ def fetch_kr_market_news() -> list[dict]:
         try:
             resp = requests.get(feed_info["url"], headers=_HEADERS, timeout=_TIMEOUT)
             resp.raise_for_status()
-            return feed_info, feedparser.parse(resp.text).entries[:10], None
+            return feed_info, feedparser.parse(resp.text).entries[:_NEWS_PER_FEED], None
         except Exception as e:
             return feed_info, [], e
 
@@ -2694,11 +2724,13 @@ def fetch_kr_market_news() -> list[dict]:
             continue
         ok_feeds += 1
         for entry in entries:
-            title = entry.get("title", "").strip()
+            title = html.unescape(entry.get("title", "")).strip()   # &quot; 등 HTML 기호 풀기 (연합인포맥스)
             if not title or title in seen:
                 continue
-            seen.add(title)
             pp = _entry_published_utc(entry, feed_info)
+            if _too_old(pp):
+                continue
+            seen.add(title)
 
             results.append({
                 "id":        len(results) + 1,
@@ -2714,8 +2746,56 @@ def fetch_kr_market_news() -> list[dict]:
                 "summary":   _clean_summary(entry.get("summary", "")),
             })
 
-    log.info(f"KR RSS: {ok_feeds}/{len(KR_RSS_FEEDS)}개 피드 성공, 기사 {len(results)}건")
-    return results[:100]
+    # 네이버 증권 주요뉴스 (모바일 API, 키 불필요 — 여러 언론사 증시 기사를 네이버가 골라 둔 목록)
+    naver = _fetch_naver_main_news(30)
+    for n in naver:
+        if n["title"] not in seen:
+            seen.add(n["title"])
+            results.append(n)
+
+    log.info(f"KR RSS: {ok_feeds}/{len(KR_RSS_FEEDS)}개 피드 성공 + 네이버 주요뉴스 {len(naver)}건, 기사 {len(results)}건")
+    # 피드 순서가 아니라 최신순으로 자른다 (예전엔 피드 순서대로 100건에서 잘라 뒤쪽 피드가 빠질 수 있었음)
+    results.sort(key=lambda x: x["timestamp"], reverse=True)
+    return results[:_NEWS_MAX]
+
+
+def _fetch_naver_main_news(limit: int = 20) -> list[dict]:
+    """네이버 증권 주요뉴스 — m.stock.naver.com/api/news/list?category=mainnews (11-18 확인).
+    항목: tit(제목)·ohnm(언론사)·dt(YYYYMMDDHHMMSS, KST)·oid/aid(기사 주소)·subcontent(요약). 실패하면 []."""
+    try:
+        r = requests.get(f"https://m.stock.naver.com/api/news/list?category=mainnews&pageSize={limit}&page=1",
+                         headers=_NAVER_RT_HEADERS, timeout=8)
+        r.raise_for_status()
+        rows = r.json() or []
+    except Exception as e:
+        log.warning(f"네이버 주요뉴스: {e}")
+        return []
+    out = []
+    for x in rows:
+        title = html.unescape(str(x.get("tit") or "")).strip()
+        dt, oid, aid = str(x.get("dt") or ""), x.get("oid"), x.get("aid")
+        if not title or len(dt) < 12 or not oid or not aid:
+            continue
+        try:
+            ts = int(datetime.strptime(dt[:14].ljust(14, "0"), "%Y%m%d%H%M%S")
+                     .replace(tzinfo=timezone(timedelta(hours=9))).timestamp())
+        except ValueError:
+            continue
+        ts = min(ts, int(time.time()))
+        out.append({
+            "id":        0,
+            "title":     title,
+            "source":    "네이버 주요뉴스",
+            "time":      _time_ago(time.gmtime(ts)),
+            "timestamp": ts,
+            "ticker":    None,
+            "sentiment": "neutral",
+            "score":     0,
+            "url":       f"https://n.news.naver.com/mnews/article/{oid}/{aid}",
+            "market":    "KR",
+            "summary":   _clean_summary(html.unescape(str(x.get("subcontent") or ""))) + (f" ({x.get('ohnm')})" if x.get("ohnm") else ""),
+        })
+    return out
 
 
 def fetch_alphavantage_news() -> list[dict]:

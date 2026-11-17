@@ -12,7 +12,12 @@
 
   <!-- ① 티커 테이프 -->
   <div id="ticker-tape">
-    <div id="ticker-inner"></div>
+    <!-- 왼쪽 절반: 시세 / 오른쪽 절반: 한글 뉴스 헤드라인 (11-18) -->
+    <div class="tape-half tape-quotes"><div id="ticker-inner"></div></div>
+    <div class="tape-half tape-news" title="최신 한글 뉴스 — 누르면 기사가 새 탭에서 열려요 (마우스를 올리면 멈춤)">
+      <span class="tape-news-label">📰 뉴스</span>
+      <div class="tape-news-track"><div id="news-inner"></div></div>
+    </div>
   </div>
 
   <!-- ② 헤더 + 내비게이션 -->

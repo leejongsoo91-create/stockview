@@ -67,6 +67,24 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   animation: tape-scroll 60s linear infinite;
 }
 #ticker-inner:hover { animation-play-state: paused; }
+/* 테이프 반 나누기 (11-18): 왼쪽 시세 · 오른쪽 한글 뉴스 헤드라인 — 각자 흐름 */
+.tape-half { flex: 1 1 50%; min-width: 0; height: 100%; overflow: hidden; display: flex; align-items: center; }
+.tape-news { border-left: 1px solid var(--border); }
+.tape-news-label {
+  flex: none; padding: 0 10px; font-size: 11px; font-weight: 700; color: var(--chart-canvas-text);
+  background: #0a0e14; height: 100%; display: flex; align-items: center; border-right: 1px solid #1e2530;
+}
+.tape-news-track { flex: 1; min-width: 0; overflow: hidden; height: 100%; display: flex; align-items: center; }
+#news-inner { display: inline-flex; align-items: center; animation: tape-scroll 120s linear infinite; }
+#news-inner:hover { animation-play-state: paused; }
+.news-tape-item {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; height: var(--tape-h);
+  border-right: 1px solid #1e2530; font-size: 11.5px; text-decoration: none; color: var(--chart-canvas-text);
+}
+.news-tape-item:hover { background: var(--chart-canvas); }
+.news-tape-item:hover .nt-title { text-decoration: underline; }
+.news-tape-item .nt-src  { color: #8b949e; font-size: 10.5px; }
+.news-tape-item .nt-time { color: #8b949e; font-size: 10.5px; }
 @keyframes tape-scroll {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
@@ -80,11 +98,11 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   font-size: 11.5px;
   letter-spacing: .3px;
 }
-.tape-name  { color: var(--muted); }
+.tape-name  { color: #8b949e; }   /* 테이프 배경은 테마와 관계없이 늘 어두움 → 글자도 고정 (11-18 라이트 테마에서 안 보이던 문제) */
 .tape-link  { cursor: pointer; }
-.tape-link:hover { background: var(--bg-input); }
-.tape-link:hover .tape-name { color: var(--text); }
-.tape-val   { color: var(--text); font-weight: 600; }
+.tape-link:hover { background: var(--chart-canvas); }
+.tape-link:hover .tape-name { color: var(--chart-canvas-text); }
+.tape-val   { color: var(--chart-canvas-text); font-weight: 600; }
 .tape-pct.up   { color: var(--green); }
 .tape-pct.down { color: var(--red); }
 
