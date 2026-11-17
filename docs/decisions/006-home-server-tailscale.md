@@ -31,6 +31,7 @@
   ssh root@<서버IP> 'cd /home/stockview/stockview && sudo -u stockview git fetch -q && sudo -u stockview git reset -q --hard origin/main && systemctl restart stockview'
   ```
 - 상태·로그: `systemctl status stockview`, `journalctl -u stockview -n 100`
+- 감시: 작업 PC wmux 팀 레이아웃의 **📊 집서버감시** 창 = `bash scripts/server_watch.sh home 60` (주소는 git 제외 파일 `api/home-server-url.txt`에 한 줄 — 공개 저장소라 코드·문서에 안 씀). 작업 PC가 꺼져 있으면 감시도 멈춘다
 - 끄기: `systemctl disable --now stockview` / 외부 연결만 끄기: `tailscale serve --https=443 off`
 - 내 PC와 서버를 동시에 켜면 무료 API 키(Finnhub 등) 한도를 둘이 나눠 쓰게 됨 → 개발할 때만 WSL 5001
 

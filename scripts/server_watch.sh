@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
-# StockView 서버 감시 — 일정 간격으로 주요 API를 점검해 한 줄씩 출력 (읽기 전용, 로컬 무료 API만 호출)
-# 사용: bash scripts/server_watch.sh [포트=5001] [간격초=30]
-#   예) bash scripts/server_watch.sh          → 5001번을 30초마다
+# StockView 서버 감시 — 일정 간격으로 주요 API를 점검해 한 줄씩 출력 (읽기 전용, StockView 자체 API만 호출)
+# 사용: bash scripts/server_watch.sh [대상=5001] [간격초=30]
+#   대상: 포트(내 PC 127.0.0.1) | 주소(http://… https://…) | home(집 서버 — api/home-server-url.txt의 주소)
+#   예) bash scripts/server_watch.sh          → 내 PC 5001번을 30초마다
 #       bash scripts/server_watch.sh 5002 10  → 병렬 작업 서버 5002번을 10초마다
+#       bash scripts/server_watch.sh home 60  → 집 서버(Tailscale https 주소)를 60초마다
+# 집 서버 주소는 공개 저장소에 쓰지 않도록 git에 안 올라가는 api/home-server-url.txt에 한 줄로 둔다 (docs/decisions/006)
 # 끝내기: Ctrl+C
 
-PORT="${1:-5001}"
+TARGET="${1:-5001}"
 INTERVAL="${2:-30}"
-BASE="http://127.0.0.1:${PORT}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+case "$TARGET" in
+  home)
+    URL_FILE="${DIR}/api/home-server-url.txt"
+    BASE="$(head -n1 "$URL_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [ -z "$BASE" ]; then
+      echo "집 서버 주소가 없습니다 — ${URL_FILE}에 https://… 주소를 한 줄로 적어 주세요"; exit 1
+    fi
+    LABEL="집서버"; DOWN_MSG="응답 없음 — 집 서버 꺼짐 또는 Tailscale 연결 끊김" ;;
+  http://*|https://*)
+    BASE="${TARGET%/}"; LABEL="${BASE#*://}"; LABEL="${LABEL%%.*}"; DOWN_MSG="응답 없음 — 서버 꺼짐 또는 네트워크 끊김" ;;
+  *[!0-9]*|'')
+    echo "대상은 포트 번호, http(s) 주소, home 중 하나여야 합니다: ${TARGET}"; exit 1 ;;
+  *)
+    BASE="http://127.0.0.1:${TARGET}"; LABEL=":${TARGET}"; DOWN_MSG="서버 꺼짐 — 응답 없음" ;;
+esac
 PY="${DIR}/.venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 TMP="$(mktemp -d)"
@@ -49,7 +66,7 @@ else:  # stale: 핵심 캐시 중 fresh가 false인 키 (종목별 chart_·finan
 PYEOF
 }
 
-echo "StockView 서버 감시 — ${BASE} · ${INTERVAL}초 간격 · Ctrl+C로 종료"
+echo "StockView 서버 감시 — ${LABEL} (${BASE}) · ${INTERVAL}초 간격 · Ctrl+C로 종료"
 echo "${DIM}✅ 정상  ⚠️ 응답은 있으나 비어 있음/캐시 만료  ❌ 실패${RST}"
 fails=0
 while true; do
@@ -80,9 +97,9 @@ while true; do
     esac
   done
   case "$status" in down|fail) icon="❌" ;; warn) icon="⚠️" ;; *) icon="✅" ;; esac
-  set_title "📊 서버감시 :${PORT} ${icon} ${now}"
+  set_title "📊 서버감시 ${LABEL} ${icon} ${now}"
   case "$status" in
-    down) fails=$((fails+1)); echo "${now} ${RED}❌ 서버 꺼짐 (응답 없음, 연속 ${fails}회)${RST}" ;;
+    down) fails=$((fails+1)); echo "${now} ${RED}❌ ${DOWN_MSG} (연속 ${fails}회)${RST}" ;;
     fail) fails=$((fails+1)); echo "${now} ${RED}❌${RST}${line% ·}" ;;
     warn) fails=0; echo "${now} ${YEL}⚠️${RST}${line% ·}" ;;
     *)    fails=0; echo "${now} ${GRN}✅${RST}${line% ·}" ;;
