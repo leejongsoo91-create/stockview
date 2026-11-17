@@ -92,7 +92,7 @@
 |------|------|
 | Yahoo Finance | JSON 배치 API(`v7/quote`, `quoteSummary`)는 크럼 없이 401 → HTML 스크래핑·v8 chart만 사용. 병렬 과다 시 429 → 동시성 5 + 지연, 실패율 50%↑면 캐시 60초 |
 | 네이버 금융 | 페이지마다 인코딩이 다름(EUC-KR / UTF-8 혼재) → 새 페이지는 `Content-Type` 먼저 확인. 옛 HTML 페이지가 계속 폐기되는 중 → `m.stock.naver.com/api/...` JSON API 우선 |
-| 국내 일봉 | 야후 v8 chart는 최신 거래일 봉 종가가 하루 가까이 비어 있음 → `fetch_ohlcv`가 야후 뒤에 야후 meta(regularMarketPrice·DayHigh·DayLow·Volume)의 KRX 값으로 최신 1봉 보충(`_kr_latest_bar_rt`, 11-17 — 네이버 실시간 값은 15:30 이후 넥스트레이드 가격이 섞여 폐기). 네이버 차트 API(`api.stock.naver.com/chart/domestic`)는 고가·저가·종가에 넥스트레이드 애프터마켓 가격이 섞여 야후 실패 시에만 사용 (11-14) |
+| 국내 일봉 | 야후 v8 chart는 최신 거래일 봉 종가가 하루 가까이 비어 있음 → `fetch_ohlcv`가 야후 뒤에 야후 meta(regularMarketPrice·DayHigh·DayLow·Volume)의 KRX 값으로 최신 1봉 보충(`_kr_latest_bar_rt`, 11-17 — 네이버 실시간 값은 15:30 이후 넥스트레이드 가격이 섞여 폐기). **장 마감 몇 시간 뒤엔 meta 고가·저가·거래량이 0** → 종가만 meta, 시가·고가·저가는 네이버 **분봉 중 09:00~15:30만**(그 밖은 넥스트레이드), 거래량은 네이버 일봉 `accumulatedTradingVolume`(KRX 정규장 거래량과 같음) — `_kr_naver_day_bar`, 11-18. 야후 분봉은 15:00까지만 있어 15시대 고가·저가를 놓쳐 쓰지 않음. 네이버 차트 API(`api.stock.naver.com/chart/domestic`)는 고가·저가·종가에 넥스트레이드 애프터마켓 가격이 섞여 야후 실패 시에만 사용 (11-14) |
 | KRX KIND | 07-12에 EUC-KR → UTF-8로 바뀐 전례 |
 | SEC EDGAR | User-Agent에 이메일 형식 문자열 필수(없으면 403). `fy`/`fp` 라벨이 불안정 → 기간 종료일(`end`)로 그룹핑 |
 | RSS | 피드가 자주 죽음(404/403). 국내 RSS는 커스텀 User-Agent 필요한 곳 많음 |

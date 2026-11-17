@@ -2244,12 +2244,53 @@ def _fetch_kr_daily_naver(ticker: str, period: str = "1y", years: int | None = N
         return []
 
 
+def _kr_naver_day_bar(ticker: str, day: str) -> dict | None:
+    """네이버로 그날(YYYY-MM-DD) KRX 정규장 봉의 시가·고가·저가·거래량을 만든다. 실패하면 None.
+    - 시가·고가·저가: 분봉 중 09:00~15:30만 (그 밖의 08:00~08:50·15:31~20:00 줄은 넥스트레이드 가격) —
+      11-18 확인: 40종목 11-16 값이 야후 일봉(KRX)과 모두 일치
+    - 거래량: 일봉 API의 accumulatedTradingVolume (KRX 정규장 거래량, 20종목 일치). 분봉 거래량 합계는
+      시가 동시호가가 빠져 3~5% 적어 쓰지 않음
+    일봉 API의 고가·저가·종가, 실시간 시세의 closePrice는 넥스트레이드가 섞여 쓰지 않는다."""
+    code = kr_code(ticker)
+    if not code:
+        return None
+    d = day.replace("-", "")
+    base = f"https://api.stock.naver.com/chart/domestic/item/{code}"
+    try:
+        r = requests.get(f"{base}/minute?startDateTime={d}0900&endDateTime={d}1530",
+                         headers=_NAVER_RT_HEADERS, timeout=10)
+        r.raise_for_status()
+        reg = [x for x in (r.json() or [])
+               if str(x.get("localDateTime", ""))[:8] == d
+               and "0900" <= str(x.get("localDateTime", ""))[8:12] <= "1530"
+               and _safe(x.get("lowPrice"))]
+        if not reg:
+            return None
+        r = requests.get(f"{base}/day?startDateTime={d}0000&endDateTime={d}2359",
+                         headers=_NAVER_RT_HEADERS, timeout=10)
+        r.raise_for_status()
+        vol = next((int(x.get("accumulatedTradingVolume") or 0) for x in (r.json() or [])
+                    if str(x.get("localDate")) == d), 0)
+        if not vol:
+            return None
+        return {"open": _safe(reg[0].get("openPrice")) or _safe(reg[0].get("currentPrice")),
+                "high": max(_safe(x.get("highPrice")) or 0 for x in reg),
+                "low":  min(_safe(x.get("lowPrice")) for x in reg),
+                "volume": vol}
+    except Exception as e:
+        log.warning(f"_kr_naver_day_bar({ticker}): {e}")
+        return None
+
+
 def _kr_latest_bar_rt(ticker: str) -> dict | None:
-    """국내 최신 거래일 봉 — 야후 일봉 응답의 meta(KRX 종가·고가·저가·거래량)와 그날 봉의 시가.
-    야후는 최신 거래일 봉의 종가를 하루 가까이 비워 두지만 meta.regularMarketPrice에는 KRX 값이 바로 들어온다.
+    """국내 최신 거래일 봉 — 종가는 야후 일봉 응답의 meta(KRX), 나머지는 시각에 따라:
+    - 장중·장 마감 직후: meta 고가·저가·거래량 + 그날 봉의 시가
+    - 밤(11-18 확인: 장 마감 몇 시간 뒤 meta 거래량·고가·저가가 0이 되어 최신 봉이 다음 날 낮까지 빠졌음):
+      _kr_naver_day_bar()(네이버 정규장 분봉 시가·고가·저가 + 일봉 거래량)
+    야후는 최신 거래일 일봉의 종가를 하루 가까이 비워 두지만 meta.regularMarketPrice에는 KRX 종가가 바로 들어온다.
     네이버 실시간 값은 쓰지 않는다: 15:30 이후 종가·고가·저가에 넥스트레이드 애프터마켓 가격이 섞임
     (11-17 확인: 삼성전자 11-16 네이버 종가 195,000·저가 194,900 / KRX 196,800·195,000).
-    09:00 전 시각이거나 거래량 0(거래정지)이면 None."""
+    09:00 전 시각이거나 그날 거래가 없으면(거래정지) None."""
     try:
         r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}"
                          "?interval=1d&range=5d", headers=YF_HEADERS, timeout=10)
@@ -2260,19 +2301,25 @@ def _kr_latest_bar_rt(ticker: str) -> dict | None:
         return None
     meta = res.get("meta") or {}
     c, ts = _safe(meta.get("regularMarketPrice")), meta.get("regularMarketTime")
-    vol = int(meta.get("regularMarketVolume") or 0)
-    if not c or not vol or not ts:
+    if not c or not ts:
         return None
     kst = datetime.fromtimestamp(ts, tz=timezone(timedelta(hours=9)))
     if kst.hour < 9:
         return None
     day = kst.strftime("%Y-%m-%d")
-    o = None
-    q = (res.get("indicators") or {}).get("quote", [{}])[0]
-    for k, bts in enumerate(res.get("timestamp") or []):
-        if datetime.fromtimestamp(bts, tz=timezone(timedelta(hours=9))).strftime("%Y-%m-%d") == day:
-            o = _safe((q.get("open") or [None] * (k + 1))[k])
-    h, l = _safe(meta.get("regularMarketDayHigh")) or c, _safe(meta.get("regularMarketDayLow")) or c
+    vol = int(meta.get("regularMarketVolume") or 0)
+    h, l = _safe(meta.get("regularMarketDayHigh")), _safe(meta.get("regularMarketDayLow"))
+    if vol and h and l:                   # meta가 살아 있음 (장중·장 마감 직후)
+        o = None
+        q = (res.get("indicators") or {}).get("quote", [{}])[0]
+        for k, bts in enumerate(res.get("timestamp") or []):
+            if datetime.fromtimestamp(bts, tz=timezone(timedelta(hours=9))).strftime("%Y-%m-%d") == day:
+                o = _safe((q.get("open") or [None] * (k + 1))[k])
+    else:                                 # 밤: meta가 비어 있음 → 네이버 정규장 분봉·일봉 거래량
+        nb = _kr_naver_day_bar(ticker, day)
+        if not nb:
+            return None
+        o, h, l, vol = nb["open"], nb["high"], nb["low"], nb["volume"]
     o = o or c
     return {"time":   day,
             "open":   round(o, 2),
