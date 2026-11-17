@@ -40,7 +40,7 @@
 | 항목 | 내용 |
 |------|------|
 | 프로젝트 | StockView — Finviz 스타일 미국·국내 주식 분석 웹앱 (개인용, 로컬 전용) |
-| 실행 | WSL Ubuntu `/root/stockview`에서 `.venv/bin/python app.py` → http://127.0.0.1:5001 (터미널 창을 띄워두는 방식). Windows 셸에서는 `wsl -d Ubuntu -u root -- bash -lc 'cd /root/stockview && .venv/bin/python app.py'` — Windows의 `python`(3.14/3.15)으로 띄우지 않는다 |
+| 실행 | WSL Ubuntu `/root/stockview`에서 `.venv/bin/python app.py` → http://127.0.0.1:5001 (터미널 창을 띄워두는 방식). Windows 셸에서는 `wsl -d Ubuntu -u root -- bash -lc 'cd /root/stockview && .venv/bin/python app.py'` — Windows의 `python`(3.14/3.15)으로 띄우지 않는다<br>**실사용 서버(11-18~):** 집 Proxmox CT `stockview`에서 systemd 24시간 실행, 접속은 Tailscale `https://stockview.<tailnet>.ts.net`. 코드 반영·운영은 `docs/decisions/006-home-server-tailscale.md` (푸시 승인 후에만 반영) |
 | 스택 | Flask + flask-socketio + APScheduler / Vanilla JS + D3.js + Lightweight Charts |
 | 환경 | **Python 3.12.3** (WSL Ubuntu `.venv` 가상환경). numpy·pandas·yfinance 미설치 — 예전 3.15 알파 시절부터 `requests`로 직접 호출하는 구조를 유지 |
 | 규모 | 9탭 (Home·Screener·Heatmap·Chart·News·Brief·Watchlist·Portfolio·Earnings), US 5,000 · KR 4,318종목(주식·ETF·ETN) |
@@ -53,7 +53,7 @@
 | 앞으로 할 일 | `docs/ROADMAP.md` |
 | 완료 이력 (최신순) | `docs/CHANGELOG.md` |
 | 구조·데이터 흐름·API·스케줄러·개발 함정 | `docs/architecture.md` |
-| 과거 결정과 이유 (외부접속, 해외수급, 신호 백테스트, 음성 브리핑) | `docs/decisions/` |
+| 과거 결정과 이유 (외부접속·집 서버, 해외수급, 신호 백테스트, 음성 브리핑) | `docs/decisions/` |
 | 옛 PLAN.md 원본 / 06~11월 상세 경위 | `docs/specs/plan-legacy.md`, `docs/specs/work-history-detail.md` |
 
 ## 파일 위치 규칙
@@ -77,5 +77,5 @@
 - 새 기능은 **기존 데이터·API·패턴 재사용**을 먼저 검토한다 (새 외부 API는 최후 수단)
 - 신호 로직은 JS(`chart.js`)와 Python(`data_fetcher.py`) **이중 구현** — 한쪽만 고치지 않는다
 - localStorage 키·포맷(`WL`, `PT`, `WLG`, `WLN`, `NB` 등)은 기존 사용자 데이터 호환을 유지한다
-- 서버 host는 `127.0.0.1` 유지 — `0.0.0.0`은 `RENDER` 환경변수일 때만 (`docs/decisions/001-local-only-access.md`)
+- 서버 host는 `127.0.0.1` 유지 — `0.0.0.0`은 `RENDER` 환경변수일 때만 (`docs/decisions/001`, 집 서버도 Tailscale serve가 127.0.0.1로 중계 — `006`)
 - 병렬 작업 서버는 5002번부터. 5001은 사용자 메인 서버용
