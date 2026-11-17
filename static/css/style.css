@@ -1482,7 +1482,6 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
   transition: background .15s;
 }
 #chart-go-btn:hover { background: var(--accent2); }
-.quick-tickers { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .quick-label { font-size: 11.5px; color: var(--muted); }
 .quick-btn {
   background: var(--bg-input);
@@ -1499,8 +1498,6 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .related-etf { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; vertical-align: middle; }
 .related-etf-label { font-size: 11px; color: var(--muted); }
 .related-etf .related-etf-btn { padding: 2px 8px; font-size: 11px; }
-.idx-btn { color: #e3b341 !important; border-color: #3a3010 !important; }
-.idx-btn:hover { border-color: #e3b341 !important; background: #e3b34115 !important; }
 
 /* 차트 보기 드롭다운 (봉 · 차트 종류 · 기간 · ⌖ · 세로 범위) — 지표 줄 앞에 한 줄로 */
 .chart-view-ctrls { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -1542,7 +1539,7 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 /* ⚙ 설정 · ? 가이드 버튼 */
 .chart-indicator-row { position: relative; }
 .ind-tools { display: inline-flex; gap: 4px; }
-.ind-icon-btn.ind-settings-open { width: auto; padding: 0 9px; font-size: 12px; }
+.ind-icon-btn.ind-settings-open, #vol-trend-btn { width: auto; padding: 0 9px; font-size: 12px; white-space: nowrap; }   /* 글자 있는 버튼은 26px 고정 폭 해제 (11-18 거래 추이 버튼 글자 세로로 쌓임 수정) */
 .ind-icon-btn {
   width: 26px; height: 24px; border-radius: 4px;
   background: var(--bg-input); border: 1px solid var(--border); color: var(--muted);

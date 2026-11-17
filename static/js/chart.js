@@ -1234,10 +1234,6 @@ function _bindSearchEvents() {
     if (dropdown && wrap && !wrap.contains(e.target)) dropdown.style.display = 'none';
   });
 
-  document.querySelectorAll('.quick-btn').forEach(btn => {
-    btn.addEventListener('click', () => loadChart(btn.dataset.ticker));
-  });
-
   // US/KR 검색 시장 토글
   document.querySelectorAll('.chart-mkt-btn').forEach(btn => {
     btn.addEventListener('click', () => {
