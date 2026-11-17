@@ -875,8 +875,8 @@ function openStockModal(ticker) {
       return `<div class="sm-news-item" onclick="window.open('${n.url}','_blank')">
         <span class="sm-news-dot">${dot}</span>
         <div class="sm-news-body">
-          <div class="sm-news-title">${n.title}</div>
-          <div class="sm-news-meta">${n.source || ''} · ${n.time || ''}</div>
+          <div class="sm-news-title">${_escHtml(n.title || '')}</div>
+          <div class="sm-news-meta">${_escHtml(n.source || '')} · ${_escHtml(n.time || '')}</div>
         </div>
       </div>`;
     }).join('');
@@ -1298,8 +1298,8 @@ function openKrStockModal(ticker) {
       `<div class="sm-news-item" onclick="window.open('${n.url}','_blank')">
         <span class="sm-news-dot">📰</span>
         <div class="sm-news-body">
-          <div class="sm-news-title">${n.title}</div>
-          <div class="sm-news-meta">${n.source || ''} · ${n.time || ''}</div>
+          <div class="sm-news-title">${_escHtml(n.title || '')}</div>
+          <div class="sm-news-meta">${_escHtml(n.source || '')} · ${_escHtml(n.time || '')}</div>
         </div>
       </div>`
     ).join('');

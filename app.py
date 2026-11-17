@@ -1012,7 +1012,7 @@ def kr_disclosures():
 
 @app.route("/api/kr-news/<code>")
 def kr_news(code: str):
-    """국내주식 종목별 뉴스 (Naver Finance, 30분 lazy 캐시)"""
+    """국내주식 종목별 뉴스 (네이버 증권 모바일 API, 30분 lazy 캐시)"""
     code = df.kr_code(code)
     if not code:
         return jsonify([])
@@ -1022,12 +1022,13 @@ def kr_news(code: str):
         return jsonify(cached)
     name = next((s.get("name") for s in (cache.get("kr_stocks") or [])
                  if s.get("code") == code), "")
-    # 1순위: 네이버 검색 API(공식, 키 필요) → 2순위: 네이버 금융 스크래핑 → 3순위: Google News RSS
-    result = df.fetch_kr_stock_news_naver_api(name)
-    if result:
-        log.info(f"KR 뉴스: 네이버 검색API {len(result)}건 ({name})")
-    else:
-        result = df.fetch_kr_stock_news(code)
+    # 1순위: 네이버 증권 모바일 API(키 불필요, 종목에 묶인 기사 — 11-18) → 2순위: 네이버 검색 API(공식, 키 있을 때만)
+    # → 3순위: Google News RSS (광고성 기사가 섞여 마지막 예비로만)
+    result = df.fetch_kr_stock_news(code)
+    if not result:
+        result = df.fetch_kr_stock_news_naver_api(name)
+        if result:
+            log.info(f"KR 뉴스: 네이버 검색API {len(result)}건 ({name})")
     if not result:
         result = df.fetch_kr_stock_news_google(name)
         if result:

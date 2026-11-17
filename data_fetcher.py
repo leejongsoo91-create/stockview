@@ -1521,41 +1521,47 @@ def get_kr_investor_leaders(pool: list[dict], limit: int = 15, max_workers: int 
 
 
 # ── 국내주식 종목별 뉴스 ──────────────────────────────────────────────────────
-def fetch_kr_stock_news(code: str, limit: int = 5) -> list[dict]:
-    """네이버 금융 종목 뉴스 (감성분석 없음 — VADER는 한글 미지원)."""
-    import html as _html
-    try:
-        url = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1&sm=title_entity_id.basic&clusterId="
-        r   = requests.get(url, headers={
-            "User-Agent": "Mozilla/5.0", "Referer": "https://finance.naver.com",
-        }, timeout=8)
-        if r.status_code != 200:
-            log.warning(f"KR 뉴스(네이버) HTTP {r.status_code} code={code}")
-        content = r.content.decode("euc-kr", errors="replace")
-
-        result = []
-        for row in re.findall(r'<tr[^>]*>(.*?)</tr>', content, re.DOTALL):
-            title_m = re.search(r'class=["\'\s]*title["\'\s]*>(.*?)</td>', row, re.DOTALL)
-            info_m  = re.search(r'class=["\'\s]*info["\'\s]*>(.*?)</td>',  row, re.DOTALL)
-            date_m  = re.search(r'class=["\'\s]*date["\'\s]*>(.*?)</td>',  row, re.DOTALL)
-            if not (title_m and info_m):
-                continue
-            title  = _html.unescape(re.sub(r"<[^>]+>", "", title_m.group(1)).strip())
-            source = _html.unescape(re.sub(r"<[^>]+>", "", info_m.group(1)).strip())
-            date   = re.sub(r"<[^>]+>", "", date_m.group(1)).strip() if date_m else ""
-            link_m = re.search(r'href=["\'](/item/news_read[^"\']+)', title_m.group(1))
-            raw_url = "https://finance.naver.com" + link_m.group(1) if link_m else ""
-            if title and len(title) > 5:
-                result.append({"title": title, "source": source, "time": date, "url": raw_url})
-            if len(result) >= limit:
-                break
-        if not result:
-            # 해외 서버에서 네이버가 막거나 빈 페이지를 줄 때 원인 파악용
-            log.warning(f"KR 뉴스(네이버) 0건 code={code} status={r.status_code} len={len(content)}")
-        return result
-    except Exception as e:
-        log.warning(f"KR 뉴스 조회 실패 {code}: {e}")
+def fetch_kr_stock_news(code: str, limit: int = 8) -> list[dict]:
+    """국내 종목 뉴스 — 네이버 증권 모바일 API(키 불필요, 네이버가 종목에 묶어 둔 기사).
+    11-18 교체: 예전 finance.naver.com/item/news_news.naver HTML은 410으로 폐기돼 Google 뉴스로 대체되며
+    광고성 기사(주가 전망 홍보 등)가 섞였음. 응답은 묶음(cluster) 목록이고 각 묶음의 items에 기사가 있다.
+    감성분석 없음(VADER는 한글 미지원). 반환: {"title", "source", "time", "url"}"""
+    code = kr_code(code)
+    if not code:
         return []
+    try:
+        r = requests.get(f"https://m.stock.naver.com/api/news/stock/{code}?pageSize={max(limit, 10)}&page=1",
+                         headers=_NAVER_RT_HEADERS, timeout=8)
+        r.raise_for_status()
+        clusters = r.json() or []
+    except Exception as e:
+        log.warning(f"KR 종목 뉴스(네이버 모바일) 실패 {code}: {e}")
+        return []
+    kst = timezone(timedelta(hours=9))
+    out, seen = [], set()
+    for c in clusters:
+        for it in (c.get("items") or []):
+            title = html.unescape(str(it.get("titleFull") or it.get("title") or "")).strip()
+            if not title or title in seen:
+                continue
+            oid, aid = it.get("officeId"), it.get("articleId")
+            url = it.get("mobileNewsUrl") or (f"https://n.news.naver.com/mnews/article/{oid}/{aid}" if oid and aid else "")
+            if not url.startswith("http"):
+                continue
+            dt = str(it.get("datetime") or "")
+            try:
+                pub = datetime.strptime(dt[:12], "%Y%m%d%H%M").replace(tzinfo=kst)
+                when = _time_ago(time.gmtime(min(pub.timestamp(), time.time())))
+            except ValueError:
+                when = ""
+            seen.add(title)
+            out.append({"title": title, "source": html.unescape(str(it.get("officeName") or "네이버")),
+                        "time": when, "url": url})
+            if len(out) >= limit:
+                return out
+    if not out:
+        log.info(f"KR 종목 뉴스(네이버 모바일) 0건 code={code}")
+    return out
 
 
 _NAVER_ID_ENV, _NAVER_SECRET_ENV = "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"

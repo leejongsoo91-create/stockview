@@ -3650,8 +3650,8 @@ async function _loadStockNews(ticker) {
       const cls = n.sentiment === 'positive' ? 'up' : n.sentiment === 'negative' ? 'down' : '';
       return `<div class="stock-news-item" onclick="window.open('${n.url}','_blank')">
         <span class="stock-news-dot ${cls}"></span>
-        <span class="stock-news-title">${n.title}</span>
-        <div class="stock-news-meta">${n.source} · ${n.time}</div>
+        <span class="stock-news-title">${_escHtml(n.title || '')}</span>
+        <div class="stock-news-meta">${_escHtml(n.source || '')} · ${_escHtml(n.time || '')}</div>
       </div>`;
     }).join('');
     section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>${items}`;
