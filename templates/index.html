@@ -60,6 +60,18 @@
           <!-- 공포·탐욕 배지 (11-17: 왼쪽 큰 게이지 패널 대신) — 누르면 상세 창 -->
           <button type="button" id="fg-badge" class="fg-badge" title="CNN 공포·탐욕 지수 — 눌러서 자세히 보기" hidden></button>
           <div id="market-stat-bar" class="market-stat-bar"></div>
+          <button type="button" id="mf-btn" class="mf-btn" title="시장 전체 일별 거래량·거래대금 추이 (코스피·코스닥·미국)" aria-haspopup="dialog">📊 시장 거래</button>
+        </div>
+      </div>
+
+      <!-- 📊 시장 거래 창 (11-18) -->
+      <div id="mf-modal" class="fg-modal-overlay" hidden>
+        <div class="fg-modal-box vt-modal-box" role="dialog" aria-modal="true" aria-labelledby="mf-modal-title">
+          <div class="fg-modal-head">
+            <h3 id="mf-modal-title">📊 시장 거래<small>시장 전체 일별 거래량·거래대금</small></h3>
+            <button type="button" class="fg-modal-close" id="mf-modal-close" aria-label="닫기">✕</button>
+          </div>
+          <div class="fg-modal-body" id="mf-modal-body"></div>
         </div>
       </div>
 

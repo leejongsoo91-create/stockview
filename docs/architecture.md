@@ -43,6 +43,7 @@
 | `data/kr_stocks.json` | KR | 국내주식 기본 데이터 4,318종목(주식·ETF·ETN, 11-09 생성). `scripts/fetch_kr_stocks.py`(약 2~3분, `--dry-run`은 비교만)로 재생성 — 목록·시총 네이버 `marketValue`, 업종 네이버 `industry`, PER/EPS `integration`, 52주 Yahoo. 종목코드는 영문 섞인 신규 코드(`0126Z0`) 포함 → 코드 추출은 `df.kr_code()` |
 | `data/pe_eps_cache.json` | US | PE/EPS 캐시 (서버가 24h마다 갱신, git 추적) |
 | `data/kr_per_cache.json` | KR | KR PER/EPS (서버가 24h마다 갱신, gitignore) |
+| `data/market_flow.json` | 공용 | 시장 전체 일별 거래량·거래대금 `{KOSPI·KOSDAQ·US: {날짜: {volume, amount}}}` — 서버가 매일 장 마감 뒤 한 줄씩 쌓음(거래대금 과거치는 무료 출처 없음), gitignore (11-18) |
 | `data/us_names_ko.json` | US | 미국 종목 한글명 (네이버 해외주식 목록, 서버가 주 1회 갱신, gitignore). 표시 우선순위: 네이버 → `NAME_KO` 수동 사전 → 빈칸 (`df.name_ko()`) |
 | `data/signal_history.json`, `voice_briefing.json`, `audio/` | 공통 | 서버 런타임 상태 (gitignore) |
 | `api/` | — | API 키 파일 (gitignore, **절대 커밋 금지**) |
@@ -59,6 +60,7 @@
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
 | `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정) — 홈 상단 배지·상세 창, Brief 게이지에서 사용 (11-17) |
+| `record_kr_market_flow` / `record_us_market_flow` | 평일 16:10 KST / 뉴욕 평일 16:20 + 서버 시작 150초 뒤 | 코스피·코스닥 장 마감 거래량·거래대금(네이버 지수 integration, 거래일은 bizdate) / 미국 보통주 거래량·현재가×거래량 합계(뉴욕 16:15 이후만, 직전 저장값과 같으면 휴장일로 보고 건너뜀) → `data/market_flow.json`. `/api/market-flow?market=&days=`가 국내 거래량 과거치(네이버 fchart, 6시간 캐시)와 합쳐 홈 📊 시장 거래 창에 제공 (11-18) |
 | `refresh_earnings` | 1시간 | |
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |
 | `refresh_av_news` | 12시간 | |

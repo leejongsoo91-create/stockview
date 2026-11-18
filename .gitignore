@@ -56,3 +56,6 @@ data/us_names_ko.json
 
 # Playwright MCP 캡처·로그
 .playwright-mcp/
+# 시장 전체 거래량·거래대금 — 서버가 매일 쌓는 런타임 데이터 (11-18)
+data/market_flow.json
+data/market_flow.json.tmp

@@ -799,6 +799,125 @@ function renderMarketStatBar(stocks) {
     `<span class="msb-flat">보합 ${flat.toLocaleString()}</span>`;
 }
 
+// ── 홈 📊 시장 거래 창 (11-18) — 코스피·코스닥·미국 시장 전체 일별 거래량·거래대금 ──────────
+// 서버가 매일 장 마감 뒤 저장(data/market_flow.json). 국내 거래량은 네이버 과거치가 있어 바로 보이고,
+// 거래대금·미국은 11-18부터 쌓인다. 모양은 차트 탭 📊 거래 추이 창(.vt-*)과 같게.
+const _mf = { market: 'KOSPI', days: 20, by: 'amount', data: {}, at: {} };
+const _MF_MARKETS = { KOSPI: '코스피', KOSDAQ: '코스닥', US: '미국' };
+function _openMarketFlow() {
+  document.getElementById('mf-modal').hidden = false;
+  _loadMarketFlow();
+}
+function _closeMarketFlow() { document.getElementById('mf-modal').hidden = true; }
+async function _loadMarketFlow() {
+  const m = _mf.market, body = document.getElementById('mf-modal-body');
+  if (!_mf.data[m] || Date.now() - (_mf.at[m] || 0) > 10 * 60 * 1000) {
+    body.innerHTML = '<div class="vt-empty">불러오는 중…</div>';
+    try {
+      _mf.data[m] = await api(`/api/market-flow?market=${m}&days=260`);
+      _mf.at[m] = Date.now();
+    } catch {
+      body.innerHTML = '<div class="vt-empty">시장 거래 데이터를 불러오지 못했습니다.</div>';
+      return;
+    }
+  }
+  if (_mf.market === m) _renderMarketFlow();
+}
+function _renderMarketFlow() {
+  const body = document.getElementById('mf-modal-body');
+  const d = _mf.data[_mf.market] || {}, all = d.rows || [];
+  const isKr = _mf.market !== 'US';
+  const ctrls = `
+    <div class="vt-ctrls">
+      <span class="vt-seg" data-k="market">${Object.entries(_MF_MARKETS).map(([k, v]) => `<button data-v="${k}">${v}</button>`).join('')}</span>
+      <span class="vt-seg" data-k="days"><button data-v="20">20일</button><button data-v="60">60일</button><button data-v="250">1년</button></span>
+      <span class="vt-seg" data-k="by"><button data-v="amount">거래대금</button><button data-v="volume">거래량</button></span>
+    </div>`;
+  const amtDays = all.filter(r => r.amount).length;
+  const since = d.amount_since ? d.amount_since.slice(5).replace('-', '/') : null;
+  let notice = '';
+  let by = _mf.by;
+  if (by === 'amount' && amtDays < 2) {
+    notice = `<div class="mf-notice">거래대금은 무료로 받을 수 있는 과거 기록이 없어 서버가 <b>매일 장 마감 뒤 하루씩 쌓고</b> 있어요` +
+      (since ? ` (${since}부터 ${amtDays}일).` : '. 첫 기록은 ' + (isKr ? '평일 16:10' : '뉴욕 장 마감 뒤(한국 시각 오전 6~7시)') + '에 생겨요.') +
+      (isKr ? ' 아래는 거래량입니다.' : '') + `</div>`;
+    by = isKr ? 'volume' : 'amount';
+  }
+  const val = r => r[by] || 0;
+  const fmtV = v => by === 'amount' ? _fmtAmt(v, isKr) : _fmtVolN(v, isKr);
+  const avgBefore = i => { let s = 0, n = 0; for (let k = i - 1; k >= 0 && n < 20; k--) { if (all[k][by]) { s += all[k][by]; n++; } } return n >= 5 ? s / n : null; };
+  const idx = all.map((r, i) => i).filter(i => all[i][by]);
+  const shown = idx.slice(-_mf.days);
+  if (!shown.length) {
+    body.innerHTML = ctrls + notice + (notice ? '' : '<div class="vt-empty">아직 쌓인 기록이 없어요.</div>');
+    _bindMfCtrls(body);
+    return;
+  }
+  const rows = shown.map(i => ({ r: all[i], v: val(all[i]), avg: avgBefore(i),
+    prev: (() => { for (let k = i - 1; k >= 0; k--) if (all[k][by]) return all[k][by]; return null; })() }));
+  const last = rows[rows.length - 1];
+  const last5 = rows.slice(-5), avg5 = last5.reduce((s, x) => s + x.v, 0) / last5.length;
+  const base5 = rows.length >= 6 ? rows[rows.length - 5].avg : null;
+
+  const W = 700, H = 150, padB = 18, n = rows.length, bw = W / n;
+  const max = Math.max(...rows.map(x => x.v), ...rows.map(x => x.avg || 0)) * 1.08 || 1;
+  const y = v => (H - padB) * (1 - v / max);
+  const bars = rows.map((x, k) => `<rect x="${(k * bw + bw * 0.15).toFixed(1)}" y="${y(x.v).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" ` +
+    `height="${(H - padB - y(x.v)).toFixed(1)}" class="mf-bar${x.avg && x.v / x.avg >= 1.5 ? ' vt-hot' : ''}">` +
+    `<title>${x.r.date}  ${fmtV(x.v)}${x.avg ? ` · 20일 평균의 ${(x.v / x.avg).toFixed(1)}배` : ''}</title></rect>`).join('');
+  const avgPts = rows.map((x, k) => x.avg ? `${(k * bw + bw / 2).toFixed(1)},${y(x.avg).toFixed(1)}` : null).filter(Boolean).join(' ');
+  const step = Math.max(1, Math.ceil(n / 8));
+  const labels = rows.map((x, k) => (k % step === 0 || k === n - 1)
+    ? `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${x.r.date.slice(5).replace('-', '/')}</text>` : '').join('');
+  const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'vt-pos' : v < 0 ? 'vt-neg' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
+  const byName = by === 'amount' ? '거래대금' : '거래량';
+  const trs = rows.slice().reverse().map(x => `
+    <tr class="${x.avg && x.v / x.avg >= 1.5 ? 'vt-row-hot' : ''}">
+      <td>${x.r.date.slice(2).replace(/-/g, '.')}</td>
+      <td>${x.r.volume ? _fmtVolN(x.r.volume, isKr) : '—'}</td>
+      <td>${x.r.amount ? _fmtAmt(x.r.amount, isKr) : '—'}</td>
+      <td>${pct(x.prev ? (x.v / x.prev - 1) * 100 : null)}</td>
+      <td>${x.avg ? `<b>${(x.v / x.avg).toFixed(1)}배</b>` : '—'}</td>
+    </tr>`).join('');
+  body.innerHTML = ctrls + notice + `
+    <div class="vt-summary">
+      <div><small>최근 거래일 ${byName} (${last.r.date.slice(5).replace('-', '/')})</small><b>${fmtV(last.v)}</b>
+        <small>${last.avg ? `20일 평균 ${fmtV(last.avg)}의 <b>${(last.v / last.avg).toFixed(1)}배</b>` : '20일 평균은 기록이 더 쌓이면 표시'}</small></div>
+      <div><small>최근 5일 평균 ${byName}</small><b>${fmtV(avg5)}</b>
+        <small>${base5 ? `그 전 20일보다 <b>${avg5 >= base5 ? '+' : ''}${((avg5 / base5 - 1) * 100).toFixed(0)}%</b>` : ''}</small></div>
+    </div>
+    <svg class="vt-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${_MF_MARKETS[_mf.market]} 일별 ${byName} 막대 그래프">
+      ${bars}${avgPts ? `<polyline points="${avgPts}" class="vt-avg"/>` : ''}${labels}
+    </svg>
+    <div class="vt-legend"><span><i class="vt-lg-avg"></i>20일 평균</span><span><i class="vt-lg-hot"></i>평소의 1.5배 이상</span></div>
+    <div class="vt-table-wrap">
+      <table class="vt-table">
+        <thead><tr><th>날짜</th><th>거래량</th><th>거래대금</th><th>${byName}<br>전일 대비</th><th>${byName}<br>20일 평균 대비</th></tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>
+    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금은 네이버 증권 지수 값(정규장)입니다.' : '미국은 보통주 약 4,000종목의 거래량 합계와 현재가×거래량 합계(추정)입니다. ETF·우선주는 빠져 있습니다.'} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
+  _bindMfCtrls(body);
+}
+function _bindMfCtrls(body) {
+  body.querySelectorAll('.vt-seg').forEach(seg => {
+    const k = seg.dataset.k;
+    seg.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', String(_mf[k]) === b.dataset.v);
+      b.onclick = () => {
+        _mf[k] = k === 'days' ? +b.dataset.v : b.dataset.v;
+        if (k === 'market') _loadMarketFlow(); else _renderMarketFlow();
+      };
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('mf-btn')?.addEventListener('click', _openMarketFlow);
+  document.getElementById('mf-modal-close')?.addEventListener('click', _closeMarketFlow);
+  document.getElementById('mf-modal')?.addEventListener('click', e => { if (e.target.id === 'mf-modal') _closeMarketFlow(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.getElementById('mf-modal')?.hidden) _closeMarketFlow(); });
+});
+
 // ── 홈 Fear & Greed 배지·상세 창 ──────────────────────────────────────────────
 // 홈 공포·탐욕: 상단 줄 작은 배지 + 누르면 상세 창(게이지·지난 값·1년 추이·구성 지표 7개) — 11-17
 // 색은 CSS 변수 --fg-c1~c5(극단적 공포→극단적 탐욕). CNN 구간: 0–25·25–45·45–55·55–75·75–100

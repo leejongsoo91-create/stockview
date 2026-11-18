@@ -2364,6 +2364,70 @@ def _resample_yearly(monthly_rows: list[dict]) -> list[dict]:
     return list(buckets.values())
 
 
+# ── 시장 전체 거래량·거래대금 (11-18) ────────────────────────────────────────
+def _naver_num(v) -> float | None:
+    """'219,090천주'·'15,662,627백만' → 단위를 곱한 숫자 (천=1e3, 백만=1e6)."""
+    m = re.match(r"\s*([\d,\.]+)\s*(천|백만|억|조)?", str(v or ""))
+    if not m:
+        return None
+    try:
+        n = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    return n * {"천": 1e3, "백만": 1e6, "억": 1e8, "조": 1e12}.get(m.group(2) or "", 1)
+
+
+def fetch_kr_market_flow(index: str) -> dict | None:
+    """코스피·코스닥 오늘(마지막 거래일) 시장 전체 거래량(주)·거래대금(원) — 네이버 지수 integration API.
+    거래대금 과거치는 네이버에 없어(옛 PC 페이지 410) 매일 저장해 쌓는다. 장 마감(CLOSE) 전이면 None."""
+    base = f"https://m.stock.naver.com/api/index/{index}"
+    try:
+        j = requests.get(f"{base}/integration", headers=_NAVER_RT_HEADERS, timeout=8).json()
+        b = requests.get(f"{base}/basic", headers=_NAVER_RT_HEADERS, timeout=8).json()
+    except Exception as e:
+        log.warning(f"fetch_kr_market_flow({index}): {e}")
+        return None
+    if b.get("marketStatus") != "CLOSE":
+        return None
+    info = {x.get("code"): x.get("value") for x in (j.get("totalInfos") or [])}
+    vol, amt = _naver_num(info.get("accumulatedTradingVolume")), _naver_num(info.get("accumulatedTradingValue"))
+    d = str((j.get("dealTrendInfo") or {}).get("bizdate") or "")
+    if len(d) != 8:
+        d = str(b.get("localTradedAt") or "")[:10].replace("-", "")
+    if not vol or not amt or len(d) != 8:
+        return None
+    return {"date": f"{d[:4]}-{d[4:6]}-{d[6:]}", "volume": int(vol), "amount": int(amt)}
+
+
+def fetch_kr_market_volume_history(index: str, count: int = 300) -> dict[str, int]:
+    """코스피·코스닥 일별 시장 전체 거래량(주) 과거치 — 네이버 fchart(1990년~, 단위 천주). {날짜: 주}."""
+    try:
+        t = requests.get(f"https://fchart.stock.naver.com/sise.nhn?symbol={index}&timeframe=day"
+                         f"&count={count}&requestType=0", headers=_NAVER_RT_HEADERS, timeout=10).text
+    except Exception as e:
+        log.warning(f"fetch_kr_market_volume_history({index}): {e}")
+        return {}
+    out = {}
+    for row in re.findall(r'data="([^"]+)"', t):
+        p = row.split("|")
+        if len(p) >= 6 and len(p[0]) == 8 and p[5].isdigit():
+            out[f"{p[0][:4]}-{p[0][4:6]}-{p[0][6:]}"] = int(p[5]) * 1000
+    return out
+
+
+def us_market_flow(stocks: list[dict]) -> dict:
+    """미국 시장 전체 거래량·거래대금 — 보통주(우선주·워런트 등 제외) 현재가 × 거래량 합계(추정)."""
+    vol = amt = 0.0
+    n = 0
+    for s in stocks or []:
+        if s.get("non_common"):
+            continue
+        v, p = s.get("volume") or 0, s.get("price") or 0
+        if v > 0 and p > 0:
+            vol += v; amt += v * p; n += 1
+    return {"volume": int(vol), "amount": int(amt), "count": n}
+
+
 def fetch_ohlcv(ticker: str, period: str = "1y", interval: str = "1d", years: int | None = None,
                 _kr_fill: bool = True) -> list[dict]:
     """
