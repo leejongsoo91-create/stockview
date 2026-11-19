@@ -2365,8 +2365,9 @@ def _resample_yearly(monthly_rows: list[dict]) -> list[dict]:
 
 
 # ── 시장 전체 거래량·거래대금 (11-18) ────────────────────────────────────────
-def _naver_num(v) -> float | None:
-    """'219,090천주'·'15,662,627백만' → 단위를 곱한 숫자 (천=1e3, 백만=1e6)."""
+def _naver_num_unit(v) -> float | None:
+    """'219,090천주'·'15,662,627백만' → 단위를 곱한 숫자 (천=1e3, 백만=1e6).
+    11-20: 예전엔 이름이 _naver_num이라 위쪽 같은 이름 함수(음수 처리)를 덮어써서 하락 종목 등락이 0으로 나왔음 — 이름 분리."""
     m = re.match(r"\s*([\d,\.]+)\s*(천|백만|억|조)?", str(v or ""))
     if not m:
         return None
@@ -2390,7 +2391,7 @@ def fetch_kr_market_flow(index: str) -> dict | None:
     if b.get("marketStatus") != "CLOSE":
         return None
     info = {x.get("code"): x.get("value") for x in (j.get("totalInfos") or [])}
-    vol, amt = _naver_num(info.get("accumulatedTradingVolume")), _naver_num(info.get("accumulatedTradingValue"))
+    vol, amt = _naver_num_unit(info.get("accumulatedTradingVolume")), _naver_num_unit(info.get("accumulatedTradingValue"))
     d = str((j.get("dealTrendInfo") or {}).get("bizdate") or "")
     if len(d) != 8:
         d = str(b.get("localTradedAt") or "")[:10].replace("-", "")
