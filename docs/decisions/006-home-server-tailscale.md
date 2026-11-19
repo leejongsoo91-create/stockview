@@ -31,7 +31,7 @@
   ssh root@<서버IP> 'cd /home/stockview/stockview && sudo -u stockview git fetch -q && sudo -u stockview git reset -q --hard origin/main && systemctl restart stockview'
   ```
 - 상태·로그: `systemctl status stockview`, `journalctl -u stockview -n 100`
-- 감시: 24시간 감시·알림은 CT `monitor`의 Uptime Kuma + 텔레그램(아래). 작업 PC에서 볼 때는 wmux **`SV-home`(집서버) 공간** = 📊 집서버감시(`bash scripts/server_watch.sh home 60`) + 📜 집서버 로그(`bash scripts/home_logs.sh`, SSH로 `journalctl -u stockview -f`, 잡음 줄 제외, 끊기면 10초 뒤 재연결) — 만들기·전환은 `apply-layout.ps1 -Preset home`. 11-20부터 작업 공간(팀 레이아웃)에서는 뺐다. 주소는 git 제외 파일 `api/home-server-url.txt`(https)·`api/home-server-ssh.txt`(SSH `user@IP`)에 한 줄씩 — 공개 저장소라 코드·문서에 안 씀
+- 감시: 24시간 감시·알림은 CT `monitor`의 Uptime Kuma + 텔레그램(아래). 작업 PC에서 볼 때는 wmux **`SV-home`(집서버) 공간** = 📊 집서버감시(`bash scripts/server_watch.sh home 60`) + 📜 집서버 로그(`bash scripts/home_logs.sh`, SSH로 `journalctl -u stockview -f`, 잡음 줄 제외, 끊기면 10초 뒤 재연결) — 만들기·전환은 `apply-layout.ps1 -Preset home`. **herdr**(WSL 터미널 관리자)를 쓸 때는 같은 두 창을 왼쪽 spaces의 `홈서버` 공간으로: `bash scripts/herdr_home.sh`(있으면 전환만, WSL 재시작으로 사라지면 다시 실행). 11-20부터 작업 공간(팀 레이아웃)에서는 뺐다. 주소는 git 제외 파일 `api/home-server-url.txt`(https)·`api/home-server-ssh.txt`(SSH `user@IP`)에 한 줄씩 — 공개 저장소라 코드·문서에 안 씀
 - 끄기: `systemctl disable --now stockview` / 외부 연결만 끄기: `tailscale serve --https=443 off`
 - 내 PC와 서버를 동시에 켜면 무료 API 키(Finnhub 등) 한도를 둘이 나눠 쓰게 됨 → 개발할 때만 WSL 5001
 
