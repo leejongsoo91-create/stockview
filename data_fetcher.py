@@ -2516,6 +2516,59 @@ def fetch_kr_market_flow(index: str) -> dict | None:
     return {"date": f"{d[:4]}-{d[4:6]}-{d[6:]}", "volume": int(vol), "amount": int(amt)}
 
 
+# ── 국내 투자자별 순매수 (다음 금융, 11-20) ────────────────────────────────────
+# 코스피·코스닥 시장 전체 개인·외국인·기관 순매수(산 금액 − 판 금액, 원) + 기관 세부 7개·기타법인·기타외국인.
+# 일별 약 10년치, 장중은 1~2분마다 갱신(11-19는 20:00까지 바뀜 — 넥스트레이드 포함 잠정치로 추정).
+# 다음 금융 사이트 내부 주소라 Referer가 없으면 403. 총 매수·매도 금액과 주식 수는 KRX에만 있고 로그인 필요(11-20 확인).
+_DAUM_INV_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                     "Referer": "https://finance.daum.net/domestic/investors"}
+_DAUM_INV_DETAIL = {"FINANCIAL_INVESTOR": "fin_invest", "INSURANCE_COMPANIES": "insurance", "MUTUAL_FUND": "trust",
+                    "PRIVATE_EQUITY_FUND": "private_eq", "BANK": "bank", "ETC_FINANCIAL_INSTITUTION": "etc_fin",
+                    "PENSION_FUND": "pension", "ETC_CORPORATION": "etc_corp", "ETC_FOREIGN": "etc_foreign"}
+
+
+def _daum_inv_row(x: dict) -> dict:
+    row = {"individual": int(_safe(x.get("individualStraightPurchasePrice")) or 0),
+           "foreign": int(_safe(x.get("foreignStraightPurchasePrice")) or 0),
+           "institution": int(_safe(x.get("institutionStraightPurchasePrice")) or 0)}
+    det = x.get("details") or {}
+    for k, n in _DAUM_INV_DETAIL.items():
+        if _safe(det.get(k)) is not None:
+            row[n] = int(det[k])
+    return row
+
+
+def fetch_kr_investor_days(market: str, days: int = 260) -> list[dict]:
+    """코스피·코스닥 일별 투자자별 순매수 [{date, individual, foreign, institution, fin_invest, ...}] (오래된 날 먼저). 실패 시 []."""
+    try:
+        r = requests.get(f"https://finance.daum.net/api/investor/{market}/days",
+                         params={"perPage": max(1, min(days, 300)), "page": 1, "details": "true"},
+                         headers=_DAUM_INV_HEADERS, timeout=10)
+        r.raise_for_status()
+        data = r.json().get("data") or []
+    except Exception as e:
+        log.warning(f"fetch_kr_investor_days({market}): {e}")
+        return []
+    out = [{"date": str(x.get("date") or "")[:10], **_daum_inv_row(x)} for x in data if x.get("date")]
+    return sorted(out, key=lambda r: r["date"])
+
+
+def fetch_kr_investor_now(market: str) -> dict | None:
+    """가장 최근 장중 투자자별 순매수 (분 단위, 잠정) {date, time, individual, ...}. 장이 끝난 뒤엔 그날 마지막 값."""
+    try:
+        r = requests.get(f"https://finance.daum.net/api/investor/{market}/times",
+                         params={"perPage": 1, "page": 1, "details": "true"}, headers=_DAUM_INV_HEADERS, timeout=8)
+        r.raise_for_status()
+        data = r.json().get("data") or []
+    except Exception as e:
+        log.warning(f"fetch_kr_investor_now({market}): {e}")
+        return None
+    if not data:
+        return None
+    x = data[0]
+    return {"date": str(x.get("date") or "")[:10], "time": str(x.get("time") or "")[:5], **_daum_inv_row(x)}
+
+
 def fetch_kr_market_volume_history(index: str, count: int = 300) -> dict[str, int]:
     """코스피·코스닥 일별 시장 전체 거래량(주) 과거치 — 네이버 fchart(1990년~, 단위 천주). {날짜: 주}."""
     try:

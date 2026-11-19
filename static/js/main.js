@@ -814,13 +814,16 @@ function renderMarketStatBar(stocks) {
 // ── 홈 📊 시장 거래 창 (11-18) — 코스피·코스닥·미국 시장 전체 일별 거래량·거래대금 ──────────
 // 서버가 매일 장 마감 뒤 저장(data/market_flow.json). 국내 거래량은 네이버 과거치가 있어 바로 보이고,
 // 거래대금·미국은 11-18부터 쌓인다. 모양은 차트 탭 📊 거래 추이 창(.vt-*)과 같게.
-const _mf = { market: 'KOSPI', days: 20, by: 'amount', data: {}, at: {} };
+const _mf = { market: 'KOSPI', days: 20, by: 'amount', data: {}, at: {}, inv: {}, invAt: {}, instOpen: false, timer: null };
 const _MF_MARKETS = { KOSPI: '코스피', KOSDAQ: '코스닥', US: '미국' };
 function _openMarketFlow() {
   document.getElementById('mf-modal').hidden = false;
   _loadMarketFlow();
+  // 투자자별 순매수 장중 잠정치는 1~2분마다 바뀜 → 창이 열려 있는 동안 1분마다 다시 받아 그 부분만 새로 그림
+  clearInterval(_mf.timer);
+  _mf.timer = setInterval(() => { if (_mf.market !== 'US') _loadMfInvestors(true); }, 60 * 1000);
 }
-function _closeMarketFlow() { document.getElementById('mf-modal').hidden = true; }
+function _closeMarketFlow() { document.getElementById('mf-modal').hidden = true; clearInterval(_mf.timer); _mf.timer = null; }
 async function _loadMarketFlow() {
   const m = _mf.market, body = document.getElementById('mf-modal-body');
   if (!_mf.data[m] || Date.now() - (_mf.at[m] || 0) > 10 * 60 * 1000) {
@@ -834,6 +837,91 @@ async function _loadMarketFlow() {
     }
   }
   if (_mf.market === m) _renderMarketFlow();
+  if (m !== 'US') _loadMfInvestors(false);
+}
+async function _loadMfInvestors(force) {
+  const m = _mf.market;
+  if (force || !_mf.inv[m] || Date.now() - (_mf.invAt[m] || 0) > 60 * 1000) {
+    try { _mf.inv[m] = await api(`/api/market-investors?market=${m}&days=300`); _mf.invAt[m] = Date.now(); }
+    catch { if (!_mf.inv[m]) _mf.inv[m] = { error: true }; }
+  }
+  if (_mf.market !== m) return;
+  if (!force && document.querySelector('#mf-modal-body .vt-table') && !document.querySelector('#mf-modal-body .vt-table th:nth-child(6)'))
+    _renderMarketFlow();   // 처음 받았을 때만 일별 그래프·표에 투자자 칸을 넣어 다시 그림 (1분 갱신 땐 위 오늘 값만)
+  else _renderMfInvestors();
+}
+
+// ── 투자자별 순매수 (11-20, 다음 금융) ──
+const _INV_MAIN = [['individual', '개인'], ['foreign', '외국인'], ['institution', '기관'], ['etc_corp', '기타법인'], ['etc_foreign', '기타외국인']];
+const _INV_INST = [['fin_invest', '금융투자', '증권사가 자기 돈으로 하는 매매(자기매매)'], ['insurance', '보험', '보험사'],
+  ['trust', '투신', '자산운용사 펀드(공모펀드 등)'], ['private_eq', '사모', '사모펀드'], ['bank', '은행', '은행'],
+  ['etc_fin', '기타금융', '저축은행·카드사 등'], ['pension', '연기금', '국민연금 같은 연금·공제회']];
+function _fmtEok(v, sign = true) {   // 원 → "+4,526억" / "−1.42조"
+  if (v == null) return '—';
+  const a = Math.abs(v), sg = v > 0 ? (sign ? '+' : '') : v < 0 ? '−' : '';
+  return a >= 1e12 ? `${sg}${(a / 1e12).toFixed(2)}조` : `${sg}${Math.round(a / 1e8).toLocaleString()}억`;
+}
+function _invBar(v, max) {
+  const w = max ? Math.min(50, Math.abs(v) / max * 50) : 0;
+  return `<span class="inv-track"><span class="inv-fill ${v >= 0 ? 'inv-pos' : 'inv-neg'}" style="${v >= 0 ? 'left:50%' : `left:${50 - w}%`};width:${w}%"></span></span>`;
+}
+function _renderMfInvestors() {
+  const box = document.getElementById('mf-inv');
+  if (!box) return;
+  const d = _mf.inv[_mf.market];
+  if (!d) { box.innerHTML = '<div class="vt-empty">투자자별 순매수 불러오는 중…</div>'; return; }
+  if (d.error || !(d.rows || []).length) { box.innerHTML = '<div class="mf-notice">투자자별 순매수를 불러오지 못했습니다 (다음 금융).</div>'; return; }
+  const now = d.now && d.now.date ? d.now : d.rows[d.rows.length - 1];
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  const hm = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' });
+  const live = now.date === today && hm >= '09:00' && hm <= '20:05' && new Date().getDay() % 6 !== 0;
+  const max = Math.max(..._INV_MAIN.map(([k]) => Math.abs(now[k] || 0)), ..._INV_INST.map(([k]) => Math.abs(now[k] || 0)), 1);
+  const line = (k, n, sub, tip) => now[k] == null ? '' : `
+    <div class="inv-row${sub ? ' inv-sub' : ''}${k === 'institution' ? ' inv-inst' : ''}"${tip ? ` title="${tip}"` : ''}>
+      <span class="inv-n">${k === 'institution' ? `<button type="button" class="inv-toggle" aria-expanded="${_mf.instOpen}">${_mf.instOpen ? '▾' : '▸'} 기관</button>` : n}</span>
+      ${_invBar(now[k], max)}<span class="inv-v ${now[k] >= 0 ? 'vt-pos' : 'vt-neg'}">${_fmtEok(now[k])}</span></div>`;
+  const inst = _mf.instOpen ? _INV_INST.map(([k, n, t]) => line(k, n, true, t)).join('') : '';
+  const f = now.foreign || 0, i = now.individual || 0;
+  box.innerHTML = `
+    <div class="inv-head"><b>투자자별 순매수</b>
+      <span class="inv-when">${now.date.slice(5).replace('-', '/')}${now.time ? ' ' + now.time : ''} 기준 · ${live ? '<span class="inv-live">장중 잠정치 · 1분마다 갱신</span>' : '마감 값'}</span></div>
+    <div class="inv-list">${line('individual', '개인')}${line('foreign', '외국인')}${line('institution', '기관')}${inst}${line('etc_corp', '기타법인', false, '일반 회사(금융회사가 아닌 법인)')}${line('etc_foreign', '기타외국인', false, '외국인 등록 없이 거래하는 외국 투자자(소규모)')}</div>
+    <details class="inv-help"><summary>순매수가 뭔가요? (예시)</summary>
+      <p><b>순매수 = 산 금액 − 판 금액</b>입니다. +면 그 투자자가 판 것보다 더 샀고(사는 쪽), −면 더 팔았다(파는 쪽)는 뜻이에요.</p>
+      <p><b>오늘 숫자로 보면:</b> 외국인은 <b>${_fmtEok(f)}</b>원이라 ${f >= 0 ? '판 것보다 산 게 많았어요' : '산 것보다 판 게 많았어요'}. 예를 들어 외국인이 ${f >= 0 ? '5조 원어치를 팔고 ' + _fmtEok(5e12 + f, false) + '원어치를 샀다면' : '5조 원어치를 사고 ' + _fmtEok(5e12 - f, false) + '원어치를 팔았다면'} 순매수가 ${_fmtEok(f)}이 됩니다.
+        개인은 ${_fmtEok(i)}이라 ${i >= 0 ? '사는 쪽' : '파는 쪽'}이었고요.</p>
+      <p>누군가 사면 누군가는 팔아야 하니, 개인·외국인·기관·기타법인·기타외국인을 모두 더하면 거의 0이 됩니다. 그래서 "외국인이 판 물량을 누가 받았나"를 보는 데 씁니다.</p>
+      <p><b>기관 세부:</b> ${_INV_INST.map(([, n, t]) => `${n}(${t})`).join(' · ')}.</p>
+      <p class="inv-src">출처: 다음 금융(KRX 투자자별 매매). 집계 시점·범위(잠정·확정, 넥스트레이드 포함 여부) 차이로 네이버 등 다른 사이트와 날에 따라 수십억~수백억 원 다를 수 있어요(11-18 코스피 외국인 다음 −2,644억 / 네이버 −3,405억).
+        각자 산 금액·판 금액 따로, 주식 수(거래량)는 무료로 받을 수 있는 곳이 없어 순매수만 보여 줍니다.</p>
+    </details>`;
+  box.querySelector('.inv-toggle')?.addEventListener('click', () => { _mf.instOpen = !_mf.instOpen; _renderMfInvestors(); });
+}
+function _mfInvChart() {   // 일별 개인·외국인·기관 순매수 막대 (0 기준 위·아래) — 기간 버튼(20·60·250일)대로, 과거치가 있어 바로 채워짐
+  const d = _mf.inv[_mf.market];
+  if (!d || !d.rows) return '';
+  const rows = d.rows.slice(-_mf.days), dates = rows.map(r => r.date);
+  const by = Object.fromEntries(rows.map(r => [r.date, r]));
+  if (rows.length < 2) return '';
+  const sum = k => rows.reduce((t, r) => t + (r[k] || 0), 0);
+  const keys = [['individual', 'inv-c-ind'], ['foreign', 'inv-c-for'], ['institution', 'inv-c-ins']];
+  const W = 700, H = 150, n = dates.length, bw = W / n, mid = (H - 16) / 2;
+  const max = Math.max(...rows.flatMap(r => keys.map(([k]) => Math.abs(r[k] || 0)))) * 1.05 || 1;
+  let g = `<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="inv-zero"/>`;
+  dates.forEach((dt, k) => {
+    const r = by[dt]; if (!r) return;
+    keys.forEach(([key, cls], j) => {
+      const v = r[key] || 0, h = Math.abs(v) / max * (mid - 4), w = bw * 0.8 / 3, x = k * bw + bw * 0.1 + j * w;
+      g += `<rect x="${x.toFixed(1)}" y="${(v >= 0 ? mid - h : mid).toFixed(1)}" width="${Math.max(0.6, w - 0.4).toFixed(1)}" height="${Math.max(0.5, h).toFixed(1)}" class="${cls}"><title>${dt}  ${{ individual: '개인', foreign: '외국인', institution: '기관' }[key]} ${_fmtEok(v)}</title></rect>`;
+    });
+  });
+  const step = Math.max(1, Math.ceil(n / 8));
+  dates.forEach((dt, k) => { if (k % step === 0 || k === n - 1) g += `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 2}" text-anchor="middle">${dt.slice(5).replace('-', '/')}</text>`; });
+  return `<div class="inv-chart-head"><b>일별 순매수 · 최근 ${n}거래일</b><span class="vt-legend inv-legend"><span><i class="inv-c-ind"></i>개인</span><span><i class="inv-c-for"></i>외국인</span><span><i class="inv-c-ins"></i>기관</span><span>· 위 = 순매수, 아래 = 순매도</span></span></div>
+    <svg class="vt-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 투자자별 순매수 막대 그래프">${g}</svg>
+    <div class="inv-sum">${n}거래일 합계 — 개인 <b class="${sum('individual') >= 0 ? 'vt-pos' : 'vt-neg'}">${_fmtEok(sum('individual'))}</b> ·
+      외국인 <b class="${sum('foreign') >= 0 ? 'vt-pos' : 'vt-neg'}">${_fmtEok(sum('foreign'))}</b> ·
+      기관 <b class="${sum('institution') >= 0 ? 'vt-pos' : 'vt-neg'}">${_fmtEok(sum('institution'))}</b></div>`;
 }
 function _renderMarketFlow() {
   const body = document.getElementById('mf-modal-body');
@@ -860,11 +948,17 @@ function _renderMarketFlow() {
   const avgBefore = i => { let s = 0, n = 0; for (let k = i - 1; k >= 0 && n < 20; k--) { if (all[k][by]) { s += all[k][by]; n++; } } return n >= 5 ? s / n : null; };
   const idx = all.map((r, i) => i).filter(i => all[i][by]);
   const shown = idx.slice(-_mf.days);
+  const invBox = isKr ? '<div id="mf-inv" class="inv-box"></div>'
+    : '<div class="mf-notice">🇺🇸 미국은 개인·외국인·기관별 매매를 거래소가 공개하지 않아 투자자별 순매수가 없습니다.</div>';
   if (!shown.length) {
-    body.innerHTML = ctrls + notice + (notice ? '' : '<div class="vt-empty">아직 쌓인 기록이 없어요.</div>');
+    body.innerHTML = ctrls + invBox + notice + (notice ? '' : '<div class="vt-empty">아직 쌓인 기록이 없어요.</div>');
     _bindMfCtrls(body);
+    if (isKr) _renderMfInvestors();
     return;
   }
+  const invBy = isKr && _mf.inv[_mf.market]?.rows ? Object.fromEntries(_mf.inv[_mf.market].rows.map(r => [r.date, r])) : null;
+  const invTd = dt => { const r = invBy && invBy[dt]; return ['individual', 'foreign', 'institution'].map(k =>
+    `<td class="${r ? (r[k] >= 0 ? 'vt-pos' : 'vt-neg') : ''}">${r ? _fmtEok(r[k]) : '—'}</td>`).join(''); };
   const rows = shown.map(i => ({ r: all[i], v: val(all[i]), avg: avgBefore(i),
     prev: (() => { for (let k = i - 1; k >= 0; k--) if (all[k][by]) return all[k][by]; return null; })() }));
   const last = rows[rows.length - 1];
@@ -889,9 +983,10 @@ function _renderMarketFlow() {
       <td>${x.r.volume ? _fmtVolN(x.r.volume, isKr) : '—'}</td>
       <td>${x.r.amount ? _fmtAmt(x.r.amount, isKr) : '—'}</td>
       <td>${pct(x.prev ? (x.v / x.prev - 1) * 100 : null)}</td>
-      <td>${x.avg ? `<b>${(x.v / x.avg).toFixed(1)}배</b>` : '—'}</td>
+      <td>${x.avg ? `<b>${(x.v / x.avg).toFixed(1)}배</b>` : '—'}</td>${invBy ? invTd(x.r.date) : ''}
     </tr>`).join('');
-  body.innerHTML = ctrls + notice + `
+  const wrapOld = body.querySelector('.vt-table-wrap'), keepY = wrapOld ? wrapOld.scrollTop : 0;
+  body.innerHTML = ctrls + invBox + notice + `
     <div class="vt-summary">
       <div><small>최근 거래일 ${byName} (${last.r.date.slice(5).replace('-', '/')})</small><b>${fmtV(last.v)}</b>
         <small>${last.avg ? `20일 평균 ${fmtV(last.avg)}의 <b>${(last.v / last.avg).toFixed(1)}배</b>` : '20일 평균은 기록이 더 쌓이면 표시'}</small></div>
@@ -902,14 +997,17 @@ function _renderMarketFlow() {
       ${bars}${avgPts ? `<polyline points="${avgPts}" class="vt-avg"/>` : ''}${labels}
     </svg>
     <div class="vt-legend"><span><i class="vt-lg-avg"></i>20일 평균</span><span><i class="vt-lg-hot"></i>평소의 1.5배 이상</span></div>
+    ${isKr ? _mfInvChart() : ''}
     <div class="vt-table-wrap">
       <table class="vt-table">
-        <thead><tr><th>날짜</th><th>거래량</th><th>거래대금</th><th>${byName}<br>전일 대비</th><th>${byName}<br>20일 평균 대비</th></tr></thead>
+        <thead><tr><th>날짜</th><th>거래량</th><th>거래대금</th><th>${byName}<br>전일 대비</th><th>${byName}<br>20일 평균 대비</th>${invBy ? '<th>개인<br>순매수</th><th>외국인<br>순매수</th><th>기관<br>순매수</th>' : ''}</tr></thead>
         <tbody>${trs}</tbody>
       </table>
     </div>
-    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금은 네이버 증권 지수 값(정규장)입니다.' : '미국은 보통주 약 4,000종목의 거래량 합계와 현재가×거래량 합계(추정)입니다. ETF·우선주는 빠져 있습니다.'} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
+    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금은 네이버 증권 지수 값(정규장)이고, 투자자별 순매수는 다음 금융 값입니다.' : '미국은 보통주 약 4,000종목의 거래량 합계와 현재가×거래량 합계(추정)입니다. ETF·우선주는 빠져 있습니다.'} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
   _bindMfCtrls(body);
+  if (isKr) _renderMfInvestors();
+  const wrapNew = body.querySelector('.vt-table-wrap'); if (wrapNew && keepY) wrapNew.scrollTop = keepY;
 }
 function _bindMfCtrls(body) {
   body.querySelectorAll('.vt-seg').forEach(seg => {

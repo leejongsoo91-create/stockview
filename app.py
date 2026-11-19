@@ -1553,6 +1553,30 @@ def market_flow_api():
                     "amount_since": min(stored) if stored else None, "amount_days": len(stored)})
 
 
+@app.route("/api/market-investors")
+def market_investors_api():
+    """코스피·코스닥 투자자별 순매수 (다음 금융). ?market=KOSPI|KOSDAQ&days=260
+    rows: 일별(오래된 날 먼저, 1시간 캐시), now: 가장 최근 장중 잠정치(60초 캐시). 미국은 공개 데이터가 없어 지원 안 함."""
+    market = (request.args.get("market") or "KOSPI").upper()
+    if market not in ("KOSPI", "KOSDAQ"):
+        return jsonify({"error": "market은 KOSPI·KOSDAQ"}), 400
+    days = max(5, min(int(request.args.get("days") or 260), 300))
+    key = f"inv_days_{market}"
+    rows = cache.get_fresh(key)
+    if rows is None:
+        rows = df.fetch_kr_investor_days(market, 300)
+        cache.set(key, rows, ttl=3600 if rows else 120)
+    nkey = f"inv_now_{market}"
+    now = cache.get_fresh(nkey)
+    if now is None:
+        now = df.fetch_kr_investor_now(market) or {}
+        cache.set(nkey, now, ttl=60)
+    rows = list(rows or [])
+    if now.get("date") and (not rows or rows[-1]["date"] < now["date"]):   # 오늘 일별 줄이 아직 없으면 장중 값으로
+        rows.append({k: v for k, v in now.items() if k != "time"})
+    return jsonify({"market": market, "rows": rows[-days:], "now": now or None})
+
+
 @app.route("/api/heatmap-perf")
 def heatmap_perf():
     period = request.args.get("period", "1w")
