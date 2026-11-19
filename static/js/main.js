@@ -943,6 +943,59 @@ const _FG_COMP_INFO = {
   junk_bond_demand:      ['정크본드 수요', '고위험 채권과 안전 채권의 수익률 차이가 좁으면 탐욕'],
   safe_haven_demand:     ['안전자산 수요', '최근 20일 주식 vs 국채 수익률 — 채권이 이기면 공포'],
 };
+// 지표를 누르면 펼치는 원본 데이터 설명 (11-20). y = CNN이 점수를 매기는 원본 값, cmp = 비교선(있을 때만).
+// up: 값이 클수록 'greed'(탐욕) 또는 'fear'(공포). ex(): 오늘 실제 숫자로 만든 예시 문장.
+// CNN은 원본 값 → 0~100 점수 공식을 공개하지 않는다 — 1년 범위 중 위치를 참고로만 보여 준다.
+const _fgN = (v, d = 2) => (+v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const _fgSign = (v, d = 2) => (v > 0 ? '+' : '') + _fgN(v, d);
+const _FG_DETAIL = {
+  market_momentum_sp500: {
+    label: 'S&P 500 지수', cmpLabel: '125일 평균', up: 'greed', fmt: v => _fgN(v, 0),
+    what: '미국 대표 500개 기업 주가를 묶은 <b>S&P 500 지수</b>가 최근 <b>125거래일(약 6개월) 평균</b>보다 얼마나 위에 있는지 봅니다. 평균보다 많이 위면 "요즘 주가가 잘 오른다"는 뜻이라 사람들이 들뜨고(탐욕), 평균 아래로 내려가면 "흐름이 꺾였다"고 느껴 불안해집니다(공포).',
+    ex: (y, c) => { const g = (y / c - 1) * 100;
+      return `오늘 S&P 500은 <b>${_fgN(y, 0)}</b>, 125일 평균은 <b>${_fgN(c, 0)}</b>입니다. 평균보다 <b>${_fgN(Math.abs(g), 1)}% ${g >= 0 ? '위' : '아래'}</b>에 있어요. `
+        + (g >= 0 ? '평균 위라서 탐욕 쪽 신호입니다.' : '평균 아래로 내려와 있어서 공포 쪽 신호입니다.')
+        + ` <span class="fg-x-mini">비유: 6개월 평균 몸무게가 ${_fgN(c / 100, 1)}kg인 사람이 오늘 ${_fgN(y / 100, 1)}kg이면 평소보다 ${_fgN(Math.abs(g), 1)}% ${g >= 0 ? '무거운' : '가벼운'} 셈입니다.</span>`; },
+  },
+  stock_price_strength: {
+    label: '52주 신고가 − 신저가 (%)', up: 'greed', fmt: v => _fgSign(v, 2) + '%',
+    what: '뉴욕증권거래소 종목 중 <b>1년(52주) 중 가장 높은 가격(신고가)</b>을 찍은 종목과 <b>가장 낮은 가격(신저가)</b>을 찍은 종목을 비교한 값입니다. +면 신고가 종목이 더 많아 시장이 힘차고(탐욕), −면 신저가 종목이 더 많아 약합니다(공포).',
+    ex: y => `오늘 값은 <b>${_fgSign(y, 2)}%</b>입니다. ${y >= 0 ? '신고가 종목이 신저가 종목보다' : '신저가 종목이 신고가 종목보다'} 전체의 약 <b>${_fgN(Math.abs(y), 1)}%</b>만큼 더 많다는 뜻이에요. <span class="fg-x-mini">예: 종목이 1,000개라면 신고가 ${y >= 0 ? 30 + Math.round(y * 10) : 30}개 · 신저가 ${y >= 0 ? 30 : 30 + Math.round(-y * 10)}개쯤인 상황입니다.</span>`,
+  },
+  stock_price_breadth: {
+    label: '맥클렐런 거래량 합산 지수', up: 'greed', fmt: v => _fgN(v, 0),
+    what: '매일 <b>오른 종목에 몰린 거래량 − 내린 종목에 몰린 거래량</b>을 계속 더해 온 값(맥클렐런 거래량 합산 지수)입니다. 값이 클수록 몇몇 대형주가 아니라 <b>많은 종목이 함께</b> 오르는 "넓은 상승"이라 탐욕, 작거나 내려가면 공포로 봅니다.',
+    ex: (y, c, s) => { const p = _fgPctRank(s, y);
+      return `오늘 값은 <b>${_fgN(y, 0)}</b>입니다. 지난 1년 동안 가장 낮았던 값은 ${_fgN(Math.min(...s.map(q => q[1])), 0)}, 가장 높았던 값은 ${_fgN(Math.max(...s.map(q => q[1])), 0)}입니다. 오늘은 <b>${_fgRankTxt(p)}</b> 수준이에요. <span class="fg-x-mini">예: 지난 1년 거래일을 값이 낮은 순서로 100줄 세우면 오늘은 ${Math.max(1, p)}번째쯤 — ${p < 50 ? '평소보다 오르는 종목 쪽 거래가 적은 편(공포 쪽)' : '평소보다 오르는 종목 쪽 거래가 많은 편(탐욕 쪽)'}입니다.</span>`; },
+  },
+  put_call_options: {
+    label: '풋/콜 비율 (5일 평균)', up: 'fear', fmt: v => _fgN(v, 3),
+    what: '<b>풋옵션</b>은 "주가가 떨어지면 돈을 버는 보험", <b>콜옵션</b>은 "주가가 오르면 돈을 버는 베팅"입니다. 풋 거래량 ÷ 콜 거래량이 크면 하락에 대비하는 사람이 많다는 뜻이라 공포, 작으면 상승에 거는 사람이 많아 탐욕입니다.',
+    ex: (y, c, s) => { const a = s.reduce((t, q) => t + q[1], 0) / s.length;
+      return `오늘 비율은 <b>${_fgN(y, 3)}</b> — 콜옵션 100계약이 거래될 때 풋옵션은 <b>${Math.round(y * 100)}계약</b> 거래됐다는 뜻이에요. 1년 평균 ${_fgN(a, 3)}보다 ${y >= a ? '<b>높아서</b> 하락 대비가 평소보다 많습니다(공포 쪽).' : '<b>낮아서</b> 상승 베팅이 평소보다 많습니다(탐욕 쪽).'}`; },
+  },
+  market_volatility_vix: {
+    label: 'VIX', cmpLabel: '50일 평균', up: 'fear', fmt: v => _fgN(v, 2),
+    what: '<b>VIX(공포 지수)</b>는 S&P 500 옵션 가격으로 계산한 "앞으로 30일 동안 시장이 얼마나 출렁일 것 같은가"입니다. 사람들이 불안하면 보험(옵션) 값이 비싸져 VIX가 올라갑니다. CNN은 VIX가 <b>최근 50일 평균보다 높으면 공포</b>, 낮으면 탐욕으로 봅니다.',
+    ex: (y, c) => { const g = (y / c - 1) * 100;
+      return `오늘 VIX는 <b>${_fgN(y, 2)}</b>, 50일 평균은 <b>${_fgN(c, 2)}</b>입니다. 평균보다 <b>${_fgN(Math.abs(g), 0)}% ${g >= 0 ? '높아' : '낮아'}</b> ${g >= 0 ? '평소보다 불안한 상태(공포 쪽)' : '평소보다 차분한 상태(탐욕 쪽)'}예요. <span class="fg-x-mini">읽는 법: VIX ${_fgN(y, 0)}은 "1년 기준 ±${_fgN(y, 0)}%쯤 움직일 것"이라는 뜻이고, 한 달로 바꾸면 약 ±${_fgN(y / Math.sqrt(12), 1)}%입니다. 보통 20 아래는 평온, 30 위는 불안으로 봅니다.</span>`; },
+  },
+  junk_bond_demand: {
+    label: '정크본드 − 우량채 금리 차이 (%p)', up: 'fear', fmt: v => _fgN(v, 2) + '%p',
+    what: '<b>정크본드</b>는 신용이 낮은 회사가 높은 이자를 주고 빌리는 채권, <b>우량채(투자등급)</b>는 믿을 만한 회사 채권입니다. 사람들이 위험을 감수할 때는 정크본드도 잘 사 줘서 두 금리 차이가 좁아지고(탐욕), 겁이 나면 정크본드를 팔아 그 금리가 올라 차이가 벌어집니다(공포).',
+    ex: (y, c, s) => { const p = _fgPctRank(s, y);
+      return `오늘 금리 차이는 <b>${_fgN(y, 2)}%p</b>입니다. <span class="fg-x-mini">예: 우량 회사채 이자가 연 5%라면 정크본드는 연 ${_fgN(5 + y, 2)}% 정도라는 뜻이에요.</span> 지난 1년 중 <b>${_fgRankTxt(p)}</b> 수준으로, ${p < 50 ? '차이가 평소보다 좁은 편(위험을 꺼리지 않음)' : '차이가 평소보다 넓은 편(위험을 꺼림)'}입니다.`; },
+  },
+  safe_haven_demand: {
+    label: '주식 − 국채 20일 수익률 차이 (%p)', up: 'greed', fmt: v => _fgSign(v, 2) + '%p',
+    what: '최근 <b>20거래일(약 한 달)</b> 동안 주식(S&P 500)이 번 수익률에서 <b>국채</b>가 번 수익률을 뺀 값입니다. +면 주식이 더 벌어 사람들이 주식에 몰리고(탐욕), −면 안전한 국채가 더 벌어 사람들이 <b>안전자산으로 피신</b>하는 중입니다(공포).',
+    ex: y => `오늘 값은 <b>${_fgSign(y, 2)}%p</b>입니다. 최근 20일 동안 ${y >= 0 ? '주식이 국채보다' : '국채가 주식보다'} <b>${_fgN(Math.abs(y), 2)}%p</b> 더 벌었어요. <span class="fg-x-mini">예: 같은 기간 국채가 +1%였다면 주식은 ${_fgSign(1 + y, 1)}%였던 셈입니다.</span>`,
+  },
+};
+// 1년 값 중 오늘 값이 아래에서 몇 % 위치인지 (0~100)
+function _fgRankTxt(p) { return p < 50 ? `하위 ${Math.max(1, p)}%` : `상위 ${Math.max(1, 100 - p)}%`; }   // 1년 중 낮은 쪽/높은 쪽
+function _fgPctRank(s, y) { if (!s || !s.length) return 50; return Math.round(s.filter(q => q[1] < y).length / s.length * 100); }
+
 function _fgLevel(v) { return v < 25 ? 1 : v < 45 ? 2 : v < 55 ? 3 : v < 75 ? 4 : 5; }
 function _fgColor(v) { return `var(--fg-c${_fgLevel(v)})`; }
 function _fgKo(v)    { return ['', '극단적 공포', '공포', '중립', '탐욕', '극단적 탐욕'][_fgLevel(v)]; }
@@ -1014,6 +1067,7 @@ function _fgHistSvg(h) {
 function _renderFgModal() {
   const fg = _homeFg, body = document.getElementById('fg-modal-body');
   if (!fg || !body) return;
+  Object.keys(_fgLineMeta).forEach(k => delete _fgLineMeta[k]);   // 다시 그릴 때 이전 그래프 정보 비움
   const v = fg.score;
   const prev = [['전일', fg.prev_close], ['1주 전', fg.prev_1w], ['1개월 전', fg.prev_1m], ['1년 전', fg.prev_1y]];
   const hist = (fg.history || []).filter(p => Array.isArray(p) && p.length === 2);
@@ -1022,17 +1076,23 @@ function _renderFgModal() {
   body.innerHTML = `
     <div class="fg-m-top">
       ${_fgGaugeSvg(v)}
-      <div><div class="fg-m-big" style="color:${_fgColor(v)}">${v.toFixed(1)}</div>
+      <div><button type="button" class="fg-m-big" style="color:${_fgColor(v)}" title="누르면 계산 방법">${v.toFixed(1)}</button>
            <div class="fg-m-rating" style="color:${_fgColor(v)}">${_fgEmoji(v)} ${_fgKo(v)}</div></div>
       <div class="fg-m-prev">${prev.map(([k, x]) => x == null ? '' : `
         <div class="fg-m-pv"><div class="l">${k}</div><div class="v" style="color:${_fgColor(x)}">${(+x).toFixed(1)}</div><div class="r" style="color:${_fgColor(x)}">${_fgKo(x)}</div></div>`).join('')}</div>
     </div>
+    <div class="fg-m-calc"${_fgCalcOpen ? '' : ' hidden'}>${_fgCalcHtml(fg)}</div>
     ${hs ? `<div><div class="fg-m-sec">1년 추이</div>${hs.svg}</div>` : ''}
-    ${comps.length ? `<div><div class="fg-m-sec">구성 지표 ${comps.length}개 — 이 지표들을 평균해 지수가 나옵니다</div>
-      <div class="fg-m-comp">${comps.map(c => {
+    ${comps.length ? `<div><div class="fg-m-sec">구성 지표 ${comps.length}개 — 이 지표들을 평균해 지수가 나옵니다 <span class="fg-m-hint">· 지표를 누르면 원본 데이터</span></div>
+      <div class="fg-m-comp">${comps.map((c, i) => {
         const [n, d] = _FG_COMP_INFO[c.key] || [c.key, ''];
-        return `<div class="n">${n}</div><div class="fg-m-track"><div class="fg-m-fill" style="width:${Math.max(2, c.score)}%;background:${_fgColor(c.score)}"></div></div>
-          <div class="s">${Math.round(c.score)}</div><div class="r" style="color:${_fgColor(c.score)}">${_fgKo(c.score)}</div><div class="d">${d}</div>`;
+        const open = _fgOpen.has(c.key);
+        return `<div class="fg-c${open ? ' open' : ''}" data-key="${c.key}">
+          <button type="button" class="fg-c-head" aria-expanded="${open}">
+            <span class="n">${n}</span><span class="fg-m-track"><span class="fg-m-fill" style="width:${Math.max(2, c.score)}%;background:${_fgColor(c.score)}"></span></span>
+            <span class="s">${Math.round(c.score)}</span><span class="r" style="color:${_fgColor(c.score)}">${_fgKo(c.score)}</span><span class="fg-c-chev">›</span>
+            <span class="d">${d}</span></button>
+          <div class="fg-c-body">${open ? _fgDetailHtml(c, i) : ''}</div></div>`;
       }).join('')}</div></div>` : ''}
     <div><div class="fg-m-sec">읽는 법</div>
       <div class="fg-m-guide"><div style="flex:25;background:var(--fg-c1)">0–25 극단적 공포</div><div style="flex:20;background:var(--fg-c2)">25–45 공포</div><div style="flex:10;background:var(--fg-c3)">45–55 중립</div><div style="flex:20;background:var(--fg-c4)">55–75 탐욕</div><div style="flex:25;background:var(--fg-c5)">75–100 극단적 탐욕</div></div>
@@ -1050,6 +1110,112 @@ function _renderFgModal() {
     });
     svg.addEventListener('mouseleave', () => { ln.setAttribute('visibility', 'hidden'); tip.setAttribute('visibility', 'hidden'); });
   }
+  body.querySelector('.fg-m-big')?.addEventListener('click', () => {
+    _fgCalcOpen = !_fgCalcOpen;
+    const el = body.querySelector('.fg-m-calc'); if (el) el.hidden = !_fgCalcOpen;
+  });
+  body.querySelectorAll('.fg-c').forEach((el, i) => {
+    el.querySelector('.fg-c-head').addEventListener('click', () => {
+      const key = el.dataset.key, open = !_fgOpen.has(key);
+      open ? _fgOpen.add(key) : _fgOpen.delete(key);
+      el.classList.toggle('open', open);
+      el.querySelector('.fg-c-head').setAttribute('aria-expanded', open);
+      const b = el.querySelector('.fg-c-body');
+      b.innerHTML = open ? _fgDetailHtml(comps[i], i) : '';
+      if (open) _fgBindLine(b);
+    });
+    if (_fgOpen.has(el.dataset.key)) _fgBindLine(el.querySelector('.fg-c-body'));
+  });
+}
+
+// ── 공포·탐욕 원본 데이터 펼침 (11-20) ──────────────────────────────────────
+const _fgOpen = new Set();   // 펼쳐 둔 지표 (10분 갱신으로 다시 그려도 유지)
+let _fgCalcOpen = false;
+
+function _fgCalcHtml(fg) {
+  const cs = (fg.components || []).filter(c => c.score != null);
+  if (!cs.length) return '';
+  const avg = cs.reduce((t, c) => t + c.score, 0) / cs.length;
+  return `<div class="fg-m-sec">지수는 이렇게 나옵니다</div>
+    <div class="fg-calc-eq">${cs.map(c => `<span style="color:${_fgColor(c.score)}" title="${(_FG_COMP_INFO[c.key] || [c.key])[0]}">${Math.round(c.score)}</span>`).join(' + ')}
+      <span class="op">÷ ${cs.length} =</span> <b>${avg.toFixed(1)}</b> <span class="op">→ 발표값</span> <b style="color:${_fgColor(fg.score)}">${fg.score.toFixed(1)}</b></div>
+    <p class="fg-m-note">아래 7개 지표가 각각 0~100점을 받고, 그 <b>평균</b>이 공포·탐욕 지수입니다. 소수점 차이는 CNN이 지표마다 갱신 시각이 달라서 생깁니다.
+      예를 들어 7개 중 6개가 50점(중립)이어도 하나가 0점(극단적 공포)이면 지수는 약 43점(공포)이 됩니다.</p>`;
+}
+
+function _fgDetailHtml(c, i) {
+  const D = _FG_DETAIL[c.key], s = (c.series || []).filter(p => Array.isArray(p) && p.length === 2);
+  if (!D || s.length < 2) return '<p class="fg-m-note">원본 데이터를 받지 못했습니다.</p>';
+  const cmp = (c.compare || []).filter(p => Array.isArray(p) && p.length === 2);
+  const y = s[s.length - 1][1], cy = cmp.length ? cmp[cmp.length - 1][1] : null;
+  const rank = _fgPctRank(s, y), towardGreed = D.up === 'greed' ? rank : 100 - rank;
+  const cmpAt = t => { let best = null; for (const p of cmp) if (Math.abs(p[0] - t) < 2 * 86400000 && (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t))) best = p; return best; };
+  const recent = s.slice(-10).reverse();
+  const g = _fgLineSvg(s, cmp, D.fmt);
+  return `
+    <div class="fg-x-now">
+      <div><div class="l">${D.label}</div><div class="v">${D.fmt(y)}</div></div>
+      ${cy != null ? `<div><div class="l">${D.cmpLabel}</div><div class="v">${D.fmt(cy)}</div></div>` : ''}
+      <div><div class="l">1년 중 위치</div><div class="v">${_fgRankTxt(rank)}</div></div>
+      <div><div class="l">이 지표 점수</div><div class="v" style="color:${_fgColor(c.score)}">${Math.round(c.score)} · ${_fgKo(c.score)}</div></div>
+    </div>
+    <div class="fg-x-sec">무엇을 재나요?</div><p class="fg-x-p">${D.what}</p>
+    <div class="fg-x-sec">오늘 숫자로 보면</div><p class="fg-x-p">${D.ex(y, cy, s)}</p>
+    <div class="fg-x-sec">점수는 어떻게?</div>
+    <p class="fg-x-p">값이 클수록 <b>${D.up === 'greed' ? '탐욕' : '공포'}</b> 쪽입니다. CNN은 원본 값이 최근 흐름에서 어디쯤인지 보고 0~100점을 매기며, 정확한 계산식은 공개하지 않습니다.
+      참고로 오늘 값은 지난 1년 범위에서 <b>탐욕 쪽으로 ${towardGreed}%</b> 위치이고, CNN 점수는 <b>${Math.round(c.score)}점</b>입니다.</p>
+    <div class="fg-x-sec">1년 원본 값${cmp.length ? ` <span class="fg-x-leg"><i class="a"></i>${D.label} <i class="b"></i>${D.cmpLabel}</span>` : ''}</div>
+    ${g.svg}
+    <div class="fg-x-sec">최근 10일</div>
+    <div class="fg-x-tbl-wrap"><table class="fg-x-tbl"><thead><tr><th>날짜</th><th>${D.label}</th>${cmp.length ? `<th>${D.cmpLabel}</th>` : ''}<th>전일 대비</th></tr></thead><tbody>
+      ${recent.map((p, k) => { const prev = s[s.length - 2 - k], d = _fgUtcDay(p[0]), ch = prev ? p[1] - prev[1] : null, cp = cmp.length ? cmpAt(p[0]) : null;
+        return `<tr><td>${d}${k === 0 && new Date(p[0]).getUTCHours() ? ' <span class="fg-x-live">장중</span>' : ''}</td><td>${D.fmt(p[1])}</td>${cmp.length ? `<td>${cp ? D.fmt(cp[1]) : '—'}</td>` : ''}<td class="${ch == null ? '' : colorCls(ch)}">${ch == null ? '—' : _fgSign(ch, Math.abs(ch) >= 100 ? 0 : 2)}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="fg-x-src">출처: CNN Fear & Greed (하루 1개). 날짜는 미국 거래일 기준, "장중"은 아직 끝나지 않은 오늘 값입니다.</p>`;
+}
+
+function _fgLineSvg(s, cmp, fmt) {
+  const W = 720, H = 160, L = 58, T = 8, B = 20, all = s.concat(cmp);
+  const x0 = s[0][0], x1 = s[s.length - 1][0] || x0 + 1;
+  let lo = Math.min(...all.map(p => p[1])), hi = Math.max(...all.map(p => p[1]));
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const X = t => L + (t - x0) / (x1 - x0) * (W - L - 6), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const path = arr => arr.filter(p => p[0] >= x0).map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join('');
+  let g = '';
+  for (let k = 0; k <= 3; k++) { const v = lo + (hi - lo) * k / 3;
+    g += `<line x1="${L}" x2="${W - 6}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="2 4"/><text x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${fmt(v)}</text>`; }
+  if (lo < 0 && hi > 0) g += `<line x1="${L}" x2="${W - 6}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--muted)" stroke-width="1"/>`;
+  const seen = new Set(); let mi = 0;
+  s.forEach(p => { const d = new Date(p[0]), k = d.getUTCFullYear() + '-' + d.getUTCMonth();
+    if (!seen.has(k) && d.getUTCDate() <= 7) { seen.add(k); if (mi++ % 2 === 0) g += `<text x="${X(p[0])}" y="${H - 5}" text-anchor="middle">${d.getUTCMonth() + 1}월</text>`; } });
+  if (cmp.length) g += `<path d="${path(cmp)}" fill="none" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="4 3"/>`;
+  g += `<path d="${path(s)}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>`;
+  const last = s[s.length - 1];
+  g += `<circle cx="${X(last[0])}" cy="${Y(last[1])}" r="3.5" fill="var(--accent)" stroke="var(--bg-card)" stroke-width="2"/>`;
+  g += `<line class="fg-h-line" y1="${T}" y2="${H - B}" stroke="var(--muted)" visibility="hidden"/><text class="fg-h-tip" y="${T + 10}" visibility="hidden"></text>`;
+  const id = 'fgx' + Math.random().toString(36).slice(2, 8);
+  _fgLineMeta[id] = { s, cmp, fmt, X, W };
+  return { svg: `<svg class="fg-m-hist fg-x-line" data-id="${id}" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="원본 값 1년 그래프">${g}</svg>` };
+}
+const _fgLineMeta = {};
+const _fgUtcDay = t => { const d = new Date(t); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; };   // CNN 날짜 점 = UTC 0시(미국 거래일)
+
+function _fgBindLine(box) {
+  const svg = box?.querySelector('.fg-x-line'); if (!svg) return;
+  const m = _fgLineMeta[svg.dataset.id]; if (!m) return;
+  const ln = svg.querySelector('.fg-h-line'), tip = svg.querySelector('.fg-h-tip');
+  svg.addEventListener('mousemove', e => {
+    const rc = svg.getBoundingClientRect(), mx = (e.clientX - rc.left) / rc.width * m.W;
+    let best = m.s[0];
+    for (const p of m.s) if (Math.abs(m.X(p[0]) - mx) < Math.abs(m.X(best[0]) - mx)) best = p;
+    let c = null; for (const p of m.cmp) if (!c || Math.abs(p[0] - best[0]) < Math.abs(c[0] - best[0])) c = p;
+    const x = m.X(best[0]);
+    ln.setAttribute('x1', x); ln.setAttribute('x2', x); ln.setAttribute('visibility', 'visible');
+    tip.textContent = `${_fgUtcDay(best[0])} ${m.fmt(best[1])}${c ? ' · 평균 ' + m.fmt(c[1]) : ''}`;
+    tip.setAttribute('x', Math.min(x + 6, m.W - 190)); tip.setAttribute('visibility', 'visible');
+  });
+  svg.addEventListener('mouseleave', () => { ln.setAttribute('visibility', 'hidden'); tip.setAttribute('visibility', 'hidden'); });
 }
 
 // ── 경제 캘린더 ──────────────────────────────────────────────────────────────

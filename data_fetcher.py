@@ -2015,12 +2015,26 @@ def _classify_disclosure(title: str, dtype: str) -> str:
 
 _FG_COMPONENTS = ("market_momentum_sp500", "stock_price_strength", "stock_price_breadth", "put_call_options",
                   "market_volatility_vix", "junk_bond_demand", "safe_haven_demand")   # CNN 지수를 이루는 7개 지표
+# 원본 값과 같이 그릴 비교선 (S&P 500 ↔ 125일 평균, VIX ↔ 50일 평균) — 11-20 상세 창 원본 데이터 보기
+_FG_COMPARE = {"market_momentum_sp500": "market_momentum_sp125", "market_volatility_vix": "market_volatility_vix_50"}
+
+
+def _fg_series(c: dict) -> list:
+    """CNN 지표 data [{x, y, rating}] → [[유닉스 ms, 값], ...] (하루 1개, 1년). 날짜별 rating은 점수와 안 맞아 버린다.
+    날짜 점은 UTC 0시(= 미국 거래일), 마지막 점은 장중 실시간 값이라 같은 UTC 날짜가 두 번 올 수 있다 → 날짜당 마지막 값만."""
+    by_day: dict[str, list] = {}
+    for p in (c.get("data") or []):
+        x, y = _safe(p.get("x")), _safe(p.get("y"))
+        if x and y is not None:
+            by_day[time.strftime("%Y-%m-%d", time.gmtime(x / 1000))] = [int(x), round(float(y), 4)]
+    return sorted(by_day.values())
 
 
 def fetch_fear_greed() -> dict | None:
     """CNN Fear & Greed Index 현재값 반환. 실패 시 None.
     history: 1년 추이 [[유닉스 ms, 점수], ...](하루 1개), components: 구성 지표 7개 [{key, score, rating}]
-    — 홈 상세 창용(11-17). 둘 다 못 받으면 빈 리스트(현재값·지난 값만으로도 동작)."""
+    — 홈 상세 창용(11-17). 둘 다 못 받으면 빈 리스트(현재값·지난 값만으로도 동작).
+    11-20: components마다 series(원본 값 1년)·compare(비교선, 모멘텀·VIX만)도 — 지표를 누르면 원본 데이터 보기."""
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
     try:
         r = requests.get(url, headers=YF_HEADERS, timeout=10)
@@ -2039,7 +2053,11 @@ def fetch_fear_greed() -> dict | None:
         for k in _FG_COMPONENTS:
             c = raw.get(k) or {}
             if _safe(c.get("score")) is not None:
-                components.append({"key": k, "score": round(float(c["score"]), 1), "rating": (c.get("rating") or "").title()})
+                item = {"key": k, "score": round(float(c["score"]), 1), "rating": (c.get("rating") or "").title(),
+                        "series": _fg_series(c)}
+                if k in _FG_COMPARE:
+                    item["compare"] = _fg_series(raw.get(_FG_COMPARE[k]) or {})
+                components.append(item)
         return {
             "score":      round(float(score), 1),
             "rating":     d.get("rating", "").title(),

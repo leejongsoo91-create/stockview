@@ -59,7 +59,7 @@
 | `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update`. Nasdaq(섹터·업종 등 기본 정보) 위에 마지막 네이버 시세를 덮어씀. KR Yahoo 갱신은 네이버 시세가 살아 있으면 30분에 한 번만(52주 최고·최저용) |
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
-| `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정) — 홈 상단 배지·상세 창, Brief 게이지에서 사용 (11-17) |
+| `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정, 11-20부터 `series` 원본 값 1년 [[ms, 값]] 미국 거래일당 1개 + 모멘텀·VIX는 `compare` 비교선 125일·50일 평균) — 홈 상단 배지·상세 창(지표를 누르면 원본 데이터), Brief 게이지에서 사용 (11-17) — 응답 약 65 KB |
 | `record_kr_market_flow` / `record_us_market_flow` | 평일 16:10 KST / 뉴욕 평일 16:20 + 서버 시작 150초 뒤 | 코스피·코스닥 장 마감 거래량·거래대금(네이버 지수 integration, 거래일은 bizdate) / 미국 보통주 거래량·현재가×거래량 합계(뉴욕 16:15 이후만, 직전 저장값과 같으면 휴장일로 보고 건너뜀) → `data/market_flow.json`. `/api/market-flow?market=&days=`가 국내 거래량 과거치(네이버 fchart, 6시간 캐시)와 합쳐 홈 📊 시장 거래 창에 제공 (11-18) |
 | `refresh_earnings` | 1시간 | |
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |
