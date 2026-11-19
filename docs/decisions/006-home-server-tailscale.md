@@ -42,6 +42,13 @@
 - 백업은 본체 연결 없이 Proxmox 웹 화면의 **예약 백업**(Datacenter → Backup, 매일·Snapshot 모드·보관 7개 정도)으로 한다. 같은 디스크(`local`)에 저장하면 실수·잘못된 업데이트는 되돌릴 수 있지만 디스크 고장은 대비 못 함 → 외장 디스크·NAS가 생기면 옮긴다
 - 되돌리기 어려운 작업(서비스 중지, 데이터 삭제, OS 업그레이드)은 CT 안이라도 먼저 사용자에게 묻는다
 
+## 서버 감시 CT `monitor` (11-19 설치)
+- 작업 PC가 꺼져 있어도 감시하도록 **별도 CT `monitor`**(Ubuntu 24.04, 1 CPU·1 GB·8 GB, `/dev/net/tun`, 부팅 시 시작, KST)에 **Uptime Kuma 2.5.12**(무료, 직접 설치 — Node.js 22, `/opt/uptime-kuma`, 사용자 `kuma`, 데이터 `/var/lib/kuma/data/` SQLite, systemd `uptime-kuma.service`, 127.0.0.1:3001). 같은 CT에 두지 않은 이유: StockView CT가 멈추면 감시도 같이 멈추기 때문
+- 접속은 StockView와 같은 방식: `tailscale serve`로 `https://monitor.<tailnet>.ts.net` (tailnet 전용, 인터넷 비공개). 관리자 계정은 사용자만 앎
+- 감시 항목 5개(60초 간격, 재시도 2회 → 약 3분 계속 실패해야 알림): ① 화면 `/` 200 ② `/api/cache/status`의 `stocks.size >= 4000` ③ `kr_stocks.size >= 4000` ④ `news.fresh and news.size >= 20` ⑤ `indices·stocks·kr_stocks·fear_greed`가 모두 `fresh` — 2~5는 1.8 KB짜리 상태 주소 하나만 봐서 서버 부담이 거의 없다. 장중 실시간 시세 캐시(`us_quotes`·`kr_quotes`)는 장 시간에만 의미가 있어 아직 넣지 않음(작업 PC `server_watch.sh`가 봄)
+- 알림: **텔레그램 봇**(꺼짐·복구 둘 다). 봇 토큰은 Kuma 안에만 저장(저장소·문서에 안 씀). 같은 봇을 보류 중인 StockView 알림에 다시 쓸 수 있다
+- 상태·로그: `systemctl status uptime-kuma`, `journalctl -u uptime-kuma -n 100`
+
 ## 주의
 - 관심종목·포트폴리오·차트 설정은 **브라우저 localStorage**라 서버로 옮겨지지 않는다(주소가 바뀌면 빈 상태, 휴대폰·PC 따로). 포트폴리오는 CSV 내보내기/가져오기로 이동 가능
 - Proxmox 관리 화면(`:8006`)은 인터넷에 열지 않는다
