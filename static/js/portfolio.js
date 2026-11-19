@@ -682,7 +682,7 @@ async function renderPortfolio(opts = {}) {
                 <td>${signalBadgeHtml(r.ticker, sigMap)}</td>
                 <td class="num">${r.qty.toLocaleString()}</td>
                 <td class="num"${r.krwIn ? ' title="원화로 입력한 매입가 — 달러는 현재 환율 환산"' : ''}>${money(r.avgK, r.avgU, false, r.krwIn)}${r.krwIn ? '<span class="pt-cur-tag">원화 입력</span>' : ''}</td>
-                <td class="num">${money(r.curK, r.curU)}</td>
+                <td class="num">${money(r.curK, r.curU)}${sessTagHtml(r.stock)}</td>
                 <td class="num ${cls}">${money(r.pnl, r.pnlU, true, r.krwIn)}</td>
                 <td class="num ${cls}">${_fmtPnlPct(r.pnlPct)}</td>
                 <td class="num">${money(r.cost, r.costU, false, r.krwIn)}</td>

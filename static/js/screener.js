@@ -665,7 +665,7 @@ function _rowPerformance(s, no) {
     <td class="td-ticker">${s.ticker}</td>
     <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
     ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
-    ${_hd('price',      `<td class="num">${s.price ? fmt$(s.price) : '—'}</td>`)}
+    ${_hd('price',      `<td class="num">${s.price ? fmt$(s.price) + sessTagHtml(s) : '—'}</td>`)}
     ${_hd('change_pct', `<td class="num">${s.price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>`)}
     ${_hd('volume',     `<td class="num">${s.volume ? fmtVol(s.volume) : '—'}</td>`)}
     ${_hd('market_cap', `<td class="num">${s.market_cap ? fmtCap(s.market_cap) : '—'}</td>`)}
@@ -809,7 +809,7 @@ function openStockModal(ticker) {
   const cls = pct >= 0 ? 'up' : 'down';
   document.getElementById('sm-ticker').textContent = s.ticker;
   document.getElementById('sm-name').textContent   = s.name + (s.name_ko ? ` (${s.name_ko})` : '');
-  document.getElementById('sm-price').textContent  = s.price ? fmt$(s.price) : '—';
+  document.getElementById('sm-price').innerHTML  = s.price ? fmt$(s.price) + sessTagHtml(s) : '—';
   const chgEl = document.getElementById('sm-change');
   chgEl.textContent = s.price ? `${pct >= 0 ? '+' : ''}${fmtPct(pct)}` : '—';
   chgEl.className   = 'sm-change ' + cls;
@@ -1201,7 +1201,7 @@ function renderKrScreener() {
         case 'signal':     return `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`;
         case 'market':     return `<td>${_mktBadge(s.market)}</td>`;
         case 'sector':     return `<td class="td-name" style="font-size:11px;color:var(--muted)">${stockKind(s) !== 'stock' ? stockKind(s).toUpperCase() : (s.sector || '—')}</td>`;
-        case 'price':      return `<td class="num">${_fmtKrw(s.price)}</td>`;
+        case 'price':      return `<td class="num">${_fmtKrw(s.price)}${sessTagHtml(s)}</td>`;
         case 'change_pct': return `<td class="num ${cls}">${s.price && s.change_pct != null ? (s.change_pct > 0 ? '+' : '') + s.change_pct.toFixed(2) + '%' : '—'}</td>`;
         case 'volume':     return `<td class="num">${_fmtKrVol(s.volume)}</td>`;
         case 'market_cap': return `<td class="num">${_fmtKrCap(s.market_cap)}</td>`;
@@ -1255,7 +1255,7 @@ function openKrStockModal(ticker) {
   const cls = pct >= 0 ? 'up' : 'down';
   document.getElementById('sm-ticker').textContent = s.code;
   document.getElementById('sm-name').textContent   = s.name;
-  document.getElementById('sm-price').textContent  = s.price ? _fmtKrw(s.price) : '—';
+  document.getElementById('sm-price').innerHTML  = s.price ? _fmtKrw(s.price) + sessTagHtml(s) : '—';
   const chgEl = document.getElementById('sm-change');
   chgEl.textContent = s.price ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
   chgEl.className   = 'sm-change ' + cls;

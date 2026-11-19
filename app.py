@@ -194,7 +194,8 @@ def refresh_stocks():
 # ── 미국 종목 실시간 시세 (네이버) ────────────────────────────────────────────
 # Nasdaq 스크리너 API는 장중에도 전일 종가를 돌려줘(11-06: 앱 AAPL +5.31% = 전일, 실제 -1.27%)
 # 가격·등락률·거래량·시총을 네이버 미국 시장 전체 목록으로 1분마다 덮어쓴다. 섹터·업종 등은 Nasdaq 그대로.
-_US_QUOTE_FIELDS = ("price", "change", "change_pct", "volume")
+_US_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "session", "session_open", "session_at")
+_EXT_MIN_GAP = 110   # 시간외(프리·애프터)에는 전체 목록을 2분에 한 번만 (정규장은 1분)
 
 
 def _apply_us_quotes(rows: list) -> list:
@@ -224,11 +225,28 @@ def _us_market_window() -> bool:
     return ny.weekday() < 5 and 9 * 60 + 25 <= hm <= 16 * 60 + 20
 
 
+def _us_quote_window() -> bool:
+    """현재가 갱신 시간 = 프리마켓~애프터마켓 (뉴욕 평일 04:00~20:05, 11-20). 정규장은 _us_market_window."""
+    from zoneinfo import ZoneInfo
+    ny = datetime.now(ZoneInfo("America/New_York"))
+    hm = ny.hour * 60 + ny.minute
+    return ny.weekday() < 5 and 4 * 60 <= hm <= 20 * 60 + 5
+
+
+_us_quotes_ts = 0.0
+
+
 def refresh_us_quotes(force: bool = False):
-    """미국 전 종목 시세 1분 갱신 (장중만). force=True면 장 밖에도 한 번 받는다(서버 시작 시 최신 종가 반영)."""
+    """미국 전 종목 시세 갱신 — 정규장 1분, 프리·애프터 2분 (시간외 가격이 현재가). force=True면 장 밖에도 한 번
+    (서버 시작 시 최신 값 반영)."""
+    global _us_quotes_ts
     try:
-        if not force and not _us_market_window():
-            return
+        if not force:
+            if not _us_quote_window():
+                return
+            if not _us_market_window() and time.time() - _us_quotes_ts < _EXT_MIN_GAP:
+                return
+        _us_quotes_ts = time.time()
         quotes = df.fetch_us_quotes_naver()
         if len(quotes) < 3000:   # 대량 실패(차단·개편) 시 이전 값 유지
             log.warning(f"refresh_us_quotes: {len(quotes)}종목만 수신 — 반영 안 함")
@@ -243,7 +261,8 @@ def refresh_us_quotes(force: bool = False):
 
 
 # ── 국내 종목 실시간 시세 (네이버) ────────────────────────────────────────────
-_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "market_cap", "kind")
+_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "market_cap", "kind",
+                    "session", "session_open", "session_at")
 _kr_quotes_ts = 0.0     # 마지막 네이버 국내 시세 수신 시각
 _kr_yahoo_last = 0.0    # 마지막 Yahoo 국내 갱신 시작 시각
 
@@ -272,12 +291,24 @@ def _kr_market_window() -> bool:
     return now.weekday() < 5 and 8 * 60 + 55 <= hm <= 15 * 60 + 45
 
 
+def _kr_quote_window() -> bool:
+    """현재가 갱신 시간 = 넥스트레이드 프리~애프터 (평일 07:55~20:05 KST, 11-20). 정규장은 _kr_market_window."""
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    hm = now.hour * 60 + now.minute
+    return now.weekday() < 5 and 7 * 60 + 55 <= hm <= 20 * 60 + 5
+
+
 def refresh_kr_quotes(force: bool = False):
-    """국내 전 종목 시세 1분 갱신 (장중만). force=True면 장 밖에도 한 번 (서버 시작 시 최신 종가 반영)."""
+    """국내 전 종목 시세 갱신 — 정규장 1분, 넥스트레이드 프리·애프터 2분 (시간외 가격이 현재가).
+    force=True면 장 밖에도 한 번 (서버 시작 시 최신 값 반영)."""
     global _kr_quotes_ts
     try:
-        if not force and not _kr_market_window():
-            return
+        if not force:
+            if not _kr_quote_window():
+                return
+            if not _kr_market_window() and time.time() - _kr_quotes_ts < _EXT_MIN_GAP:
+                return
         quotes = df.fetch_kr_quotes_naver()
         if len(quotes) < 2500:   # 대량 실패 시 이전 값 유지
             log.warning(f"refresh_kr_quotes: {len(quotes)}종목만 수신 — 반영 안 함")
@@ -340,12 +371,13 @@ def _rt_tick():
     with _rt_lock:
         tickers = set().union(*_rt_subs.values()) if _rt_subs else set()
     us_open, kr_open = _us_market_window(), _kr_market_window()
+    us_live, kr_live = _us_quote_window(), _kr_quote_window()   # 종목 현재가는 프리·애프터까지 (지수는 정규장만)
     quotes_kr, quotes_us = {}, {}
-    if kr_open:
+    if kr_live:
         kr = [t for t in tickers if t.endswith((".KS", ".KQ"))]
         if kr:
             quotes_kr = df.fetch_rt_kr(kr)
-    if us_open:
+    if us_live:
         uq = cache.get("us_quotes") or {}
         pairs = {}
         for t in tickers:

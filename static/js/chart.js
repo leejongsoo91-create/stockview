@@ -3310,7 +3310,7 @@ function _updatePriceBadge(stock) {
   const change = _fmtQuoteChange(stock.change, stock.ticker);
   const pct = stock.change_pct != null ? fmtPct(stock.change_pct) : '—';
   document.getElementById('chart-price-badge').innerHTML = `
-    <span class="${cls}" style="font-size:20px;font-weight:800">${price}</span><br>
+    <span class="${cls}" style="font-size:20px;font-weight:800">${price}</span>${sessTagHtml(stock)}<br>
     <span class="${cls}">${change} (${pct})</span>
   `;
 }

@@ -1077,6 +1077,14 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
                font-weight: 700; line-height: 15px; vertical-align: 1px; border: 1px solid; }
 .kind-etf    { color: var(--accent); border-color: var(--accent); }
 .kind-etn    { color: var(--muted); border-color: var(--muted); }
+/* 시간외(프리·애프터) 현재가 표시 — 가격 옆 작은 글자. 거래 중이면 점이 깜빡임 (11-20) */
+.sess-tag    { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; font-size: 9.5px;
+               font-weight: 700; line-height: 15px; vertical-align: 1px; white-space: nowrap; cursor: help;
+               color: var(--muted); border: 1px solid var(--border); }
+.sess-tag.sess-live { color: var(--accent); border-color: var(--accent); }
+.sess-tag.sess-live::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 3px;
+               border-radius: 50%; background: var(--accent); vertical-align: 1px; animation: sess-blink 1.6s infinite; }
+@keyframes sess-blink { 50% { opacity: .25; } }
 /* 종목검색: 한글명은 영어명 아래 줄, 칸보다 길면 … (표 전체 nowrap 때문에 옆 칸으로 넘치던 문제) */
 #screener-table td.td-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 #screener-table .td-name-ko { display: block; margin-left: 0; overflow: hidden; text-overflow: ellipsis; }

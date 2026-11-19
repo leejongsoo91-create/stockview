@@ -29,6 +29,18 @@ function kindBadgeHtml(s) {
   return k === 'stock' ? '' : `<span class="kind-badge kind-${k}">${k.toUpperCase()}</span>`;
 }
 
+// 시간외 현재가 표시 (11-20) — 서버가 정규장 밖 가격(국내 넥스트레이드·미국 프리/애프터)을 현재가로 쓴 종목에
+// session('pre'|'after')·session_open(진행 중)·session_at(체결 시각, 그 시장 현지 시각)을 단다. 등락은 전일 정규장 종가 대비.
+function sessTagHtml(s) {
+  if (!s || !s.session) return '';
+  const pre  = s.session === 'pre';
+  const at   = String(s.session_at || '').slice(11, 16);
+  const zone = isKrTicker(s.ticker || '') ? '' : '뉴욕 ';
+  const tip  = `${pre ? '프리마켓' : '애프터마켓'} ${s.session_open ? '거래 중' : '마감'}${at ? ` · ${zone}${at} 체결` : ''}`
+             + ' — 정규장 밖 가격, 등락은 전일 정규장 종가 대비';
+  return `<span class="sess-tag sess-${pre ? 'pre' : 'after'}${s.session_open ? ' sess-live' : ''}" title="${tip}">${pre ? '프리' : '애프터'}</span>`;
+}
+
 function fmtPrice(v, ticker) { return isKrTicker(ticker) ? fmtKrw(v) : fmt$(v); }
 // 변동액: 부호를 통화 기호 앞에 (+$1.20 / -₩18,000) — 기존 fmt$는 "$-6.56"으로 나왔음
 function fmtChange(v, ticker) { return (v >= 0 ? '+' : '-') + fmtPrice(Math.abs(v), ticker); }
@@ -731,7 +743,7 @@ function _renderTop() {
       <td class="top-rank">${rank}${mv}</td>
       <td class="m-ticker">${code}</td>
       <td class="m-name">${_escHtml(name || '')}<br><span class="top-sub">${_topLabel(s, market, by)}</span></td>
-      <td class="top-price">${price}</td>
+      <td class="top-price">${price}${sessTagHtml(s)}</td>
       <td class="m-pct ${colorCls(s.change_pct || 0)}">${fmtPct(s.change_pct || 0)}</td>`;
     tr.classList.toggle('top-moved', anim && d !== 0);
     el.appendChild(tr);   // 이미 있는 줄은 새 순서 자리로 옮겨짐

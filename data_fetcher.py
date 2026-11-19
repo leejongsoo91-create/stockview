@@ -389,6 +389,7 @@ def fetch_us_quotes_naver() -> dict[str, dict]:
     반환: {티커(BRK/B 표기): {price, change, change_pct, volume, market_cap(십억달러), reuters, traded_at}}"""
     result: dict[str, dict] = {}
     t0 = time.time()
+    regular, n_ext = regular_session_now("US"), 0
     for s in _naver_us_market_rows("fetch_us_quotes_naver", sleep=0.2):
         sym   = (s.get("symbolCode") or "").strip()
         price = _naver_num(s.get("closePrice"))
@@ -403,8 +404,16 @@ def fetch_us_quotes_naver() -> dict[str, dict]:
             "market_cap": round(mv / 1e6, 3) if mv else None,
             "reuters":    s.get("reutersCode") or "",
             "traded_at":  s.get("localTradedAt") or "",
+            **_NO_EXT,
         })
-    log.info(f"fetch_us_quotes_naver: {len(result)}종목, {time.time() - t0:.0f}초")
+        ext = _naver_ext(s, regular)   # 정규장 밖: 프리·애프터 가격이 현재가 (시총도 같은 비율로)
+        q = result[_norm_us_ticker(sym)]
+        if ext and not q["session"]:
+            if q.get("market_cap"):
+                q["market_cap"] = round(q["market_cap"] * ext["price"] / q["price"], 3)
+            q.update(ext, price=round(ext["price"], 4))
+            n_ext += 1
+    log.info(f"fetch_us_quotes_naver: {len(result)}종목 (시간외 가격 {n_ext}), {time.time() - t0:.0f}초")
     return result
 
 
@@ -1197,6 +1206,7 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
     session.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     result: dict[str, dict] = {}
     not_krx: dict[str, str] = {}   # 넥스트레이드 가격이 들어온 종목 {야후 티커: 코드} (거래정지 종목은 제외 — 가격 그대로)
+    regular, n_ext = regular_session_now("KR"), 0
     t0 = time.time()
     for mkt in ("KOSPI", "KOSDAQ"):
         page = 1
@@ -1214,9 +1224,23 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                 code, price = s.get("itemCode"), _naver_num(s.get("closePrice"))
                 if not code or not price:
                     continue
-                if not _naver_is_krx(s) and (s.get("tradeStopType") or {}).get("name") != "HALTED":
+                ext = _naver_ext(s, regular)
+                if (not ext and not _naver_is_krx(s)
+                        and (s.get("tradeStopType") or {}).get("name") != "HALTED"):
                     not_krx[f"{code}.{'KS' if mkt == 'KOSPI' else 'KQ'}"] = code
                 mv = _naver_num(s.get("marketValue"))   # 억원 단위 (삼성전자 11,780,251 = 약 1,178조)
+                if ext:   # 정규장 밖: 넥스트레이드 프리·애프터 가격이 현재가 (11-20, 시총도 같은 비율로)
+                    n_ext += 1
+                    result[code] = {
+                        "price":      ext["price"],
+                        "change":     ext["change"],
+                        "change_pct": ext["change_pct"],
+                        "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
+                        "market_cap": int(mv * 1e8 * ext["price"] / price) if mv else None,
+                        "kind":       s.get("stockEndType") or "stock",
+                        **{k: ext[k] for k in _NO_EXT},
+                    }
+                    continue
                 result[code] = {
                     "price":      price,
                     "change":     _naver_num(s.get("compareToPreviousClosePrice")) or 0.0,
@@ -1224,27 +1248,31 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                     "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
                     "market_cap": int(mv * 1e8) if mv else None,
                     "kind":       s.get("stockEndType") or "stock",   # 주식·ETF·ETN 구분 (11-06: ETF 856·ETN 324개가 섞여 있었음)
+                    **_NO_EXT,
                 }
             if not stocks or page * 100 >= (d.get("totalCount") or 0):
                 break
             page += 1
             time.sleep(0.2)
-    if not_krx:   # 장 마감 후·장 시작 전: 가격만 넥스트레이드 값이라 KRX 종가(야후)로 교체. 실패한 종목은 그대로
-        krx, used = fetch_kr_close_yahoo(list(not_krx)), 0
-        for t, k in krx.items():
-            q = result[not_krx[t]]
-            # 야후 값이 네이버 기준가(종가−등락폭 = KRX 전일 종가)와 맞물릴 때만 쓴다: 장 마감 후엔 야후 전일 종가,
-            # 장 시작 전엔 야후 종가가 기준가와 같아야 함. 거래정지·권리락 등으로 야후가 틀린 종목(11-17 진원생명과학
-            # 네이버 2,670 / 야후 534)은 네이버 값 유지
-            base = q["price"] - q["change"]
-            if not base or min(abs(k["prev"] - base), abs(k["price"] - base)) > base * 0.001:
+    if not_krx:
+        # 목록에 시간외 정보(overMarketPriceInfo)가 없는데 정규장 밖인 종목 — 11-20 확인: 그중 1,257개는 closePrice가
+        # 넥스트레이드 체결가(삼성전자우 158,500 / KRX 157,500)이고 등락은 전일 KRX 종가 기준이라 둘이 맞물린다
+        # (대한항공 32,650 − 1,350 = 전일 31,300). 목록의 시각은 생성 시각이라, 종목별 실시간 시세의 체결 시각으로
+        # 정규장 밖 체결(= 시간외 가격)인지 가려 라벨만 단다. 가격·등락은 네이버 값 그대로가 현재가.
+        n_rt = 0
+        for x in _naver_rt_datas("domestic/stock", list(not_krx.values())):
+            q = result.get(x.get("itemCode"))
+            if not q:
                 continue
-            used += 1
-            if q.get("market_cap") and q["price"]:
-                q["market_cap"] = int(q["market_cap"] * k["price"] / q["price"])
-            q.update(price=k["price"], change=k["change"], change_pct=k["change_pct"])
-        log.info(f"fetch_kr_quotes_naver: 넥스트레이드 가격 {len(not_krx)}종목 중 {used}개 KRX 종가로 교체 (야후 수신 {len(krx)})")
-    log.info(f"fetch_kr_quotes_naver: {len(result)}종목, {time.time() - t0:.0f}초")
+            ext = _kr_rt_ext(x, regular)
+            if ext:
+                if q.get("market_cap") and q["price"]:
+                    q["market_cap"] = int(q["market_cap"] * ext["price"] / q["price"])
+                q.update(ext)
+                n_rt += 1
+                n_ext += 1
+        log.info(f"fetch_kr_quotes_naver: 목록에 시간외 정보가 없는 {len(not_krx)}종목 중 {n_rt}개 시간외 가격 (실시간 시세로 확인)")
+    log.info(f"fetch_kr_quotes_naver: {len(result)}종목 (시간외 가격 {n_ext}), {time.time() - t0:.0f}초")
     return result
 
 
@@ -1338,6 +1366,74 @@ def _naver_rt_datas(path: str, codes: list[str]) -> list[dict]:
     return out
 
 
+# ── 시간외(프리·애프터) 현재가 (11-20) ─────────────────────────────────────────
+# 가격 칸은 "지금 마지막으로 거래된 가격" — 정규장 밖이면 네이버 overMarketPriceInfo(국내 넥스트레이드 프리 08:00~08:50·
+# 애프터 15:30~20:00, 미국 프리 04:00~09:30·애프터 16:00~20:00 뉴욕)의 가격을 쓰고 session에 "pre"/"after"를 단다.
+# 등락은 네이버 값(전일 정규장 종가 대비, 국내 11-19 확인: 삼성전자 애프터 197,300 = 전일 194,700 + 2,600).
+# 일봉·신호는 정규장 값을 그대로 쓴다(이 값은 현재가 표시 전용).
+def regular_session_now(market: str) -> bool:
+    """시계 기준 정규장 시간인지 (평일 국내 09:00~15:30 KST, 미국 09:30~16:00 뉴욕). 휴장일은 marketStatus로 따로 거른다."""
+    from zoneinfo import ZoneInfo
+    if market == "KR":
+        t, start, end = datetime.now(ZoneInfo("Asia/Seoul")), 9 * 60, 15 * 60 + 30
+    else:
+        t, start, end = datetime.now(ZoneInfo("America/New_York")), 9 * 60 + 30, 16 * 60
+    hm = t.hour * 60 + t.minute
+    return t.weekday() < 5 and start <= hm < end
+
+
+def _kr_ext_open(sess: str) -> bool:
+    """넥스트레이드 프리(08:00~08:50)·애프터(15:30~20:00)가 지금 진행 중인지 (평일 KST 시계 기준)."""
+    from zoneinfo import ZoneInfo
+    t = datetime.now(ZoneInfo("Asia/Seoul"))
+    hm = t.hour * 60 + t.minute
+    if t.weekday() >= 5:
+        return False
+    return (8 * 60 <= hm < 8 * 60 + 50) if sess == "pre" else (15 * 60 + 30 <= hm < 20 * 60)
+
+
+def _naver_ext(x: dict, regular: bool) -> dict | None:
+    """정규장 밖이면 시간외 현재가 {price, change, change_pct, session, session_open, session_at}, 아니면 None.
+    regular: 정규장 시간인지(regular_session_now). 정규장 시간이어도 marketStatus가 OPEN이 아니면(휴장일) 시간외 값을 쓴다."""
+    if regular and x.get("marketStatus") in (None, "OPEN"):
+        return None
+    o = x.get("overMarketPriceInfo") or {}
+    typ = {"PRE_MARKET": "pre", "AFTER_MARKET": "after"}.get(o.get("tradingSessionType"))
+    p = _naver_num(o.get("overPrice"))
+    if not typ or not p:
+        return None
+    return {"price": p,
+            "change": _naver_num(o.get("compareToPreviousClosePrice")) or 0.0,
+            "change_pct": _naver_num(o.get("fluctuationsRatio")) or 0.0,
+            "session": typ, "session_open": o.get("overMarketStatus") == "OPEN",
+            "session_at": str(o.get("localTradedAt") or "")[:16]}
+
+
+_NO_EXT = {"session": "", "session_open": False, "session_at": ""}
+
+
+def _kr_rt_ext(x: dict, regular: bool) -> dict | None:
+    """국내 실시간 시세 한 종목의 시간외 현재가. overMarketPriceInfo가 있으면 그것, 없어도 체결 시각이 정규장 밖이면
+    closePrice(넥스트레이드 체결가, 등락은 전일 KRX 종가 기준 — 11-20 확인)를 시간외 가격으로.
+    정규장 체결·KRX 확정 종가·거래정지면 None (closePrice가 곧 정규장 값)."""
+    ext = _naver_ext(x, regular)
+    if ext or _naver_is_krx(x):
+        return ext
+    p = _naver_num(x.get("closePrice"))
+    at = str(x.get("localTradedAt") or "")
+    if not p or len(at) < 16 or (x.get("tradeStopType") or {}).get("name") == "HALTED":
+        return None
+    # KRX에서만 거래되는 종목(ETF 등 1,554개, 11-20)은 장 마감 뒤 KRX 확정 종가를 closePriceSendTime(16:30)에 받는다 → 정규장 값
+    send = str((x.get("stockExchangeType") or {}).get("closePriceSendTime") or "1630")
+    if at[11:16] == f"{send[:2]}:{send[2:4]}":
+        return None
+    sess = "pre" if at[11:16] < "09:00" else "after"
+    return {"price": p,
+            "change": _naver_num(x.get("compareToPreviousClosePrice")) or 0.0,
+            "change_pct": _naver_num(x.get("fluctuationsRatio")) or 0.0,
+            "session": sess, "session_open": _kr_ext_open(sess), "session_at": at[:16]}
+
+
 def _naver_rt_quote(x: dict) -> dict | None:
     price = _naver_num(x.get("closePrice"))
     if not price:
@@ -1351,23 +1447,25 @@ def _naver_rt_quote(x: dict) -> dict | None:
 def fetch_rt_kr(tickers: list[str]) -> dict[str, dict]:
     """국내 종목(005930.KS 등) 실시간 시세 — KRX 정규장 값만. 반환: {티커: {price, change, change_pct, volume}}"""
     by_code = {t.split(".")[0]: t for t in tickers}
+    regular = regular_session_now("KR")
     out = {}
     for x in _naver_rt_datas("domestic/stock", list(by_code)):
-        if not _naver_is_krx(x):   # 08:55~09:00·15:30 이후 넥스트레이드 가격은 반영하지 않음
+        t, q = by_code.get(x.get("itemCode")), _naver_rt_quote(x)
+        if not t or not q:
             continue
-        q, t = _naver_rt_quote(x), by_code.get(x.get("itemCode"))
-        if q and t:
-            out[t] = q
+        ext = _kr_rt_ext(x, regular)   # 정규장 밖: 넥스트레이드 프리·애프터 가격이 현재가 (11-20)
+        out[t] = {**q, **(ext or _NO_EXT)}
     return out
 
 
 def fetch_rt_us(reuters_to_ticker: dict[str, str]) -> dict[str, dict]:
     """미국 종목 실시간 시세. reuters_to_ticker: {"AAPL.O": "AAPL", ...} (로이터 코드는 시장 목록에서 얻은 값)."""
+    regular = regular_session_now("US")
     out = {}
     for x in _naver_rt_datas("worldstock/stock", list(reuters_to_ticker)):
         q, t = _naver_rt_quote(x), reuters_to_ticker.get(x.get("reutersCode"))
         if q and t:
-            out[t] = q
+            out[t] = {**q, **(_naver_ext(x, regular) or _NO_EXT)}
     return out
 
 

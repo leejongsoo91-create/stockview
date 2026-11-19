@@ -297,7 +297,7 @@ async function renderWatchlist(opts = {}) {
                 </td>
                 <td class="td-sector" title="${s.sector ? koSector(s.sector) : ''}">${s.sector ? koSector(s.sector) : '—'}</td>
                 <td>${signalBadgeHtml(s.ticker, sigMap)}</td>
-                <td class="num">${price}</td>
+                <td class="num">${price}${sessTagHtml(s)}</td>
                 <td class="num ${cls}">${chg}</td>
                 <td class="num">
                   <span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>
