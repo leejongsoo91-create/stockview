@@ -1,8 +1,8 @@
 """팀 창 펼치기 — 지금 보고 있는 wmux 작업 공간에 없는 창만 골라 메인 Claude 옆에 만든다.
 
-만드는 창(오른쪽 세로 줄, 위에서부터): 🔍 QA · 🖥 서버 :5001 · 📊 서버감시(내 PC 5001) · 📊 집서버감시
-- 이미 있으면 건너뛴다: QA = 창 제목에 'QA', 서버 = 5001 포트 사용 중, 서버감시 = server_watch.sh 5001 실행 중,
-  집서버감시 = server_watch.sh home 실행 중 (주소 파일 api/home-server-url.txt가 없으면 만들지 않음 — 결정 006)
+만드는 창(오른쪽 세로 줄, 위에서부터): 🔍 QA · 🖥 서버 :5001 · 📊 서버감시(내 PC 5001)
+- 이미 있으면 건너뛴다: QA = 창 제목에 'QA', 서버 = 5001 포트 사용 중, 서버감시 = server_watch.sh 5001 실행 중
+- 집 서버 창(집서버감시·로그)은 11-20부터 별도 wmux 공간 "SV-home"(apply-layout.ps1 -Preset home)
 - 보조 Claude는 만들지 않는다(필요할 때만: --with-helper)
 - 대상 공간: 이름이 finviz-app이거나 SV-로 시작하는 wmux 작업 공간(하나일 때). 화면에 다른 공간(예: Site)이
   떠 있어도 그 공간을 건드리지 않도록 대상 공간으로 잠깐 전환해 작업한 뒤 원래 보던 공간으로 되돌린다
@@ -26,7 +26,6 @@ WMUX = r"%LOCALAPPDATA%\wmux\bin\wmux.cmd"
 WSL = "wsl -d Ubuntu -u root --cd /root/stockview -- "
 PORT = 5001
 WS_NAMES = ("finviz-app",)   # + "SV-"로 시작하는 공간
-HOME_URL_FILE = Path(__file__).resolve().parent.parent / "api" / "home-server-url.txt"   # 집 서버 주소 (git 제외)
 
 
 def wm(*args: str) -> str:
@@ -113,9 +112,7 @@ def run(a, ws) -> int:
                  f"{PORT} 포트 사용 중" if port_busy(PORT) else ""))
     plan.append(("📊 서버감시", f"{WSL}bash scripts/server_watch.sh {PORT} 30",
                  "server_watch.sh 실행 중" if proc_running(rf"^bash scripts/server_watch[.]sh {PORT}") else ""))
-    plan.append(("📊 집서버감시", f"{WSL}bash scripts/server_watch.sh home 60",
-                 "집서버 감시 실행 중" if proc_running(r"^bash scripts/server_watch[.]sh home")
-                 else "" if HOME_URL_FILE.is_file() else "주소 파일 없음(api/home-server-url.txt)"))
+    # 집서버감시는 11-20부터 따로 wmux "집서버" 공간(wmux-layouts.json home 프리셋)에 둔다 — 작업 공간엔 만들지 않음
     if a.with_helper:
         plan.append(("🛠 보조", f"{WSL}bash scripts/pane.sh 🛠 보조 -- claude",
                      "보조 창 있음" if any(is_helper(p) for p in panes) else ""))

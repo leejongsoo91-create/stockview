@@ -22,7 +22,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $f -Preset verify -Close    
 powershell -NoProfile -ExecutionPolicy Bypass -File $f -Preset parallel -Worktrees chart-fix,news-filter
 ```
 
-- `-Preset`은 키(basic/verify/focus/team/parallel) 또는 한글 title(기본/화면확인/집중/팀/병렬) 둘 다 받는다.
+- `-Preset`은 키(basic/verify/focus/team/home/parallel) 또는 한글 title(기본/화면확인/집중/팀/집서버/병렬) 둘 다 받는다.
+- `home`(집서버, 11-20): 📊 집서버감시 + 📜 집서버 로그(`scripts/home_logs.sh`) — 작업 공간과 분리한 집 서버 전용 공간 `SV-home`
+- **WSL Claude에서 실행할 때**: `\\wsl.localhost\...` 경로로 바로 `-File`을 주면 `GetFullPath` 오류 → `cd /mnt/c && cmd.exe /c "pushd \\\\wsl.localhost\\Ubuntu\\root\\stockview && powershell -NoProfile -ExecutionPolicy Bypass -File .claude\\skills\\wmux-layout\\apply-layout.ps1 -Preset home"` (pushd가 드라이브 문자를 잡아 줌)
 - **지금 공간에 팀 창 채우기**: `.venv/bin/python scripts/team_up.py [--dry-run] [--with-helper]` — `finviz-app`/`SV-*` 공간에서 없는 QA·서버·서버감시 창만 만든다(메인 Claude 새로 안 띄움). 작업 착수 시 기본으로 실행
 - `team`(팀): 메인 Claude + QA 전담 Claude(`scripts/qa_agent.sh`, 코드 수정 금지·점검만) + 서버 + 서버감시(`scripts/server_watch.sh 5001 30`, Claude 없이 30초마다 API 점검) + 집서버감시(`server_watch.sh home 60`, 집 서버 Tailscale 주소 — `api/home-server-url.txt`)
 - ⚠️ `-Rebuild`·`-Close`는 그 공간의 창을 **강제 종료**한다(그 안의 Claude 대화·서버도 끝남). 실행 전 `wmux.cmd list-panes --json`(해당 공간 focus 후) 또는 wmux MCP `pane_list`로 `agentStatus`가 working인 Claude나 서버가 있는지 보고, 있으면 **사용자에게 먼저 묻는다.**
