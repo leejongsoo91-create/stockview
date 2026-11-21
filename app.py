@@ -684,29 +684,62 @@ def _save_market_flow_row(market: str, day: str, row: dict) -> None:
         os.replace(tmp, MARKET_FLOW_FILE)
 
 
-def record_us_market_flow():
-    """미국 시장 전체 합계 저장 — 뉴욕 평일 16:20 + 서버 시작 때(뉴욕 16:15~24:00 사이만, 장 마감 뒤 값).
-    그날 처음 한 번만 저장(16:20 값 유지). 휴장일엔 시세가 전 거래일 그대로라 직전 저장값과 거래량이 같으면 저장하지 않는다."""
+# 미국: 네이버 누적 거래량·거래대금엔 시간외 거래가 계속 더해진다(11-20: 16:20 110.6억주 → 19:30 123.8억주) →
+# 뉴욕 09:29(프리 끝)·16:01(정규장 끝)·20:05(애프터 끝)에 누적값을 찍어 두고 차이로 프리·정규장·애프터를 나눈다(11-21).
+# 행 = {"s0929": {volume, amount, count}, "s1601": {...}, "s2005": {...}} — 11-19·20은 예전 한 번 저장(volume·amount, 구분 전).
+_US_SNAPS = (("s0929", 9 * 60 + 29), ("s1601", 16 * 60 + 1), ("s2005", 20 * 60 + 5))
+
+
+def record_us_market_flow(slot: str | None = None):
+    """미국 시장 누적 거래량·실제 거래대금 기록. slot 지정(스케줄러) 또는 None(서버 시작 때 — 기록 시각 10분 안이면).
+    이미 기록한 칸은 덮어쓰지 않는다. 휴장일(그날 체결 없음)은 건너뛴다."""
     from zoneinfo import ZoneInfo
     ny = datetime.now(ZoneInfo("America/New_York"))
-    if ny.weekday() >= 5 or ny.hour * 60 + ny.minute < 16 * 60 + 15:
+    hm = ny.hour * 60 + ny.minute
+    if ny.weekday() >= 5:
         return
-    prev = _load_market_flow().get("US") or {}
+    if slot is None:
+        slot = next((k for k, t in _US_SNAPS if t <= hm <= t + 10), None)
+        if slot is None:
+            return
     day = ny.strftime("%Y-%m-%d")
-    if day in prev:   # 11-21: 이미 저장한 날은 덮어쓰지 않는다 — 재시작 때 애프터마켓까지 더한 값으로 바뀌던 문제(11-20 $740.1B → $877.5B)
+    row = dict((_load_market_flow().get("US") or {}).get(day) or {})
+    if slot in row:
         return
     stocks = cache.get("stocks") or []
     if len(stocks) < 1000:   # 서버 시작 직후 예시 데이터
         return
-    r = df.us_market_flow(stocks)
+    quotes = df.fetch_us_quotes_naver()   # 기록 시각의 값이 필요해 새로 받는다(약 70요청·20초, 하루 세 번)
+    a = quotes.get("AAPL") or {}
+    traded = a.get("session_at") if slot == "s0929" else a.get("traded_at")
+    if str(traded or "")[:10] != day:      # 오늘 체결이 없으면 휴장
+        log.info(f"시장 거래 기록 US {day} {slot}: 오늘 체결 없음(휴장) — 건너뜀")
+        return
+    r = df.us_market_flow(stocks, quotes)
     if not r["volume"]:
         return
-    last = prev.get(max(prev)) if prev else None
-    if last and max(prev) != day and last.get("volume") == r["volume"]:
-        log.info("시장 거래 저장 US: 직전 거래일과 같은 값(휴장일) — 건너뜀")
-        return
-    _save_market_flow_row("US", day, r)
-    log.info(f"시장 거래 저장 US {day}: 거래량 {r['volume']:,}주 · 거래대금 ${r['amount'] / 1e9:.1f}B ({r['count']}종목)")
+    row[slot] = r
+    _save_market_flow_row("US", day, row)
+    log.info(f"시장 거래 기록 US {day} {slot}: 누적 거래량 {r['volume']:,}주 · 거래대금 ${r['amount'] / 1e9:.1f}B ({r['count']}종목)")
+
+
+def _us_flow_split(row: dict) -> dict:
+    """US 하루 기록 → 정규장(volume·amount)·프리·애프터. 예전 한 번 저장 행은 mixed(구분 전)."""
+    if "volume" in row and "s1601" not in row:
+        return {"volume": row.get("volume"), "amount": row.get("amount"), "mixed": True}
+    s0, s1, s2 = row.get("s0929") or {}, row.get("s1601") or {}, row.get("s2005") or {}
+    out = {"volume": None, "amount": None}
+    if s1:
+        out["volume"] = s1["volume"] - s0.get("volume", 0)
+        out["amount"] = s1["amount"] - s0.get("amount", 0)
+        if not s0:
+            out["pre_unknown"] = True   # 09:29 기록이 없으면 정규장에 프리가 섞였을 수 있음
+    if s0:
+        out["pre_volume"], out["pre_amount"] = s0["volume"], s0["amount"]
+    if s1 and s2:
+        out["after_volume"] = max(0, s2["volume"] - s1["volume"])
+        out["after_amount"] = max(0, s2["amount"] - s1["amount"])
+    return out
 
 
 def refresh_dynamic_indices():
@@ -993,8 +1026,9 @@ _scheduler.add_job(refresh_av_news,         "interval", hours=12,   id="av_news"
 _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_news")
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")
 _scheduler.add_job(refresh_fear_greed,      "interval", minutes=30, id="fear_greed")
-_scheduler.add_job(record_us_market_flow, "cron", day_of_week="mon-fri", hour=16, minute=20,
-                   timezone="America/New_York", id="market_flow_us")   # 미국 장 마감 뒤 5,000종목 합계 저장
+for _slot, _t in _US_SNAPS:   # 미국 시장 누적 거래량·거래대금: 프리 끝·정규장 끝·애프터 끝 (11-21)
+    _scheduler.add_job(record_us_market_flow, "cron", day_of_week="mon-fri", hour=_t // 60, minute=_t % 60,
+                       timezone="America/New_York", id=f"market_flow_us_{_slot}", args=[_slot])
 _scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
 if VOICE_BRIEFING_ENABLED:
     _scheduler.add_job(refresh_voice_briefing, "interval", hours=24, id="voice_briefing")
@@ -1531,7 +1565,11 @@ def market_flow_api():
         return jsonify({"error": "market은 KOSPI·KOSDAQ·US"}), 400
     days = max(5, min(int(request.args.get("days") or 60), 400))
     stored = _load_market_flow().get(market) or {}
-    rows = {d: {"volume": v.get("volume"), "amount": v.get("amount")} for d, v in stored.items()}
+    if market == "US":
+        rows = {d: _us_flow_split(v) for d, v in stored.items()}
+        stored = {d: v for d, v in stored.items() if rows[d].get("amount")}
+    else:
+        rows = {d: {"volume": v.get("volume"), "amount": v.get("amount")} for d, v in stored.items()}
     if market != "US":
         dkey = f"market_hist_daum_{market}"
         daum = cache.get_fresh(dkey)

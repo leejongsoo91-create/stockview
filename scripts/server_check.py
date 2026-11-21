@@ -172,6 +172,13 @@ def check_us(mode: str, base: str) -> tuple[str, Check]:
         return "holiday", ch
     rows = {s.get("ticker"): s for s in get_json(f"{base}/api/stocks")}
     ch.add("미국 종목 수", len(rows) >= 4000, f"{len(rows):,}개")
+    if mode == "us-pre":   # 어제(직전 거래일) 애프터 기록(20:05)이 남았는지
+        fr = [r for r in get_json(f"{base}/api/market-flow?market=US&days=5").get("rows") or [] if r.get("date", "") < today]
+        y = fr[-1] if fr else {}
+        ok = y.get("after_amount") is not None or y.get("mixed")
+        ch.add("직전 거래일 애프터 기록(20:05)", ok,
+               f"{y.get('date')} " + ("구분 전 기록" if y.get("mixed") else
+                                      f"애프터 ${(y.get('after_amount') or 0) / 1e9:,.2f}B" if ok else "기록 없음"))
     want = "pre" if mode == "us-pre" else "after"
     live = sum(1 for s in rows.values() if s.get("session") == want and s.get("session_open"))
     ch.add(f"{'프리' if want == 'pre' else '애프터'} 진행 중 표시", live >= 300, f"{live:,}종목 (300 이상이면 정상)")
@@ -191,8 +198,15 @@ def check_us(mode: str, base: str) -> tuple[str, Check]:
         ch.add("상승·하락 종목 모두 있음", neg >= 100 and pos >= 100, f"상승 {pos:,} · 하락 {neg:,}")
         f = get_json(f"{base}/api/market-flow?market=US&days=5")
         last = (f.get("rows") or [{}])[-1]
-        ch.add("오늘 미국 시장 거래 저장", last.get("date") == today and (last.get("amount") or 0) > 1e10,
-               f"{last.get('date')} ${(last.get('amount') or 0) / 1e9:,.1f}B")
+        ch.add("오늘 미국 정규장 거래 기록(16:01)", last.get("date") == today and (last.get("amount") or 0) > 1e10,
+               f"{last.get('date')} 정규장 ${(last.get('amount') or 0) / 1e9:,.1f}B · {(last.get('volume') or 0) / 1e9:.2f}B주")
+        pre = last.get("pre_amount") if last.get("date") == today else None
+        if last.get("mixed"):
+            ch.add("오늘 미국 프리 기록(09:29)", True, "구분 전 예전 기록 — 건너뜀")
+        else:
+            ch.add("오늘 미국 프리 기록(09:29)", pre is not None,   # 0이면 네이버 누적값에 프리 거래가 안 들어가는 것 — 실패는 아님
+                   "기록 없음 (09:29에 서버가 꺼져 있었거나 휴장 판정)" if pre is None else
+                   f"${pre / 1e9:,.2f}B" + (" — 0: 네이버 누적값에 프리 미포함으로 보임" if not pre else ""))
     return "ok", ch
 
 

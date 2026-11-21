@@ -404,6 +404,7 @@ def fetch_us_quotes_naver() -> dict[str, dict]:
             "market_cap": round(mv / 1e6, 3) if mv else None,
             "reuters":    s.get("reutersCode") or "",
             "traded_at":  s.get("localTradedAt") or "",
+            "value":      _naver_num(s.get("accumulatedTradingValueRaw")) or 0.0,   # 실제 체결 금액 누적(달러) — 시장 거래 기록용
             **_NO_EXT,
         })
         ext = _naver_ext(s, regular)   # 정규장 밖: 프리·애프터 가격이 현재가 (시총도 같은 비율로)
@@ -2587,16 +2588,23 @@ def fetch_kr_market_volume_history(index: str, count: int = 300) -> dict[str, in
     return out
 
 
-def us_market_flow(stocks: list[dict]) -> dict:
-    """미국 시장 전체 거래량·거래대금 — 보통주(우선주·워런트 등 제외) 현재가 × 거래량 합계(추정)."""
+def us_market_flow(stocks: list[dict], quotes: dict | None = None) -> dict:
+    """미국 시장 전체 거래량·거래대금 누적 — 보통주(우선주·워런트 등 제외)만.
+    quotes(fetch_us_quotes_naver 결과)가 있으면 네이버 종목별 누적 거래량·실제 체결 금액 합계(11-21~),
+    없으면 예전 방식(현재가 × 거래량 추정). 네이버 누적값은 시간외 거래도 계속 더해지므로, 시각별로 찍어 차이로 나눈다."""
     vol = amt = 0.0
     n = 0
     for s in stocks or []:
         if s.get("non_common"):
             continue
-        v, p = s.get("volume") or 0, s.get("price") or 0
-        if v > 0 and p > 0:
-            vol += v; amt += v * p; n += 1
+        if quotes is not None:
+            q = quotes.get(_norm_us_ticker(s.get("ticker", ""))) or {}
+            v, a = q.get("volume") or 0, q.get("value") or 0
+        else:
+            v = s.get("volume") or 0
+            a = v * (s.get("price") or 0)
+        if v > 0 and a > 0:
+            vol += v; amt += a; n += 1
     return {"volume": int(vol), "amount": int(amt), "count": n}
 
 
