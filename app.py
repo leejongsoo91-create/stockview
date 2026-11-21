@@ -684,15 +684,6 @@ def _save_market_flow_row(market: str, day: str, row: dict) -> None:
         os.replace(tmp, MARKET_FLOW_FILE)
 
 
-def record_kr_market_flow():
-    """코스피·코스닥 장 마감 값 저장 — 평일 16:10 + 서버 시작 때. 날짜는 네이버가 준 거래일(휴장일엔 같은 날 덮어씀)."""
-    for idx in ("KOSPI", "KOSDAQ"):
-        r = df.fetch_kr_market_flow(idx)
-        if r:
-            _save_market_flow_row(idx, r["date"], {"volume": r["volume"], "amount": r["amount"]})
-            log.info(f"시장 거래 저장 {idx} {r['date']}: 거래량 {r['volume']:,}주 · 거래대금 {r['amount'] / 1e12:.2f}조원")
-
-
 def record_us_market_flow():
     """미국 시장 전체 합계 저장 — 뉴욕 평일 16:20 + 서버 시작 때(뉴욕 16:15~24:00 사이만, 장 마감 뒤 값).
     휴장일엔 시세가 전 거래일 그대로라 직전 저장값과 거래량이 같으면 저장하지 않는다."""
@@ -943,10 +934,10 @@ def initial_load():
         refresh_pe_eps()
     threading.Thread(target=_delayed_pe_eps, daemon=True).start()
 
-    # 시장 거래량·거래대금: 서버를 오늘 장 마감 뒤에 다시 켰을 때 그날 값이 빠지지 않게 한 번 (미국 종목 로드 후)
+    # 미국 시장 거래량·거래대금: 서버를 장 마감 뒤에 다시 켰을 때 그날 값이 빠지지 않게 한 번 (미국 종목 로드 후).
+    # 국내는 11-21부터 저장하지 않고 다음 금융 과거치를 불러온다(/api/market-flow)
     def _delayed_market_flow():
         import time as _t; _t.sleep(150)
-        record_kr_market_flow()
         record_us_market_flow()
     threading.Thread(target=_delayed_market_flow, daemon=True).start()
 
@@ -1000,8 +991,6 @@ _scheduler.add_job(refresh_av_news,         "interval", hours=12,   id="av_news"
 _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_news")
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")
 _scheduler.add_job(refresh_fear_greed,      "interval", minutes=30, id="fear_greed")
-_scheduler.add_job(record_kr_market_flow, "cron", day_of_week="mon-fri", hour=16, minute=10,
-                   timezone="Asia/Seoul", id="market_flow_kr")         # 코스피·코스닥 장 마감 거래량·거래대금 저장
 _scheduler.add_job(record_us_market_flow, "cron", day_of_week="mon-fri", hour=16, minute=20,
                    timezone="America/New_York", id="market_flow_us")   # 미국 장 마감 뒤 5,000종목 합계 저장
 _scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
@@ -1533,7 +1522,8 @@ def fear_greed_api():
 @app.route("/api/market-flow")
 def market_flow_api():
     """시장 전체 일별 거래량·거래대금. ?market=KOSPI|KOSDAQ|US&days=60
-    국내 거래량은 네이버 과거치(6시간 캐시)로 채우고, 거래대금은 서버가 쌓은 값(없는 날은 null)."""
+    국내: 다음 금융 지수 일별(거래대금·거래량 약 12,400일, 1시간 캐시)을 불러온다 — 11-21부터 서버 저장 안 함.
+    다음이 실패하면 예전에 쌓아 둔 값 + 네이버 거래량 과거치로. 미국: 서버가 매일 쌓은 값(무료 과거치 없음)."""
     market = (request.args.get("market") or "KOSPI").upper()
     if market not in ("KOSPI", "KOSDAQ", "US"):
         return jsonify({"error": "market은 KOSPI·KOSDAQ·US"}), 400
@@ -1541,16 +1531,26 @@ def market_flow_api():
     stored = _load_market_flow().get(market) or {}
     rows = {d: {"volume": v.get("volume"), "amount": v.get("amount")} for d, v in stored.items()}
     if market != "US":
-        key = f"market_vol_hist_{market}"
-        hist = cache.get(key)
-        if hist is None:
-            hist = df.fetch_kr_market_volume_history(market, 420)
-            cache.set(key, hist, ttl=21600 if hist else 300)
-        for d, v in (hist or {}).items():
-            rows.setdefault(d, {"volume": v, "amount": None})
+        dkey = f"market_hist_daum_{market}"
+        daum = cache.get_fresh(dkey)
+        if daum is None:
+            daum = df.fetch_kr_market_history_daum(market, 500)
+            cache.set(dkey, daum, ttl=3600 if daum else 300)
+        if daum:
+            rows = {d: dict(v) for d, v in daum.items()}   # 다음 값이 기준 (11-18·19 서버 저장값과 일치 확인)
+            stored = {}
+        else:
+            key = f"market_vol_hist_{market}"
+            hist = cache.get(key)
+            if hist is None:
+                hist = df.fetch_kr_market_volume_history(market, 420)
+                cache.set(key, hist, ttl=21600 if hist else 300)
+            for d, v in (hist or {}).items():
+                rows.setdefault(d, {"volume": v, "amount": None})
     out = [{"date": d, **rows[d]} for d in sorted(rows)][-(days + 20):]   # 앞 20일은 20일 평균 계산용
-    return jsonify({"market": market, "rows": out,
-                    "amount_since": min(stored) if stored else None, "amount_days": len(stored)})
+    amt = [r["date"] for r in out if r.get("amount")]
+    return jsonify({"market": market, "rows": out, "source": "daum" if market != "US" and not stored and amt else "stored",
+                    "amount_since": min(amt) if amt else None, "amount_days": len(amt)})
 
 
 @app.route("/api/market-investors")

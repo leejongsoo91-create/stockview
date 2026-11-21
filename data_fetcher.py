@@ -2481,41 +2481,6 @@ def _resample_yearly(monthly_rows: list[dict]) -> list[dict]:
 
 
 # ── 시장 전체 거래량·거래대금 (11-18) ────────────────────────────────────────
-def _naver_num_unit(v) -> float | None:
-    """'219,090천주'·'15,662,627백만' → 단위를 곱한 숫자 (천=1e3, 백만=1e6).
-    11-20: 예전엔 이름이 _naver_num이라 위쪽 같은 이름 함수(음수 처리)를 덮어써서 하락 종목 등락이 0으로 나왔음 — 이름 분리."""
-    m = re.match(r"\s*([\d,\.]+)\s*(천|백만|억|조)?", str(v or ""))
-    if not m:
-        return None
-    try:
-        n = float(m.group(1).replace(",", ""))
-    except ValueError:
-        return None
-    return n * {"천": 1e3, "백만": 1e6, "억": 1e8, "조": 1e12}.get(m.group(2) or "", 1)
-
-
-def fetch_kr_market_flow(index: str) -> dict | None:
-    """코스피·코스닥 오늘(마지막 거래일) 시장 전체 거래량(주)·거래대금(원) — 네이버 지수 integration API.
-    거래대금 과거치는 네이버에 없어(옛 PC 페이지 410) 매일 저장해 쌓는다. 장 마감(CLOSE) 전이면 None."""
-    base = f"https://m.stock.naver.com/api/index/{index}"
-    try:
-        j = requests.get(f"{base}/integration", headers=_NAVER_RT_HEADERS, timeout=8).json()
-        b = requests.get(f"{base}/basic", headers=_NAVER_RT_HEADERS, timeout=8).json()
-    except Exception as e:
-        log.warning(f"fetch_kr_market_flow({index}): {e}")
-        return None
-    if b.get("marketStatus") != "CLOSE":
-        return None
-    info = {x.get("code"): x.get("value") for x in (j.get("totalInfos") or [])}
-    vol, amt = _naver_num_unit(info.get("accumulatedTradingVolume")), _naver_num_unit(info.get("accumulatedTradingValue"))
-    d = str((j.get("dealTrendInfo") or {}).get("bizdate") or "")
-    if len(d) != 8:
-        d = str(b.get("localTradedAt") or "")[:10].replace("-", "")
-    if not vol or not amt or len(d) != 8:
-        return None
-    return {"date": f"{d[:4]}-{d[4:6]}-{d[6:]}", "volume": int(vol), "amount": int(amt)}
-
-
 # ── 국내 투자자별 순매수 (다음 금융, 11-20) ────────────────────────────────────
 # 코스피·코스닥 시장 전체 개인·외국인·기관 순매수(산 금액 − 판 금액, 원) + 기관 세부 7개·기타법인·기타외국인.
 # 일별 약 10년치, 장중은 1~2분마다 갱신(11-19는 20:00까지 바뀜 — 넥스트레이드 포함 잠정치로 추정).
@@ -2567,6 +2532,32 @@ def fetch_kr_investor_now(market: str) -> dict | None:
         return None
     x = data[0]
     return {"date": str(x.get("date") or "")[:10], "time": str(x.get("time") or "")[:5], **_daum_inv_row(x)}
+
+
+def fetch_kr_market_history_daum(index: str, count: int = 500) -> dict[str, dict]:
+    """코스피·코스닥 일별 시장 전체 거래량(주)·거래대금(원) 과거치 — 다음 금융 지수 일별(약 12,400거래일, 한 번에 500일).
+    단위: accTradeVolume 천주, accTradePrice 백만원 (11-18 코스피 219,090천주·15,662,627백만 = 네이버 저장값과 일치, 11-21 확인).
+    장중에는 오늘 줄이 진행 중 값이라 15:40(KST) 전이면 오늘 줄은 뺀다. {날짜: {volume, amount}}, 실패 시 {}."""
+    from zoneinfo import ZoneInfo
+    try:
+        r = requests.get("https://finance.daum.net/api/market_index/days",
+                         params={"page": 1, "perPage": max(1, min(count, 500)), "market": index, "pagination": "true"},
+                         headers={**_DAUM_INV_HEADERS, "Referer": "https://finance.daum.net/domestic"}, timeout=10)
+        r.raise_for_status()
+        data = r.json().get("data") or []
+    except Exception as e:
+        log.warning(f"fetch_kr_market_history_daum({index}): {e}")
+        return {}
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    today, closed = now.strftime("%Y-%m-%d"), now.hour * 60 + now.minute >= 15 * 60 + 40
+    out = {}
+    for x in data:
+        d = str(x.get("date") or "")[:10]
+        vol, amt = _safe(x.get("accTradeVolume")), _safe(x.get("accTradePrice"))
+        if len(d) != 10 or not vol or not amt or (d == today and not closed):
+            continue
+        out[d] = {"volume": int(vol * 1000), "amount": int(amt * 1e6)}
+    return out
 
 
 def fetch_kr_market_volume_history(index: str, count: int = 300) -> dict[str, int]:

@@ -60,7 +60,7 @@
 | `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
 | `refresh_reports` | 15분 | |
 | `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정, 11-20부터 `series` 원본 값 1년 [[ms, 값]] 미국 거래일당 1개 + 모멘텀·VIX는 `compare` 비교선 125일·50일 평균) — 홈 상단 배지·상세 창(지표를 누르면 원본 데이터), Brief 게이지에서 사용 (11-17) — 응답 약 65 KB |
-| `record_kr_market_flow` / `record_us_market_flow` | 평일 16:10 KST / 뉴욕 평일 16:20 + 서버 시작 150초 뒤 | 코스피·코스닥 장 마감 거래량·거래대금(네이버 지수 integration, 거래일은 bizdate) / 미국 보통주 거래량·현재가×거래량 합계(뉴욕 16:15 이후만, 직전 저장값과 같으면 휴장일로 보고 건너뜀) → `data/market_flow.json`. `/api/market-flow?market=&days=`가 국내 거래량 과거치(네이버 fchart, 6시간 캐시)와 합쳐 홈 📊 시장 거래 창에 제공 (11-18) |
+| `record_us_market_flow` | 뉴욕 평일 16:20 + 서버 시작 150초 뒤 | 미국 보통주 거래량·현재가×거래량 합계(뉴욕 16:15 이후만, 직전 저장값과 같으면 휴장일로 보고 건너뜀) → `data/market_flow.json`의 `US`. **국내는 11-21부터 저장하지 않음** — `/api/market-flow`가 코스피·코스닥은 다음 금융 지수 일별(`finance.daum.net/api/market_index/days`, 거래대금 백만원·거래량 천주, 500일, 1시간 캐시, 15:40 전엔 오늘 줄 제외)을 불러오고, 실패하면 예전 저장값 + 네이버 거래량 과거치(fchart). 16:10 네이버 값은 장 마감 뒤 확정 전 중간값이었음(11-20 코스피 16:10 14.11조 → 확정 14.95조) (11-18, 11-21 변경) |
 | (요청 시) `/api/market-investors?market=KOSPI\|KOSDAQ&days=` | 일별 1시간 · 장중 60초 캐시 | 코스피·코스닥 투자자별 **순매수**(원) — 다음 금융 `finance.daum.net/api/investor/{시장}/days\|times?details=true`(Referer 필수, 없으면 403). 개인·외국인·기관 + 기관 세부 7개(금융투자·보험·투신·사모·은행·기타금융·연기금)·기타법인·기타외국인, 일별 약 10년(한 번에 300일)·장중 1~2분 갱신(20:00까지). 오늘 일별 줄이 없으면 장중 값을 붙임. 총 매수·매도 금액·주식 수는 KRX 정보데이터시스템만 있고 로그인 필요(11-20). 네이버 `m.stock.naver.com/api/index/{시장}/trend`(개인·외국인·기관 3개만)와 날마다 수십억~수백억 차이 — 홈 📊 시장 거래 창 (11-20) |
 | `refresh_earnings` | 1시간 | |
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |

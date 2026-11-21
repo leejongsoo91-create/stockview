@@ -812,8 +812,8 @@ function renderMarketStatBar(stocks) {
 }
 
 // ── 홈 📊 시장 거래 창 (11-18) — 코스피·코스닥·미국 시장 전체 일별 거래량·거래대금 ──────────
-// 서버가 매일 장 마감 뒤 저장(data/market_flow.json). 국내 거래량은 네이버 과거치가 있어 바로 보이고,
-// 거래대금·미국은 11-18부터 쌓인다. 모양은 차트 탭 📊 거래 추이 창(.vt-*)과 같게.
+// 국내는 다음 금융 과거치(11-21~, 약 2년)를 불러오고, 미국은 무료 과거치가 없어 서버가 매일 장 마감 뒤 저장
+// (data/market_flow.json, 11-19부터). 모양은 차트 탭 📊 거래 추이 창(.vt-*)과 같게.
 const _mf = { market: 'KOSPI', days: 20, by: 'amount', data: {}, at: {}, inv: {}, invAt: {}, instOpen: false, timer: null };
 const _MF_MARKETS = { KOSPI: '코스피', KOSDAQ: '코스닥', US: '미국' };
 function _openMarketFlow() {
@@ -916,7 +916,7 @@ function _mfInvChart() {   // 일별 개인·외국인·기관 순매수 막대 
     });
   });
   const step = Math.max(1, Math.ceil(n / 8));
-  dates.forEach((dt, k) => { if (k % step === 0 || k === n - 1) g += `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 2}" text-anchor="middle">${dt.slice(5).replace('-', '/')}</text>`; });
+  dates.forEach((dt, k) => { if (k % step === 0 || k === n - 1) g += `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 2}" text-anchor="${k === 0 ? 'start' : k === n - 1 ? 'end' : 'middle'}">${dt.slice(5).replace('-', '/')}</text>`; });
   return `<div class="inv-chart-head"><b>일별 순매수 · 최근 ${n}거래일</b><span class="vt-legend inv-legend"><span><i class="inv-c-ind"></i>개인</span><span><i class="inv-c-for"></i>외국인</span><span><i class="inv-c-ins"></i>기관</span><span>· 위 = 순매수, 아래 = 순매도</span></span></div>
     <svg class="vt-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 투자자별 순매수 막대 그래프">${g}</svg>
     <div class="inv-sum">${n}거래일 합계 — 개인 <b class="${sum('individual') >= 0 ? 'vt-pos' : 'vt-neg'}">${_fmtEok(sum('individual'))}</b> ·
@@ -938,9 +938,10 @@ function _renderMarketFlow() {
   let notice = '';
   let by = _mf.by;
   if (by === 'amount' && amtDays < 2) {
-    notice = `<div class="mf-notice">거래대금은 무료로 받을 수 있는 과거 기록이 없어 서버가 <b>매일 장 마감 뒤 하루씩 쌓고</b> 있어요` +
-      (since ? ` (${since}부터 ${amtDays}일).` : '. 첫 기록은 ' + (isKr ? '평일 16:10' : '뉴욕 장 마감 뒤(한국 시각 오전 6~7시)') + '에 생겨요.') +
-      (isKr ? ' 아래는 거래량입니다.' : '') + `</div>`;
+    notice = isKr
+      ? `<div class="mf-notice">거래대금 과거 기록(다음 금융)을 지금 불러오지 못해 아래는 거래량입니다. 잠시 뒤 다시 열어 보세요.</div>`
+      : `<div class="mf-notice">미국 시장 전체 거래대금은 무료로 받을 수 있는 과거 기록이 없어 서버가 <b>매일 장 마감 뒤 하루씩 쌓고</b> 있어요` +
+        (since ? ` (${since}부터 ${amtDays}일).` : '. 첫 기록은 뉴욕 장 마감 뒤(한국 시각 오전 6~7시)에 생겨요.') + `</div>`;
     by = isKr ? 'volume' : 'amount';
   }
   const val = r => r[by] || 0;
@@ -974,7 +975,7 @@ function _renderMarketFlow() {
   const avgPts = rows.map((x, k) => x.avg ? `${(k * bw + bw / 2).toFixed(1)},${y(x.avg).toFixed(1)}` : null).filter(Boolean).join(' ');
   const step = Math.max(1, Math.ceil(n / 8));
   const labels = rows.map((x, k) => (k % step === 0 || k === n - 1)
-    ? `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${x.r.date.slice(5).replace('-', '/')}</text>` : '').join('');
+    ? `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="${k === 0 ? 'start' : k === n - 1 ? 'end' : 'middle'}">${x.r.date.slice(5).replace('-', '/')}</text>` : '').join('');
   const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'vt-pos' : v < 0 ? 'vt-neg' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
   const byName = by === 'amount' ? '거래대금' : '거래량';
   const trs = rows.slice().reverse().map(x => `
@@ -1004,7 +1005,7 @@ function _renderMarketFlow() {
         <tbody>${trs}</tbody>
       </table>
     </div>
-    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금은 네이버 증권 지수 값(정규장)이고, 투자자별 순매수는 다음 금융 값입니다.' : '미국은 보통주 약 4,000종목의 거래량 합계와 현재가×거래량 합계(추정)입니다. ETF·우선주는 빠져 있습니다.'} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
+    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금·투자자별 순매수는 다음 금융 값입니다(장 마감 뒤 확정값, 장중엔 전날까지).' : '미국은 보통주 약 4,000종목의 거래량 합계와 현재가×거래량 합계(추정, 매일 뉴욕 16:20에 저장)입니다. ETF·우선주는 빠져 있습니다.'} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
   _bindMfCtrls(body);
   if (isKr) _renderMfInvestors();
   const wrapNew = body.querySelector('.vt-table-wrap'); if (wrapNew && keepY) wrapNew.scrollTop = keepY;
