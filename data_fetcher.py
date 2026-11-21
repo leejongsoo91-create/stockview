@@ -1402,9 +1402,16 @@ def _naver_ext(x: dict, regular: bool) -> dict | None:
     p = _naver_num(o.get("overPrice"))
     if not typ or not p:
         return None
-    return {"price": p,
-            "change": _naver_num(o.get("compareToPreviousClosePrice")) or 0.0,
-            "change_pct": _naver_num(o.get("fluctuationsRatio")) or 0.0,
+    # 등락 = 전일 정규장 종가 대비 (11-21). 네이버 시간외 등락은 국내는 전일 종가, 미국 애프터는 "당일 정규장 종가" 대비라
+    # (NVDA 11-20 정규 −14%인데 애프터 +3.47%만 보임) 직접 계산: 애프터 기준 = 정규 종가 − 정규 등락, 프리 기준 = 정규 종가.
+    c, cc = _naver_num(x.get("closePrice")), _naver_num(x.get("compareToPreviousClosePrice"))
+    base = (c if typ == "pre" else c - cc) if c and cc is not None else None
+    if base and base > 0:
+        change, pct = round(p - base, 4), round((p / base - 1) * 100, 2)
+    else:
+        change = _naver_num(o.get("compareToPreviousClosePrice")) or 0.0
+        pct = _naver_num(o.get("fluctuationsRatio")) or 0.0
+    return {"price": p, "change": change, "change_pct": pct,
             "session": typ, "session_open": o.get("overMarketStatus") == "OPEN",
             "session_at": str(o.get("localTradedAt") or "")[:16]}
 
@@ -1422,6 +1429,10 @@ def _kr_rt_ext(x: dict, regular: bool) -> dict | None:
     p = _naver_num(x.get("closePrice"))
     at = str(x.get("localTradedAt") or "")
     if not p or len(at) < 16 or (x.get("tradeStopType") or {}).get("name") == "HALTED":
+        return None
+    # 장 시작 전(PREOPEN, 08:00~09:00)엔 네이버가 모든 종목의 체결 시각을 "지금"으로 준다 → 시간외 정보가 없는 종목은
+    # 프리마켓 거래가 없는 것(11-20 08:42: KODEX 200 등 4,199종목에 '프리'가 잘못 붙었음)
+    if x.get("marketStatus") == "PREOPEN":
         return None
     # KRX에서만 거래되는 종목(ETF 등 1,554개, 11-20)은 장 마감 뒤 KRX 확정 종가를 closePriceSendTime(16:30)에 받는다 → 정규장 값
     send = str((x.get("stockExchangeType") or {}).get("closePriceSendTime") or "1630")
