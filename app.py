@@ -686,10 +686,14 @@ def _save_market_flow_row(market: str, day: str, row: dict) -> None:
 
 def record_us_market_flow():
     """미국 시장 전체 합계 저장 — 뉴욕 평일 16:20 + 서버 시작 때(뉴욕 16:15~24:00 사이만, 장 마감 뒤 값).
-    휴장일엔 시세가 전 거래일 그대로라 직전 저장값과 거래량이 같으면 저장하지 않는다."""
+    그날 처음 한 번만 저장(16:20 값 유지). 휴장일엔 시세가 전 거래일 그대로라 직전 저장값과 거래량이 같으면 저장하지 않는다."""
     from zoneinfo import ZoneInfo
     ny = datetime.now(ZoneInfo("America/New_York"))
     if ny.weekday() >= 5 or ny.hour * 60 + ny.minute < 16 * 60 + 15:
+        return
+    prev = _load_market_flow().get("US") or {}
+    day = ny.strftime("%Y-%m-%d")
+    if day in prev:   # 11-21: 이미 저장한 날은 덮어쓰지 않는다 — 재시작 때 애프터마켓까지 더한 값으로 바뀌던 문제(11-20 $740.1B → $877.5B)
         return
     stocks = cache.get("stocks") or []
     if len(stocks) < 1000:   # 서버 시작 직후 예시 데이터
@@ -697,8 +701,6 @@ def record_us_market_flow():
     r = df.us_market_flow(stocks)
     if not r["volume"]:
         return
-    prev = _load_market_flow().get("US") or {}
-    day = ny.strftime("%Y-%m-%d")
     last = prev.get(max(prev)) if prev else None
     if last and max(prev) != day and last.get("volume") == r["volume"]:
         log.info("시장 거래 저장 US: 직전 거래일과 같은 값(휴장일) — 건너뜀")

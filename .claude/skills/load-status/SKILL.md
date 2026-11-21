@@ -11,6 +11,7 @@ description: StockView 작업 현황 보고서 출력 — 사용자가 "불러�
 1. `docs/CHANGELOG.md` — **앞 30줄만** (Read 도구 `limit: 30`). 맨 위 "누적 요약"에 전체 진행률이 있고, 그 아래가 최신 작업이다.
 2. `docs/ROADMAP.md` — 전체 (짧음).
 3. `git log --oneline -8`과 `git status --short` — CHANGELOG에 아직 안 적힌 커밋이나 미커밋 변경이 있는지 대조한다.
+4. **자동 점검 결과**: `python3 scripts/server_check.py --report` — 감시 CT `monitor`가 평일 정해진 시각에 돌린 점검(국내 프리 08:25·국내 마감 16:40·미국 프리/마감 뉴욕 04:40/16:40) 중 **지난 불러오기 이후** 결과를 표로 출력한다(SSH 주소는 git 제외 `api/monitor-ssh.txt`, 본 위치는 `logs/server_check_seen.txt`에 기록돼 다음엔 새 결과만). 연결 실패 시 그 문구를 그대로 "확인 필요"에 적는다. 다시 전부 보려면 `--report --all`.
 
 **읽지 말 것:** `docs/specs/plan-legacy.md`, `docs/specs/work-history-detail.md`, 메모리 상세 파일. 사용자가 과거 경위를 구체적으로 물을 때만 해당 부분을 검색해서 읽는다.
 
@@ -18,6 +19,10 @@ description: StockView 작업 현황 보고서 출력 — 사용자가 "불러�
 
 ```
 ## StockView 작업 현황 보고
+
+### 🔎 자동 점검 결과 (먼저 확인)
+(`server_check.py --report` 출력 표 그대로. ❌가 있으면 항목별 내용과 함께 "원인 확인부터 할까요?"를 묻는다.
+ 새 결과가 없으면 한 줄로 "새 점검 결과 없음")
 
 ### 전체 진행률
 - 완료된 Phase: (CHANGELOG 누적 요약 그대로)
@@ -43,3 +48,5 @@ description: StockView 작업 현황 보고서 출력 — 사용자가 "불러�
 - 보고서는 한글로, 전문 용어는 짧게 풀어서 쓴다.
 - CHANGELOG와 git 이력이 다르면 git을 사실로 보고, 차이를 "확인 필요"에 적는다 (CHANGELOG는 고치지 않는다 — 보고만).
 - 보고 후 사용자가 항목을 고르면 `work-report` 스킬의 작업계획서로 이어간다.
+- **자동 점검에 ❌가 있으면** 다른 작업보다 먼저 사용자에게 보여 주고 확인을 받은 뒤 진행한다(사용자 요청 11-21: "작업 시작할 때 점검 내용을 불러와 주면 확인하고 진행").
+- 점검 스크립트를 고쳤으면 monitor CT에 다시 복사해야 반영된다: `scp scripts/server_check.py $(cat api/monitor-ssh.txt):/opt/sv-check/` (결정 006)

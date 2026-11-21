@@ -49,6 +49,12 @@
 - 알림: **텔레그램 봇**(꺼짐·복구 둘 다). 봇 토큰은 Kuma 안에만 저장(저장소·문서에 안 씀). 같은 봇을 보류 중인 StockView 알림에 다시 쓸 수 있다
 - 상태·로그: `systemctl status uptime-kuma`, `journalctl -u uptime-kuma -n 100`
 
+## 자동 점검 (11-21)
+- CT `monitor`의 systemd 타이머가 `scripts/server_check.py`를 실행 — 평일 국내 프리 08:25·국내 마감 16:40(KST), 미국 프리 04:40·미국 마감 16:40(뉴욕 시각, 서머타임 자동). 시간외 표시·등락 기준(전일 종가 대비, 네이버 원본으로 계산 비교)·KRX 전용 종목·오늘 거래대금·투자자 순매수·미국 시장 거래 저장·하락 종목 존재를 확인, 휴장일은 "휴장"
+- 결과는 `/var/lib/sv-check/results.jsonl`에 한 줄씩, **❌일 때만 텔레그램**(Uptime Kuma와 같은 봇 — 토큰은 `/etc/sv-check/env` 권한 600, 저장소에 안 씀). 작업 PC "불러오기" 때 `server_check.py --report`가 지난번 이후 결과를 표로(SSH 주소는 git 제외 `api/monitor-ssh.txt`)
+- 구성: `/opt/sv-check/server_check.py`(저장소 파일을 복사 — 고치면 `scp scripts/server_check.py $(cat api/monitor-ssh.txt):/opt/sv-check/`), `sv-check@.service`(읽기 전용, DynamicUser), `sv-check-{kr-pre,kr-close,us-pre,us-after}.timer`. 상태: `systemctl list-timers 'sv-check-*'`, 수동 실행: `systemctl start sv-check@kr-close`
+- Claude 세션 예약(CronCreate)은 창·PC가 켜져 있어야 해서(11-20 PC 절전으로 1~17시간 지연) 이걸로 대체
+
 ## 주의
 - 관심종목·포트폴리오·차트 설정은 **브라우저 localStorage**라 서버로 옮겨지지 않는다(주소가 바뀌면 빈 상태, 휴대폰·PC 따로). 포트폴리오는 CSV 내보내기/가져오기로 이동 가능
 - Proxmox 관리 화면(`:8006`)은 인터넷에 열지 않는다
