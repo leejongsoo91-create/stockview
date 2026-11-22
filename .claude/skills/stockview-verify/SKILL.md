@@ -37,7 +37,7 @@ description: StockView 작업 후 실제 동작 검증 — 서버 기동 확인,
 
 `playwright` MCP 도구가 있으면:
 1. `browser_navigate` → `http://127.0.0.1:5001`
-2. 탭 전환: 상단 `button.nav-btn[data-view="<탭>"]` 클릭
+2. 탭 전환: `button.nav-btn[data-view="<탭>"]` 클릭 (11-23부터 데스크톱은 오른쪽 아이콘 막대, 760px 이하는 아래 탭 막대 — 휴대폰 폭에선 히트맵·브리핑·실적발표·포트폴리오가 `#nav-more-btn`(더보기) 안에 숨어 있어 직접 클릭 불가 → `switchView('<탭>')` 호출 또는 더보기를 먼저 누름)
    (home / screener / heatmap / chart / news / brief / earnings / watchlist / portfolio)
 3. 데이터 로딩을 위해 3~6초 대기 후 `browser_take_screenshot`
 4. `browser_console_messages`로 JS 에러 확인 — 에러가 있으면 보고서에 그대로 적는다

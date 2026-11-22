@@ -14,6 +14,7 @@
   --accent2:    #388bfd;
   --header-h:   48px;
   --tape-h:     28px;
+  --rail-w:     64px;   /* 오른쪽 탭 아이콘 막대 폭 (11-23) */
   --chart-canvas:      #161b22;  /* Lightweight Charts 캔버스(항상 어두움)와 같은 색 — 지표 가이드 예시 그림 배경 */
   --chart-canvas-text: #e6edf3;
   --chart-canvas-hot:  #ffa64d;  /* 차트 캔버스 위 강조(평소 2배 이상 거래) — 캔버스가 늘 어두워 양쪽 테마 같은 값 */
@@ -185,52 +186,78 @@ header {
 .gs-name   { font-size: 12px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gs-pct    { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .gs-empty  { padding: 10px 12px; font-size: 12px; color: var(--muted); }
-.nav-btn {
-  padding: 6px 16px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--muted);
-  transition: color .15s, background .15s;
-  white-space: nowrap;   /* 한글 탭 이름이 좁은 폭에서 한 글자씩 세로로 꺾이지 않게 */
-  flex-shrink: 0;
-}
-.nav-btn:hover  { color: var(--text); background: var(--bg-input); }
-.nav-btn.active { color: var(--text); background: var(--bg-input); font-weight: 600; }
 
-/* ── 헤더 반응형(중간 폭) ── 탭 9개가 한 줄에 안 들어가면 여백을 줄이고 탭 줄만 가로 스크롤 */
+/* ── 헤더 반응형(중간 폭) ── */
 @media (max-width: 1200px) {
   header { gap: 8px; }
-  #main-nav { overflow-x: auto; scrollbar-width: none; flex-shrink: 1; min-width: 0; }
-  #main-nav::-webkit-scrollbar { display: none; }
-  .nav-btn { padding: 6px 8px; }
-  .global-search-input { width: 110px; }
 }
 
 /* ── 헤더 반응형(모바일) ───────────────────────────────────────────────────── */
 @media (max-width: 700px) {
   header { gap: 8px; padding: 0 10px; }
   .logo { font-size: 14px; }
-  #main-nav {
-    overflow-x: auto;
-    scrollbar-width: none;
-    flex-shrink: 1;
-    min-width: 0;
-  }
-  #main-nav::-webkit-scrollbar { display: none; }
-  .nav-btn { white-space: nowrap; flex-shrink: 0; padding: 6px 10px; }
-  .global-search-wrap { margin-left: 6px; }
-  .global-search-input { width: 90px; }
-  .global-search-input:focus { width: 130px; }
+  .global-search-wrap { margin-left: auto; }
+  .global-search-input { width: 120px; }
+  .global-search-input:focus { width: 160px; }
   .last-updated { display: none; }
 }
 
+/* ── 탭 메뉴 (11-23) ── 데스크톱: 헤더 아래 오른쪽 아이콘 막대, 이름은 마우스·키보드 초점에 말풍선
+   휴대폰(760px 이하): 화면 아래 탭 막대 — 홈·종목검색·차트·뉴스·관심종목 + 더보기(히트맵·브리핑·실적발표·포트폴리오) */
+#main-nav {
+  position: fixed; top: var(--header-h); right: 0; bottom: 0; width: var(--rail-w); z-index: 90;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0;
+  background: var(--bg-card); border-left: 1px solid var(--border);
+}
+#ticker-tape { margin-right: var(--rail-w); }
+.nav-btn, .nav-btn-more {
+  position: relative; width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: var(--muted);
+  transition: color .15s, background .15s;
+}
+.nav-ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nav-btn:hover, .nav-btn:focus-visible { color: var(--text); background: var(--bg-input); }
+.nav-btn.active { color: var(--accent); background: var(--bg-input); }
+.nav-btn.active::before { content: ""; position: absolute; right: -10px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--accent); }
+.nav-label {   /* 데스크톱: 아이콘 왼쪽 말풍선 */
+  position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+  background: var(--text); color: var(--bg); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  padding: 5px 10px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity .12s;
+}
+.nav-label::after { content: ""; position: absolute; right: -5px; top: 50%; transform: translateY(-50%); border: 5px solid transparent; border-right: 0; border-left-color: var(--text); }
+.nav-btn:hover .nav-label, .nav-btn:focus-visible .nav-label { opacity: 1; }
+.nav-btn .wl-count-badge { position: absolute; top: 2px; right: 0; margin: 0; font-size: 9.5px; line-height: 15px; padding: 0 4px; }
+.nav-sep { width: 28px; height: 1px; background: var(--border); margin: 6px 0; flex-shrink: 0; }
+.nav-btn-more, .nav-more-sheet { display: none; }
+@media (max-width: 760px) {
+  #main-nav {
+    top: auto; left: 0; width: auto; height: calc(58px + env(safe-area-inset-bottom)); flex-direction: row;
+    justify-content: space-around; gap: 0; padding: 0 4px env(safe-area-inset-bottom);
+    border-left: 0; border-top: 1px solid var(--border);
+  }
+  #ticker-tape { margin-right: 0; }
+  .nav-sep, .nav-btn.nav-more { display: none; }
+  .nav-btn, .nav-btn-more { display: flex; flex: 1; flex-direction: column; gap: 2px; width: auto; height: 54px; border-radius: 8px; }
+  .nav-btn.active::before { display: none; }
+  .nav-btn-more.active { color: var(--accent); }
+  .nav-label { position: static; transform: none; opacity: 1; background: none; color: inherit; font-size: 10.5px; font-weight: 500; padding: 0; }
+  .nav-label::after { display: none; }
+  .nav-btn .wl-count-badge { top: 2px; right: calc(50% - 22px); }
+  .nav-more-sheet:not([hidden]) {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px; position: fixed; right: 8px; z-index: 95;
+    bottom: calc(66px + env(safe-area-inset-bottom)); width: 270px; padding: 8px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  }
+  .nav-more-sheet button { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 8px; color: var(--text); font-size: 13px; white-space: nowrap; }
+  .nav-more-sheet button.active { color: var(--accent); background: var(--bg-input); }
+}
+
 /* ── 메인 레이아웃 ─────────────────────────────────────────────────────────── */
-main { padding: 20px; max-width: 1600px; margin: 0 auto; }
+main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600px + var(--rail-w)); margin: 0 auto; }   /* 오른쪽은 탭 아이콘 막대 자리 */
 .view { display: none; }
 .view.active { display: block; }
-@media (max-width: 700px) {
-  main { padding: 10px; }
+@media (max-width: 760px) {
+  main { padding: 10px 10px calc(72px + env(safe-area-inset-bottom)); }   /* 아래는 탭 막대 자리 */
 }
 
 /* ── HOME — 시장 상태 바 (슬림) ─────────────────────────────────────────── */

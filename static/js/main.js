@@ -503,6 +503,7 @@ function switchView(name) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   document.querySelector(`.nav-btn[data-view="${name}"]`).classList.add('active');
+  _navMoreSync(name);
 
   // 다른 탭으로 이동 시 각 탭 타이머 중지
   if (name !== 'screener' && typeof stopScreenerRefresh === 'function') {
@@ -2197,6 +2198,36 @@ function _renderNewsSide(list, base) {
 
 let _currentView = 'home';
 
+// ── 탭 메뉴 '더보기' (휴대폰 아래 탭 막대 — 히트맵·브리핑·실적발표·포트폴리오, 11-23) ──
+function _navMoreSync(name) {
+  const isMore = !!document.querySelector(`.nav-btn.nav-more[data-view="${name}"]`);
+  document.getElementById('nav-more-btn')?.classList.toggle('active', isMore);
+  document.querySelectorAll('#nav-more-sheet button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  _toggleNavMore(false);
+}
+function _toggleNavMore(open) {
+  const sheet = document.getElementById('nav-more-sheet'), btn = document.getElementById('nav-more-btn');
+  if (!sheet || !btn) return;
+  if (!sheet.childElementCount) {   // 처음 열 때 원래 탭 버튼(아이콘·이름·배지)을 본떠 만든다 — 누르면 원래 버튼을 누른 것과 같음
+    document.querySelectorAll('.nav-btn.nav-more').forEach(o => {
+      const b = document.createElement('button');
+      b.dataset.view = o.dataset.view;
+      b.className = o.classList.contains('active') ? 'active' : '';
+      b.innerHTML = o.querySelector('.nav-ico').outerHTML + `<span>${o.querySelector('.nav-label').textContent}</span>`;
+      b.addEventListener('click', () => o.click());
+      sheet.appendChild(b);
+    });
+  }
+  const show = open === undefined ? sheet.hidden : open;
+  sheet.hidden = !show;
+  btn.setAttribute('aria-expanded', String(show));
+}
+document.addEventListener('click', e => {   // 바깥을 누르면 닫기
+  const sheet = document.getElementById('nav-more-sheet');
+  if (sheet && !sheet.hidden && !e.target.closest('#nav-more-sheet, #nav-more-btn')) _toggleNavMore(false);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') _toggleNavMore(false); });
+
 // ── 화면 종목 실시간 시세 (10초, 서버 rt_quotes) ─────────────────────────────
 function _rtTickers() {
   const set = new Set();
@@ -2359,9 +2390,10 @@ function initSocketIO() {
 document.addEventListener('DOMContentLoaded', () => {
   // 탭 클릭
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', e => {
       _currentView = btn.dataset.view;
       switchView(btn.dataset.view);
+      if (e.detail > 0) btn.blur();   // 마우스·손가락으로 누른 뒤엔 이름 말풍선이 남지 않게 (키보드 Enter는 초점 유지)
     });
   });
 
