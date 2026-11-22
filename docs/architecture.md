@@ -45,6 +45,7 @@
 | `data/kr_per_cache.json` | KR | KR PER/EPS (서버가 24h마다 갱신, gitignore) |
 | `data/market_flow.json` | 공용 | 시장 전체 일별 거래량·거래대금 `{KOSPI·KOSDAQ·US: {날짜: {volume, amount}}}` — 서버가 매일 장 마감 뒤 한 줄씩 쌓음(거래대금 과거치는 무료 출처 없음), gitignore (11-18) |
 | `data/us_names_ko.json` | US | 미국 종목 한글명 (네이버 해외주식 목록, 서버가 주 1회 갱신, gitignore). 표시 우선순위: 네이버 → `NAME_KO` 수동 사전 → 빈칸 (`df.name_ko()`) |
+| `data/news_translations.json` | 공용 | 뉴스 영어 제목 → 한글 번역 저장 `{titles: {원문: [한글, 서비스, 시각]}, usage: {YYYY-MM: {ms, google}}, log}` — 14일 지나면 지움, 서비스별 월 글자 수 상한(Microsoft 190만·Google 45만) 계산에 사용, gitignore (11-22, 결정 007) |
 | `data/signal_history.json`, `voice_briefing.json`, `audio/` | 공통 | 서버 런타임 상태 (gitignore) |
 | `api/` | — | API 키 파일 (gitignore, **절대 커밋 금지**) |
 
@@ -57,14 +58,15 @@
 | `refresh_us_quotes` | 정규장 1분 · 프리/애프터 2분 (뉴욕 평일 04:00~20:05) | 미국 전 종목 가격·등락률·거래량을 네이버 미국 시장 목록(약 70요청, 24초)으로 덮어씀 — **Nasdaq 스크리너 API는 장중에도 전일 종가**. 시가총액은 Nasdaq 값을 가격 비율로만 조정. 정규장 밖이면 `overMarketPriceInfo`의 시간외 가격이 현재가(`session`·`session_open`·`session_at`, 11-20). 시작 15초 후 한 번 |
 | `refresh_kr_quotes` | 정규장 1분 · 넥스트레이드 프리/애프터 2분 (평일 07:55~20:05 KST) + 평일 16:05 한 번 | 국내 전 종목 시세·시가총액을 네이버 국내 시장 목록(약 44요청, 10초)으로. 시작 20초 후 한 번. **정규장 밖이면 시간외 가격이 현재가**(11-20, 등락은 전일 KRX 종가 대비, `session`=pre/after): 목록의 `overMarketPriceInfo`, 없으면 종목별 실시간 시세(약 38요청)의 체결 시각이 정규장 밖일 때 closePrice(넥스트레이드 체결가). 체결 시각이 `closePriceSendTime`(16:30)이면 KRX 확정 종가(KRX 전용 종목). 11-17의 야후 KRX 종가 교체는 이걸로 대체(`fetch_kr_close_yahoo`는 남아 있으나 미사용) |
 | `refresh_stocks` / `refresh_kr_stocks` | 5분 | `stocks_update` / `kr_stocks_update`. Nasdaq(섹터·업종 등 기본 정보) 위에 마지막 네이버 시세를 덮어씀. KR Yahoo 갱신은 네이버 시세가 살아 있으면 30분에 한 번만(52주 최고·최저용) |
-| `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update` |
+| `refresh_news`, `refresh_kr_market_news`, `refresh_finnhub_news` | 10분 | `news_update`. 피드마다 분야 `category`(econ·world·tech·energy·policy·general, `auto:` 피드는 제목 단어로) — 경제 200건·다른 분야 각 60건까지 (11-22) |
+| `refresh_finnhub_company_news` | 30분 | 시총 상위 15종목 Finnhub 종목별 뉴스(종목당 4건, 3일 이내) — AlphaVantage 대체 (11-22) |
+| `refresh_news_translations` | 위 뉴스 갱신 직후 | 영어 제목 번역: Microsoft Translator F0 → (안 되면) Google Cloud Translation → 원문. 새로 번역되면 `news_update`. 상태 `/api/news/translation`, 터미널 `scripts/news_translate_status.py` (11-22) |
 | `refresh_reports` | 15분 | |
 | `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정, 11-20부터 `series` 원본 값 1년 [[ms, 값]] 미국 거래일당 1개 + 모멘텀·VIX는 `compare` 비교선 125일·50일 평균) — 홈 상단 배지·상세 창(지표를 누르면 원본 데이터), Brief 게이지에서 사용 (11-17) — 응답 약 65 KB |
 | `record_us_market_flow(slot)` | 뉴욕 평일 09:29·16:01·20:05 + 서버 시작 때(기록 시각 10분 안이면) | 미국 보통주 **누적** 거래량·**실제 체결 금액**(네이버 `accumulatedTradingValueRaw`) 합계를 그 시각에 새로 받아 `data/market_flow.json` `US[날짜].s0929·s1601·s2005`에 기록(이미 있는 칸은 덮어쓰지 않음, AAPL 오늘 체결 없으면 휴장). 네이버 누적값엔 시간외가 계속 더해져(11-20 16:20 110.6억주 → 19:30 123.8억주) `/api/market-flow`가 차이로 나눔: 프리 = s0929, **정규장 = s1601 − s0929**(막대·평균 기준), 애프터 = s2005 − s1601. 11-19·20은 예전 한 번 저장(현재가×거래량 추정, `mixed`). **국내는 11-21부터 저장하지 않음** — 코스피·코스닥은 다음 금융 지수 일별(`finance.daum.net/api/market_index/days`, 거래대금 백만원·거래량 천주, 500일, 1시간 캐시, 15:40 전엔 오늘 줄 제외)을 불러오고, 실패하면 예전 저장값 + 네이버 거래량 과거치(fchart). 16:10 네이버 값은 장 마감 뒤 확정 전 중간값이었음(11-20 코스피 16:10 14.11조 → 확정 14.95조) (11-18, 11-21 변경) |
 | (요청 시) `/api/market-investors?market=KOSPI\|KOSDAQ&days=` | 일별 1시간 · 장중 60초 캐시 | 코스피·코스닥 투자자별 **순매수**(원) — 다음 금융 `finance.daum.net/api/investor/{시장}/days\|times?details=true`(Referer 필수, 없으면 403). 개인·외국인·기관 + 기관 세부 7개(금융투자·보험·투신·사모·은행·기타금융·연기금)·기타법인·기타외국인, 일별 약 10년(한 번에 300일)·장중 1~2분 갱신(20:00까지). 오늘 일별 줄이 없으면 장중 값을 붙임. 총 매수·매도 금액·주식 수는 KRX 정보데이터시스템만 있고 로그인 필요(11-20). 네이버 `m.stock.naver.com/api/index/{시장}/trend`(개인·외국인·기관 3개만)와 날마다 수십억~수백억 차이 — 홈 📊 시장 거래 창 (11-20) |
 | `refresh_earnings` | 1시간 | |
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |
-| `refresh_av_news` | 12시간 | |
 | `refresh_pe_eps`, `refresh_kr_per` | 24시간 | KR PER은 시작 300초 후 |
 | `refresh_us_names_ko` | 24시간 확인, 6일 지났을 때만 수집 | 시작 28초 후. 3,000개 미만이면 저장 안 함 |
 | `refresh_daily_signals` | 24시간 | 시작 240초 후. **그 전까지 신호 관련 API는 비어 있음(정상)** |
@@ -79,7 +81,7 @@
 |------|------|
 | 시세 | `/api/stocks`, `/api/kr-stocks`, `/api/indices`, `/api/index-members`, `/api/stock/<ticker>`(목록에 없는 미국 티커는 Yahoo 현재가로 응답), `/api/heatmap-perf`, `/api/sector-etf?period=1d\|1w\|1m`(홈 섹터 줄, SPDR 섹터 ETF 11개, 1분 캐시) |
 | 차트·분석 | `/api/chart/<ticker>`, `/api/chart-warmup/<ticker>`(일봉 화면 기간 앞쪽 봉 최대 460개 — 긴 이평선·파란점선 계산 전용), `/api/stock-analysis/<ticker>`, `/api/financials/<ticker>` |
-| 뉴스·공시 | `/api/news`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>` |
+| 뉴스·공시 | `/api/news`(항목에 `category`, 번역됐으면 `title_ko`), `/api/news/translation`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>` |
 | Brief·신호 | `/api/brief`, `/api/daily-signals`, `/api/volume-surges`, `/api/candle-patterns`, `/api/rsi-divergence`, `/api/52w-movers`, `/api/earnings-signals`, `/api/fear-greed`, `/api/voice-briefing`, `/api/voice-briefing/audio/<file>` |
 | 캘린더 | `/api/earnings`, `/api/economic-calendar` |
 | 운영 | `/api/cache/status` |
@@ -87,7 +89,7 @@
 신호 계열(`daily-signals`, `volume-surges`, `candle-patterns`, `rsi-divergence`, `52w-movers`, `earnings-signals`)은 전부 `daily_signals` 캐시 하나에서 파생된다.
 
 ## 5. 브라우저 저장소 (localStorage)
-`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
+`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
 
 ## 6. 외부 데이터 소스 주의사항
 

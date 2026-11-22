@@ -1445,12 +1445,12 @@ function buildTickerTape(indices, stocks) {
 }
 
 // ── 테이프 오른쪽 절반: 한글 뉴스 헤드라인 (11-18) ─────────────────────────────
-// 번역 없이 국내 출처(market KR) 중 한글 제목만 최신 20개. 누르면 기사 새 탭, 길이에 맞춰 흐름 속도 조절.
+// 한글 제목(국내 기사 + 11-22부터 한글로 번역된 해외 기사) 최신 20개. 누르면 기사 새 탭, 길이에 맞춰 흐름 속도 조절.
 function buildNewsTape(news) {
   const el = document.getElementById('news-inner');
   if (!el || !Array.isArray(news)) return;
   const items = news
-    .filter(n => n.market === 'KR' && /[가-힣]/.test(n.title || '') && /^https?:\/\//.test(n.url || ''))
+    .filter(n => /[가-힣]/.test(_newsTitleKo(n)) && /^https?:\/\//.test(n.url || ''))
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
     .slice(0, 20);
   if (!items.length) {
@@ -1461,7 +1461,7 @@ function buildNewsTape(news) {
   const html = items.map(n =>
     `<a class="news-tape-item" href="${_escHtml(n.url)}" target="_blank" rel="noopener noreferrer">` +
       `<span class="nt-src">${_escHtml(n.source || '')}</span>` +
-      `<span class="nt-title">${_escHtml(n.title)}</span>` +
+      `<span class="nt-title">${_escHtml(_newsTitleKo(n))}</span>` +
       `<span class="nt-time">${_escHtml(n.time || '')}</span></a>`
   ).join('');
   el.style.animation = '';
@@ -1582,7 +1582,7 @@ function renderHomeNews(news) {
       : '';
     return `
       <div class="news-preview-item" onclick="window.open('${n.url}','_blank')">
-        <div class="np-title">${n.title}</div>
+        <div class="np-title" title="${_escHtml(n.title)}">${_escHtml(_newsTitleKo(n))}</div>
         <div class="np-meta">
           <span class="np-sent-dot">${sm.dot}</span>
           <span class="news-source">${n.source}</span>
@@ -1721,10 +1721,27 @@ let _activeMarket    = 'all';
 let _activeKeyword   = '';
 let _showBookmarkedOnly = false;
 
+// 11-22 개편: 분야 탭·주요 뉴스·한 줄 목록·오른쪽 요약. 보기 설정(분야·오른쪽 칸·한글/원문)은 localStorage NXV
+const NX_CATS = { all: '전체', econ: '📈 경제·증시', world: '🌍 세계·정치', tech: '💻 기술',
+                  energy: '🛢 에너지', policy: '🏛 정책기관', general: '📰 종합' };
+// 주요 뉴스 카드 후보: 통신사·주요 언론 (출처 이름 앞부분)
+const _NX_TOP = /^(Reuters|AP|Financial Times|NYT|BBC|연합뉴스|Finnhub\/(Reuters|Bloomberg))/;
+let _nxView = (() => {
+  const d = { cat: 'all', side: true, lang: 'ko' };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem('NXV') || '{}')); } catch { return d; }
+})();
+let _nxLimit = 150;
+function _nxSave() { try { localStorage.setItem('NXV', JSON.stringify(_nxView)); } catch {} }
+function _nxTitle(n) { return (_nxView.lang === 'ko' && n.title_ko) ? n.title_ko : n.title; }
+function _newsTitleKo(n) { return n.title_ko || n.title; }   // 홈·테이프용
+function _toggleNewsLang() { _nxView.lang = _nxView.lang === 'ko' ? 'en' : 'ko'; _nxSave(); renderNews(); }
+function _toggleNewsSide() { _nxView.side = !_nxView.side; _nxSave(); renderNews(); }
+function _setNewsCat(c) { _nxView.cat = c; _nxLimit = 150; _nxSave(); renderNews(); window.scrollTo({ top: 0 }); }
+
 function _toggleBookmarkFilter() {
   _showBookmarkedOnly = !_showBookmarkedOnly;
   const btn = document.getElementById('news-bookmark-toggle');
-  if (btn) btn.classList.toggle('active', _showBookmarkedOnly);
+  if (btn) btn.classList.toggle('on', _showBookmarkedOnly);
   renderNews();
 }
 
@@ -1779,10 +1796,10 @@ function initNews() {
     _populateSourceFilter(news);
     renderNews();
   });
-  document.querySelectorAll('.news-tag').forEach(btn => {
+  document.querySelectorAll('#nx-sent button').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.news-tag').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      document.querySelectorAll('#nx-sent button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
       _activeSentiment = btn.dataset.sentiment;
       renderNews();
     });
@@ -1791,10 +1808,10 @@ function initNews() {
     _activeSource = e.target.value;
     renderNews();
   });
-  document.querySelectorAll('.news-market-tag').forEach(btn => {
+  document.querySelectorAll('#nx-market button').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.news-market-tag').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      document.querySelectorAll('#nx-market button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
       _activeMarket = btn.dataset.market;
       renderNews();
     });
@@ -1967,54 +1984,119 @@ function renderReports(rtype) {
 }
 function renderNews() {
   // 북마크는 Reports·Disclosures와 NB 저장소를 공유 — report_type/is_disclosure 필드로 두 항목 모두 제외
-  let list = _showBookmarkedOnly ? Object.values(NB.load()).filter(item => item.report_type == null && !item.is_disclosure)
-    : (_activeSentiment === 'all' ? _allNews : _allNews.filter(n => n.sentiment === _activeSentiment));
-  if (_activeSource !== 'all') list = list.filter(n => n.source === _activeSource);
-  if (_activeMarket !== 'all') list = list.filter(n => n.market === _activeMarket);
-  if (_activeKeyword) list = list.filter(n =>
-    n.title.toLowerCase().includes(_activeKeyword) ||
-    (n.source || '').toLowerCase().includes(_activeKeyword)
-  );
-  const el = document.getElementById('news-list');
+  let base = _showBookmarkedOnly ? Object.values(NB.load()).filter(item => item.report_type == null && !item.is_disclosure)
+    : _allNews;
+  if (_activeSentiment !== 'all') base = base.filter(n => n.sentiment === _activeSentiment);
+  if (_activeSource !== 'all') base = base.filter(n => n.source === _activeSource);
+  if (_activeMarket !== 'all') base = base.filter(n => n.market === _activeMarket);
   const kw = _activeKeyword;
+  if (kw) base = base.filter(n =>
+    (n.title || '').toLowerCase().includes(kw) || (n.title_ko || '').toLowerCase().includes(kw) ||
+    (n.source || '').toLowerCase().includes(kw));
 
-  // 결과 수 표시
+  // 분야 탭 (숫자 = 다른 필터를 적용한 뒤 분야별 기사 수)
+  const catOf = n => n.category || 'econ';
+  const cnt = {};
+  base.forEach(n => { cnt[catOf(n)] = (cnt[catOf(n)] || 0) + 1; });
+  if (_nxView.cat !== 'all' && !NX_CATS[_nxView.cat]) _nxView.cat = 'all';
+  const tabs = document.getElementById('nx-cats');
+  if (tabs) tabs.innerHTML = Object.entries(NX_CATS)
+    .filter(([k]) => k === 'all' || cnt[k] || k === _nxView.cat)
+    .map(([k, v]) => `<button class="nx-cat${k === _nxView.cat ? ' on' : ''}" onclick="_setNewsCat('${k}')">${v}<b>${k === 'all' ? base.length : (cnt[k] || 0)}</b></button>`)
+    .join('');
+  const list = _nxView.cat === 'all' ? base : base.filter(n => catOf(n) === _nxView.cat);
+
+  const langBtn = document.getElementById('nx-lang-toggle');
+  if (langBtn) { langBtn.textContent = _nxView.lang === 'ko' ? '가 한글' : 'A 원문'; langBtn.classList.toggle('on', _nxView.lang === 'ko'); }
+  document.getElementById('nx-side-toggle')?.classList.toggle('on', _nxView.side);
+  document.getElementById('nx-grid')?.classList.toggle('no-side', !_nxView.side);
+
   const countEl = document.getElementById('news-kw-count');
-  if (countEl) {
-    countEl.textContent = kw ? `${list.length}건` : '';
-    countEl.style.display = kw ? 'inline' : 'none';
-  }
+  if (countEl) { countEl.textContent = kw ? `${list.length}건` : ''; countEl.style.display = kw ? 'inline' : 'none'; }
 
+  const el = document.getElementById('news-list');
+  const heroEl = document.getElementById('nx-hero-wrap');
+  _renderNewsSide(list, base);
   if (!list.length) {
     const emptyMsg = _showBookmarkedOnly ? '북마크한 뉴스가 없습니다.'
       : kw ? `"<b>${_escHtml(kw)}</b>"에 해당하는 뉴스가 없습니다.` : '뉴스가 없습니다.';
+    if (heroEl) heroEl.innerHTML = '';
     el.innerHTML = `<div style="color:var(--muted);padding:20px 0;text-align:center">${emptyMsg}</div>`;
     return;
   }
 
-  el.innerHTML = list.map(n => {
-    const tickerBadge = n.ticker
-      ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>`
-      : '';
-    const titleHtml = _highlightKw(n.title, kw);
-    const bookmarked = NB.has(n.url);
-    return `
-      <div class="news-card" onclick="window.open('${_escHtml(n.url)}','_blank')" style="cursor:pointer">
-        <div class="news-sentiment-badge badge-${n.sentiment}"></div>
-        <div class="news-body">
-          <div class="news-title">${titleHtml}</div>
-          <div class="news-meta">
-            <span class="news-market-flag">${n.market === 'KR' ? '🇰🇷' : '🌐'}</span>
-            <span class="news-source" data-src="${_escHtml(n.source)}">${_escHtml(n.source)}</span>
-            <span>${_escHtml(n.time)}</span>
-            ${tickerBadge}
-          </div>
-        </div>
-        <button class="news-bookmark-btn${bookmarked ? ' active' : ''}"
-                onclick="event.stopPropagation(); _toggleNewsBookmark('${_escHtml(n.url)}')"
-                title="${bookmarked ? '북마크 해제' : '북마크'}">${bookmarked ? '★' : '☆'}</button>
-      </div>`;
-  }).join('');
+  const meta = n => {
+    const tk = n.ticker ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>` : '';
+    const tr = (_nxView.lang === 'ko' && n.title_ko) ? '<span class="nx-tr" title="영어 제목을 자동 번역했어요">번역</span>' : '';
+    return `<div class="nx-meta"><span class="nx-chip ${catOf(n)}">${NX_CATS[catOf(n)] || ''}</span>` +
+      `<span class="news-market-flag">${n.market === 'KR' ? '🇰🇷' : '🌐'}</span>` +
+      `<span class="nx-src">${_escHtml(n.source || '')}</span><span>${_escHtml(n.time || '')}</span>${tr}${tk}</div>`;
+  };
+  const open = n => `onclick="window.open('${_escHtml(n.url)}','_blank')"`;
+
+  // ⭐ 주요 뉴스: 통신사·주요 언론의 12시간 이내 최신 3건 (북마크·검색 중엔 숨김)
+  const now = Date.now() / 1000;
+  const hero = (_showBookmarkedOnly || kw) ? [] :
+    (() => {   // 같은 언론사가 겹치지 않게 (연합뉴스 정치·국제, NYT World·Politics는 한 곳으로 봄)
+      const used = new Set(), out = [];
+      for (const n of list) {
+        if (out.length >= 3) break;
+        if (!_NX_TOP.test(n.source || '') || now - (n.timestamp || 0) >= 12 * 3600) continue;
+        const key = (n.source || '').replace(/^Finnhub\//, '').split(' ')[0];
+        if (!used.has(key)) { used.add(key); out.push(n); }
+      }
+      return out;
+    })();
+  if (heroEl) heroEl.innerHTML = hero.length < 2 ? '' :
+    `<div class="nx-h">⭐ 주요 뉴스 <span>— 통신사·주요 언론 최신</span></div><div class="nx-hero">` +
+    hero.map(n => `<div class="nx-hc" ${open(n)} title="${_escHtml(n.title)}"><div class="t">${_highlightKw(_nxTitle(n), kw)}</div>` +
+      `${n.summary ? `<div class="s">${_escHtml(n.summary)}</div>` : ''}${meta(n)}</div>`).join('') + '</div>';
+  const heroSet = new Set(hero.length < 2 ? [] : hero);
+
+  // 시간대별 묶음 한 줄 목록
+  const rest = list.filter(n => !heroSet.has(n));
+  const shown = rest.slice(0, _nxLimit);
+  const grp = n => { const h = (now - (n.timestamp || 0)) / 3600; return h < 1 ? '최근 1시간' : h < 6 ? '6시간 이내' : h < 24 ? '오늘' : '그 이전'; };
+  let html = '', g = null;
+  shown.forEach(n => {
+    const k = _showBookmarkedOnly ? '북마크' : grp(n);
+    if (k !== g) { if (g !== null) html += '</div>'; html += `<div class="nx-group">${k}</div><div class="nx-list">`; g = k; }
+    const bm = NB.has(n.url);
+    const translated = _nxView.lang === 'ko' && n.title_ko;
+    html += `<div class="nx-row" ${open(n)}><div class="nx-bar ${n.sentiment || ''}"></div><div class="nx-body">` +
+      `<div class="t">${_highlightKw(_nxTitle(n), kw)}</div>` +
+      (translated ? `<div class="nx-orig" title="${_escHtml(n.title)}">${_escHtml(n.title)}</div>` : '') +
+      (n.summary ? `<div class="s">${_escHtml(n.summary)}</div>` : '') + meta(n) + `</div>` +
+      `<button class="news-bookmark-btn${bm ? ' active' : ''}" onclick="event.stopPropagation(); _toggleNewsBookmark('${_escHtml(n.url)}')" title="${bm ? '북마크 해제' : '북마크'}">${bm ? '★' : '☆'}</button></div>`;
+  });
+  if (g !== null) html += '</div>';
+  if (rest.length > shown.length)
+    html += `<button class="nx-more" onclick="_nxLimit += 150; renderNews()">더 보기 (${rest.length - shown.length}건 남음)</button>`;
+  el.innerHTML = html;
+}
+
+// 오른쪽 칸: 오늘 뉴스 분위기(해외 기사 — 국내는 긍정·부정 분석 없음) · 분야별 기사 · 많이 보도한 출처
+function _renderNewsSide(list, base) {
+  const side = document.getElementById('nx-side');
+  if (!side || !_nxView.side) return;
+  const us = list.filter(n => n.market !== 'KR');
+  const c = s => us.filter(n => n.sentiment === s).length, tot = us.length || 1;
+  const cnt = {};
+  base.forEach(n => { const k = n.category || 'econ'; cnt[k] = (cnt[k] || 0) + 1; });
+  const cats = Object.keys(NX_CATS).filter(k => k !== 'all' && cnt[k]);
+  const mc = Math.max(1, ...cats.map(k => cnt[k]));
+  const bySrc = {};
+  list.forEach(n => { bySrc[n.source] = (bySrc[n.source] || 0) + 1; });
+  const top = Object.entries(bySrc).sort((a, b) => b[1] - a[1]).slice(0, 8), mx = top[0]?.[1] || 1;
+  const kv = (label, v, m, click) => `<div class="nx-kv${click ? ' click' : ''}"${click ? ` onclick="${click}"` : ''}><span>${label}</span><span class="bar"><i style="width:${v / m * 100}%"></i></span><span>${v}</span></div>`;
+  side.innerHTML =
+    `<div class="nx-box"><div class="nx-h">뉴스 분위기</div>` +
+    (us.length ? `<div class="nx-mood"><i style="width:${c('positive') / tot * 100}%;background:var(--green)"></i><i style="width:${c('neutral') / tot * 100}%;background:var(--muted)"></i><i style="width:${c('negative') / tot * 100}%;background:var(--red)"></i></div>` +
+      `<div class="nx-kv"><span style="color:var(--green)">긍정 ${c('positive')}</span><span>중립 ${c('neutral')}</span><span style="color:var(--red)">부정 ${c('negative')}</span></div>` +
+      `<div class="nx-note">해외 기사 ${us.length}건의 영어 제목 기준 (국내 기사는 분석 안 함)</div>`
+      : `<div class="nx-note">해외 기사가 없어 분위기를 계산하지 않았어요</div>`) + `</div>` +
+    `<div class="nx-box"><div class="nx-h">분야별 기사</div>${cats.map(k => kv(NX_CATS[k], cnt[k], mc, `_setNewsCat('${k}')`)).join('')}</div>` +
+    `<div class="nx-box"><div class="nx-h">많이 보도한 출처</div>${top.map(([k, v]) => kv(_escHtml(k), v, mx)).join('')}</div>`;
 }
 
 let _currentView = 'home';

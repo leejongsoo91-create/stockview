@@ -561,6 +561,7 @@ def refresh_news():
             _emit_queue.put(("news_update", {"count": len(news_data)}))
     except Exception as e:
         log.warning(f"뉴스 갱신 실패: {e}")
+    refresh_news_translations()
 
 
 def refresh_kr_market_news():
@@ -575,16 +576,32 @@ def refresh_kr_market_news():
         log.warning(f"국내 뉴스 갱신 실패: {e}")
 
 
-def refresh_av_news():
-    """Alpha Vantage 뉴스 갱신 — 12시간 캐시 (하루 25회 한도 보호)"""
-    log.info("AlphaVantage 뉴스 갱신 시작...")
+# 11-22: AlphaVantage 뉴스(NEWS_SENTIMENT)는 11-04부터 프리미엄 전용이라 수집 중단 → Finnhub 시총 상위 종목 뉴스로 대체
+def refresh_finnhub_company_news():
+    """Finnhub 시총 상위 15종목 뉴스 — 30분마다 (종목당 1요청, 무료 분당 60회 안)"""
     try:
-        av_data = df.fetch_alphavantage_news()
-        if av_data:
-            cache.set("av_news", av_data, ttl=43200)
-            log.info(f"AlphaVantage 뉴스 갱신 완료: {len(av_data)}건")
+        stocks = cache.get("stocks") or []
+        top = [s["ticker"] for s in sorted(stocks, key=lambda s: s.get("market_cap") or 0, reverse=True)
+               if s.get("market_cap")][:15]
+        if not top:
+            top = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "BRK-B", "JPM"]
+        data = df.fetch_finnhub_top_company_news(top)
+        if data:
+            cache.set("finnhub_company_news", data, ttl=3600)
     except Exception as e:
-        log.warning(f"AlphaVantage 뉴스 갱신 실패: {e}")
+        log.warning(f"Finnhub 종목 뉴스 갱신 실패: {e}")
+    refresh_news_translations()
+
+
+def refresh_news_translations():
+    """영어 뉴스 제목 한글 번역 — 뉴스 갱신 직후 백그라운드로. 새로 번역됐으면 화면에 알린다."""
+    try:
+        titles = [n["title"] for key in ("news", "finnhub_news", "finnhub_company_news")
+                  for n in (cache.get(key) or [])]
+        if df.translate_news_titles(titles):
+            _emit_queue.put(("news_update", {"translated": True}))
+    except Exception as e:
+        log.warning(f"뉴스 번역 실패: {e}")
 
 
 def refresh_finnhub_news():
@@ -597,6 +614,7 @@ def refresh_finnhub_news():
             log.info(f"Finnhub 뉴스 갱신 완료: {len(fh_data)}건")
     except Exception as e:
         log.warning(f"Finnhub 뉴스 갱신 실패: {e}")
+    refresh_news_translations()
 
 
 def refresh_reports():
@@ -949,7 +967,7 @@ def initial_load():
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
     _start_after(16, refresh_earnings)
-    _start_after(20, refresh_av_news)
+    _start_after(40, refresh_finnhub_company_news)   # 시총이 들어온 뒤
     _start_after(24, refresh_dynamic_indices)
     _start_after(28, refresh_us_names_ko)
     _start_after(15, lambda: refresh_us_quotes(force=True))   # 미국 시세: 시작 시 한 번(장 밖이어도 최신 종가)    # 한글명(6일 이내 파일이면 스킵, 첫 수집 약 30초)
@@ -1022,7 +1040,7 @@ _scheduler.add_job(refresh_extra_fields,    "interval", hours=6,    id="extra_fi
 _scheduler.add_job(refresh_pe_eps,          "interval", hours=24,   id="pe_eps")
 _scheduler.add_job(refresh_kr_per,          "interval", hours=24,   id="kr_per")
 _scheduler.add_job(refresh_us_names_ko,     "interval", hours=24,   id="us_names_ko")  # 6일 지난 경우만 실제 수집
-_scheduler.add_job(refresh_av_news,         "interval", hours=12,   id="av_news")
+_scheduler.add_job(refresh_finnhub_company_news, "interval", minutes=30, id="finnhub_company_news")
 _scheduler.add_job(refresh_finnhub_news,    "interval", minutes=10, id="finnhub_news")
 _scheduler.add_job(refresh_dynamic_indices, "interval", weeks=1,    id="dyn_indices")
 _scheduler.add_job(refresh_fear_greed,      "interval", minutes=30, id="fear_greed")
@@ -1075,24 +1093,35 @@ def indices():
 @app.route("/api/news")
 def news():
     rss_news     = cache.get("news") or NEWS
-    av_news      = cache.get("av_news") or []
-    finnhub_news = cache.get("finnhub_news") or []
+    finnhub_news = (cache.get("finnhub_news") or []) + (cache.get("finnhub_company_news") or [])
     kr_news      = cache.get("kr_market_news") or []
-    for n in av_news + finnhub_news:
-        n["market"] = "US"
     # 중복 제거: 제목 기준
     seen   = {n["title"] for n in rss_news}
     extras = []
-    for n in av_news + finnhub_news + kr_news:
+    for n in finnhub_news + kr_news:
         if n["title"] not in seen:
             seen.add(n["title"])
             extras.append(n)
-    merged = list(rss_news) + extras
+    merged = []
+    for n in list(rss_news) + extras:   # 캐시 원본은 건드리지 않고 복사본에 분야·한글 제목을 붙인다 (11-22)
+        n = dict(n)
+        n.setdefault("market", "US")
+        n.setdefault("category", "econ")
+        ko = df.news_title_ko(n["title"]) if df.news_needs_tr(n["title"]) else None
+        if ko:
+            n["title_ko"] = ko
+        merged.append(n)
     # 최신순 정렬
     merged.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
     for i, n in enumerate(merged, 1):
         n["id"] = i
     return jsonify(merged)
+
+
+@app.route("/api/news/translation")
+def news_translation_status():
+    """제목 번역 서비스별 이번 달 사용량·상태 (11-22) — scripts/news_translate_status.py가 읽는다."""
+    return jsonify(df.translation_status())
 
 
 @app.route("/api/kr-stocks")

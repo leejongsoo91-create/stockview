@@ -67,7 +67,6 @@ def _load_api_key(filename: str) -> str:
         return ""
 
 
-AV_KEY       = _load_api_key("alphavantage.txt")
 FINNHUB_KEY  = _load_api_key("finnhub.txt")
 
 RSS_FEEDS = [
@@ -88,8 +87,21 @@ RSS_FEEDS = [
     {"url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",               "source": "CNBC Economy"},
     {"url": "https://www.investing.com/rss/news.rss",                             "source": "Investing.com"},
     {"url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",           "source": "Nasdaq"},
-    # 테크/앱 비즈니스 인사이트
-    {"url": "https://www.appeconomyinsights.com/feed",                            "source": "App Economy Insights"},
+    # 11-22 App Economy Insights 제거(신뢰도·인기도 낮고 13시간 전 글). 아래는 다른 분야 — "cat"이 없으면 경제(econ).
+    # cat: econ 경제·증시 / world 세계·정치 / tech 기술 / energy 에너지 / policy 정책기관 / general 종합
+    # "auto:<기본>"은 제목 단어로 분야를 고르고, 안 맞으면 <기본>. "gnews": Google 뉴스 RSS 경유(제목 끝 " - 언론사" 제거)
+    {"url": "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en", "source": "Reuters", "cat": "auto:world", "gnews": True},
+    {"url": "https://news.google.com/rss/search?q=site:apnews.com+when:1d&hl=en-US&gl=US&ceid=US:en",  "source": "AP", "cat": "auto:world", "gnews": True},
+    {"url": "https://feeds.bbci.co.uk/news/world/rss.xml",                        "source": "BBC World",       "cat": "world"},
+    {"url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",             "source": "NYT World",       "cat": "world"},
+    {"url": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",          "source": "NYT Politics",    "cat": "world"},
+    {"url": "https://www.cnbc.com/id/100727362/device/rss/rss.html",              "source": "CNBC World",      "cat": "world"},
+    {"url": "https://feeds.bbci.co.uk/news/technology/rss.xml",                   "source": "BBC Technology",  "cat": "tech"},
+    {"url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",        "source": "NYT Technology",  "cat": "tech"},
+    {"url": "https://www.cnbc.com/id/19854910/device/rss/rss.html",               "source": "CNBC Technology", "cat": "tech"},
+    {"url": "https://oilprice.com/rss/main",                                      "source": "OilPrice.com",    "cat": "energy"},
+    {"url": "https://www.sec.gov/news/pressreleases.rss",                         "source": "SEC",             "cat": "policy"},
+    {"url": "https://www.ecb.europa.eu/rss/press.html",                           "source": "ECB",             "cat": "policy"},
 ]
 
 # 국내 경제/증시 뉴스 -- 실제 접속 테스트로 살아있는 피드만 선정 (2026-08-25)
@@ -109,8 +121,14 @@ KR_RSS_FEEDS = [
     {"url": "https://www.hankyung.com/feed/finance",                              "source": "한국경제 증권"},
     {"url": "https://www.mk.co.kr/rss/50200011/",                                 "source": "매일경제 증권"},
     {"url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/stock/?outputType=xml", "source": "조선비즈 증권"},
-    {"url": "https://rss.etoday.co.kr/eto/etoday_news_all.xml",                   "source": "이투데이"},
+    {"url": "https://rss.etoday.co.kr/eto/etoday_news_all.xml",                   "source": "이투데이", "cat": "auto:general"},
     {"url": "https://news.einfomax.co.kr/rss/allArticle.xml",                     "source": "연합인포맥스", "naive_tz": "KST"},
+    # 11-22 다른 분야 (11-21 접속 확인: 각 29~120건, 최신 글 0.1~0.4시간). KBS·연합 IT(404)·한겨레(날짜 없음)는 제외
+    {"url": "https://www.yna.co.kr/rss/news.xml",                                 "source": "연합뉴스",      "cat": "auto:general"},
+    {"url": "https://www.yna.co.kr/rss/politics.xml",                             "source": "연합뉴스 정치", "cat": "world"},
+    {"url": "https://www.yna.co.kr/rss/international.xml",                        "source": "연합뉴스 국제", "cat": "world"},
+    {"url": "https://www.yna.co.kr/rss/industry.xml",                             "source": "연합뉴스 산업", "cat": "auto:econ"},
+    {"url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01",         "source": "SBS 뉴스",      "cat": "auto:general"},
 ]
 
 REPORT_FEEDS = [
@@ -2874,6 +2892,44 @@ def _time_ago(published_parsed) -> str:
         return "최근"
 
 
+# ── 뉴스 분야 (11-22) ─────────────────────────────────────────────────────────
+# 출처 단위로 정하고(피드의 "cat"), "auto:<기본>" 피드만 제목 단어로 고른다. 위에서부터 먼저 맞는 분야.
+NEWS_CATS = ("econ", "world", "tech", "energy", "policy", "general")
+_CAT_WORDS = [
+    # 스포츠·연예는 나라 이름이 들어가도 세계·정치가 아니라 종합으로 (11-22 "프로야구 한화, 일본서 훈련")
+    ("general", re.compile(r"\b(nfl|nba|mlb|soccer|football|tennis|golf|olympics?|celebrity|movie|album)\b|야구|축구|농구|배구|골프|올림픽|월드컵|K리그|KBO|선수|연예|드라마|영화|배우|가수|아이돌|예능|결혼|부고", re.I)),
+    ("energy", re.compile(r"\b(oil|crude|opec|brent|natural gas|lng|gasoline|refiner\w*)\b|유가|원유|석유|천연가스|정유|휘발유", re.I)),
+    ("tech",   re.compile(r"\b(ai|a\.i\.|chips?|semiconductors?|software|openai|nvidia|apple|google|microsoft|meta|amazon|tesla|cyber\w*|robot\w*|quantum|smartphones?)\b|반도체|인공지능|(?<![A-Za-z])AI(?![A-Za-z])|챗GPT|로봇|소프트웨어|플랫폼|해킹|사이버|스마트폰|통신사|배터리|우주", re.I)),
+    ("econ",   re.compile(r"\b(stocks?|shares|markets?|economy|economic|inflation|tariffs?|fed|rates?|earnings|banks?|dollar|bonds?|treasur\w*|gdp|trade|investors?|prices?|sales|profit\w*|ipo|merger|acquisition)\b|증시|코스피|코스닥|주가|금리|환율|경제|기업|실적|수출|수입|매출|투자|부동산|은행|금융|물가|관세|산업|공장|일자리|고용|세금|예산|주식|채권|원화|달러", re.I)),
+    ("world",  re.compile(r"\b(election|president|war|minister|government|parliament|congress|senate|ukraine|russia|israel|gaza|iran|china|beijing|nato|military|troops|ceasefire|diplomat\w*|sanctions?|trump|white house)\b|대통령|국회|정부|장관|여당|야당|선거|북한|외교|전쟁|국방|군|정상회담|총리|의원|민주당|국민의힘|미국|중국|일본|러시아|우크라이나|이스라엘", re.I)),
+]
+
+
+def _news_cat(feed_info: dict, title: str) -> str:
+    cat = feed_info.get("cat", "econ")
+    if not cat.startswith("auto:"):
+        return cat
+    for name, rx in _CAT_WORDS:
+        if rx.search(title):
+            return name
+    return cat[5:]
+
+
+_NEWS_CAT_MAX = {"econ": 200}   # 경제는 200건, 나머지 분야는 각 60건 — 경제 기사가 많아 다른 분야가 잘려 나가지 않게
+
+
+def _cut_by_cat(items: list[dict]) -> list[dict]:
+    """최신순 목록을 분야별 상한으로 자른다(순서 유지)."""
+    cnt: dict[str, int] = {}
+    out = []
+    for n in items:
+        c = n.get("category", "econ")
+        if cnt.get(c, 0) < _NEWS_CAT_MAX.get(c, 60):
+            cnt[c] = cnt.get(c, 0) + 1
+            out.append(n)
+    return out
+
+
 def fetch_news() -> list[dict]:
     """RSS 피드 파싱 + VADER 감성 분석"""
     seen: set[str] = set()
@@ -2902,6 +2958,8 @@ def fetch_news() -> list[dict]:
         try:
             for entry in feed.entries[:_NEWS_PER_FEED]:
                 title = html.unescape(entry.get("title", "")).strip()   # &quot; 등 HTML 기호 풀기
+                if feed_info.get("gnews") and " - " in title:
+                    title = title.rsplit(" - ", 1)[0].strip()   # Google 뉴스: "제목 - Reuters"
                 if not title or title in seen or _too_old(entry.get("published_parsed")):
                     continue
                 seen.add(title)
@@ -2924,13 +2982,15 @@ def fetch_news() -> list[dict]:
                     "score":     round(score, 4),
                     "url":       entry.get("link", ""),
                     "market":    "US",
-                    "summary":   _clean_summary(entry.get("summary", "")),
+                    "category":  _news_cat(feed_info, title),
+                    # Google 뉴스 요약은 링크 HTML 덩어리라 버림
+                    "summary":   "" if feed_info.get("gnews") else _clean_summary(entry.get("summary", "")),
                 })
         except Exception as e:
             log.warning(f"RSS({feed_info['source']}): {e}")
 
     results.sort(key=lambda x: x["timestamp"], reverse=True)   # 피드 순서가 아니라 최신순으로 자른다
-    return results[:_NEWS_MAX]
+    return _cut_by_cat(results)
 
 
 _NEWS_PER_FEED = 15     # 피드당 기사 수 (11-18 미국 6·국내 10 → 15)
@@ -2993,6 +3053,7 @@ def fetch_kr_market_news() -> list[dict]:
                 "score":     0,
                 "url":       entry.get("link", ""),
                 "market":    "KR",
+                "category":  _news_cat(feed_info, title),
                 "summary":   _clean_summary(entry.get("summary", "")),
             })
 
@@ -3006,7 +3067,7 @@ def fetch_kr_market_news() -> list[dict]:
     log.info(f"KR RSS: {ok_feeds}/{len(KR_RSS_FEEDS)}개 피드 성공 + 네이버 주요뉴스 {len(naver)}건, 기사 {len(results)}건")
     # 피드 순서가 아니라 최신순으로 자른다 (예전엔 피드 순서대로 100건에서 잘라 뒤쪽 피드가 빠질 수 있었음)
     results.sort(key=lambda x: x["timestamp"], reverse=True)
-    return results[:_NEWS_MAX]
+    return _cut_by_cat(results)
 
 
 def _fetch_naver_main_news(limit: int = 20) -> list[dict]:
@@ -3043,82 +3104,10 @@ def _fetch_naver_main_news(limit: int = 20) -> list[dict]:
             "score":     0,
             "url":       f"https://n.news.naver.com/mnews/article/{oid}/{aid}",
             "market":    "KR",
+            "category":  "econ",
             "summary":   _clean_summary(html.unescape(str(x.get("subcontent") or ""))) + (f" ({x.get('ohnm')})" if x.get("ohnm") else ""),
         })
     return out
-
-
-def fetch_alphavantage_news() -> list[dict]:
-    """Alpha Vantage News & Sentiment API — 하루 25회 한도로 12시간 캐시 운용"""
-    url = (
-        "https://www.alphavantage.co/query"
-        f"?function=NEWS_SENTIMENT&limit=50&sort=LATEST&apikey={AV_KEY}"
-    )
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        log.warning(f"AlphaVantage 뉴스 요청 실패: {e}")
-        return []
-
-    if "feed" not in data:
-        log.warning(f"AlphaVantage 응답 이상: {list(data.keys())}")
-        return []
-
-    _LABEL_MAP = {
-        "Bullish":          "positive",
-        "Somewhat-Bullish": "positive",
-        "Neutral":          "neutral",
-        "Somewhat-Bearish": "negative",
-        "Bearish":          "negative",
-    }
-
-    results = []
-    for item in data["feed"]:
-        title = item.get("title", "").strip()
-        if not title:
-            continue
-
-        # AV가 직접 제공하는 티커 (관련도 가장 높은 것 선택)
-        ticker = None
-        ts_list = item.get("ticker_sentiment", [])
-        if ts_list:
-            best = max(ts_list, key=lambda x: float(x.get("relevance_score", 0)))
-            raw = best.get("ticker", "")
-            if raw and not raw.startswith("FOREX:") and not raw.startswith("CRYPTO:"):
-                ticker = raw
-
-        # 감성 레이블 변환
-        av_label   = item.get("overall_sentiment_label", "Neutral")
-        sentiment  = _LABEL_MAP.get(av_label, "neutral")
-        av_score   = float(item.get("overall_sentiment_score", 0))
-
-        # 시간 파싱 ("20240101T120000" → Unix timestamp)
-        time_str = item.get("time_published", "")
-        try:
-            from datetime import datetime, timezone
-            dt = datetime.strptime(time_str, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
-            ts = int(dt.timestamp())
-        except Exception:
-            # 파싱 실패 시 1970년(epoch 0) 대신 현재 시각으로 폴백 — 정렬 순서 왜곡 방지
-            log.warning(f"AlphaVantage 시간 파싱 실패 (time_published={time_str!r}), 현재 시각으로 대체")
-            ts = int(time.time())
-
-        results.append({
-            "id":        0,
-            "title":     title,
-            "source":    "Alpha Vantage",
-            "time":      _time_ago(time.gmtime(ts)),
-            "timestamp": ts,
-            "ticker":    ticker,
-            "sentiment": sentiment,
-            "score":     round(av_score, 4),
-            "url":       item.get("url", ""),
-        })
-
-    log.info(f"AlphaVantage 뉴스 수집 완료: {len(results)}건")
-    return results
 
 
 def _finnhub_item_to_dict(item: dict) -> dict:
@@ -3138,6 +3127,7 @@ def _finnhub_item_to_dict(item: dict) -> dict:
         "id":        0,
         "title":     title,
         "source":    f"Finnhub/{item.get('source', '')}",
+        "category":  "econ",
         "time":      _time_ago(__import__("time").gmtime(ts)) if ts else "최근",
         "timestamp": ts,
         "ticker":    ticker,
@@ -3183,6 +3173,220 @@ def fetch_finnhub_company_news(ticker: str) -> list[dict]:
     except Exception as e:
         log.warning(f"Finnhub 종목 뉴스 실패 ({ticker}): {e}")
         return []
+
+
+def fetch_finnhub_top_company_news(tickers: list[str], per: int = 4) -> list[dict]:
+    """시총 상위 종목의 Finnhub 종목별 뉴스 — 종목당 최신 per건, 3일 이내 (11-22, AlphaVantage 대체).
+    무료 한도 분당 60회 → 종목 사이 0.3초 쉬고 30분마다 한 번. 관심종목은 브라우저에만 있어 서버는 시총 상위로 대신한다."""
+    if not FINNHUB_KEY:
+        return []
+    out, seen, cutoff = [], set(), time.time() - 3 * 86400
+    for t in tickers:
+        for n in fetch_finnhub_company_news(t)[:per]:
+            if n["timestamp"] < cutoff or n["title"] in seen:
+                continue
+            seen.add(n["title"])
+            n["ticker"] = t
+            n["market"] = "US"
+            out.append(n)
+        time.sleep(0.3)
+    out.sort(key=lambda x: x["timestamp"], reverse=True)
+    log.info(f"Finnhub 시총 상위 {len(tickers)}종목 뉴스: {len(out)}건")
+    return out
+
+
+# ── 뉴스 제목 한글 번역 (11-22) ───────────────────────────────────────────────
+# ① Microsoft Translator 무료판(F0, 월 200만 자) → ② Google Cloud Translation(무료 월 50만 자, 예비) → ③ 원문.
+# 서비스별로 이번 달 보낸 글자 수를 직접 세서 상한(무료 한도보다 낮게)에 닿으면 다음 달까지 쓰지 않는다 — 요금 방지.
+# 한 번 번역한 제목은 data/news_translations.json에 저장해 다시 보내지 않는다(14일 지나면 지움). 결정: docs/decisions/007
+NEWS_TR_FILE   = os.path.join(os.path.dirname(__file__), "data", "news_translations.json")
+NEWS_TR_LIMITS = {"ms": 1_900_000, "google": 450_000}   # 월 상한(글자) — 무료 200만·50만에서 여유를 뺀 값
+NEWS_TR_NAMES  = {"ms": "Microsoft", "google": "Google Cloud"}
+_tr_lock  = threading.Lock()          # 파일·메모리 상태 보호
+_tr_run   = threading.Lock()          # 번역 작업 한 번에 하나만
+_tr_state: dict | None = None
+_tr_down: dict[str, tuple[float, str]] = {}   # 서비스 → (다시 시도할 시각, 이유)
+_HANGUL = re.compile(r"[가-힣]")
+
+
+def _tr_month() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def _tr_load() -> dict:
+    global _tr_state
+    if _tr_state is None:
+        try:
+            with open(NEWS_TR_FILE, encoding="utf-8") as f:
+                _tr_state = json.load(f)
+        except (OSError, ValueError):
+            _tr_state = {}
+        _tr_state.setdefault("titles", {})
+        _tr_state.setdefault("usage", {})
+        _tr_state.setdefault("log", [])
+    return _tr_state
+
+
+def _tr_save() -> None:
+    st = _tr_load()
+    cut = time.time() - 14 * 86400
+    st["titles"] = {k: v for k, v in st["titles"].items() if v[2] >= cut}
+    st["usage"] = dict(sorted(st["usage"].items())[-6:])   # 최근 6개월만
+    st["log"] = st["log"][-30:]
+    tmp = NEWS_TR_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(st, f, ensure_ascii=False)
+    os.replace(tmp, NEWS_TR_FILE)
+
+
+def news_needs_tr(title: str) -> bool:
+    """영어(라틴 글자가 있고 한글이 없는) 제목만 번역한다."""
+    return bool(title) and not _HANGUL.search(title) and re.search(r"[A-Za-z]{3}", title) is not None
+
+
+def news_title_ko(title: str) -> str | None:
+    with _tr_lock:
+        v = _tr_load()["titles"].get(title)
+    return v[0] if v else None
+
+
+def _azure_tr_cfg() -> tuple[str, str]:
+    """api/azure-translator.txt — 첫 줄 키, 둘째 줄 지역(예: koreacentral). 없으면 ("", "")."""
+    try:
+        with open(_resolve_api_file("azure-translator.txt"), encoding="utf-8") as f:
+            lines = [x.strip() for x in f.read().splitlines() if x.strip() and not x.strip().startswith("#")]
+    except OSError:
+        return "", ""
+    return (lines[0] if lines else ""), (lines[1] if len(lines) > 1 else "")
+
+
+def _tr_batches(texts: list[str], max_n: int, max_chars: int):
+    b, n = [], 0
+    for t in texts:
+        if b and (len(b) >= max_n or n + len(t) > max_chars):
+            yield b
+            b, n = [], 0
+        b.append(t)
+        n += len(t)
+    if b:
+        yield b
+
+
+def _tr_err(r) -> RuntimeError:
+    """번역 서비스 오류 응답 → 한 줄 설명 (터미널·상태 화면용)."""
+    try:
+        j = r.json()
+        msg = (j.get("error") or {}).get("message") or str(j)[:120]
+    except ValueError:
+        msg = r.text[:120]
+    msg = " ".join(str(msg).split())
+    if "has not been used" in msg or "is disabled" in msg:
+        msg = "Cloud Translation API가 꺼져 있음 — 콘솔에서 [사용] 필요"
+    return RuntimeError(f"HTTP {r.status_code} {msg[:140]}")
+
+
+def _tr_ms(texts: list[str]) -> list[str]:
+    key, region = _azure_tr_cfg()
+    headers = {"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json"}
+    if region:
+        headers["Ocp-Apim-Subscription-Region"] = region
+    r = requests.post("https://api.cognitive.microsofttranslator.com/translate",
+                      params={"api-version": "3.0", "from": "en", "to": "ko"},
+                      headers=headers, json=[{"Text": t} for t in texts], timeout=20)
+    if r.status_code != 200:
+        raise _tr_err(r)
+    return [x["translations"][0]["text"] for x in r.json()]
+
+
+def _tr_google(texts: list[str]) -> list[str]:
+    if not os.path.exists(GOOGLE_TTS_KEY_FILE):
+        raise RuntimeError("서비스 계정 키 없음")
+    r = requests.post("https://translation.googleapis.com/language/translate/v2",
+                      headers={"Authorization": f"Bearer {_google_tts_token()}"},
+                      json={"q": texts, "source": "en", "target": "ko", "format": "text"}, timeout=20)
+    if r.status_code != 200:
+        raise _tr_err(r)
+    return [html.unescape(x["translatedText"]) for x in r.json()["data"]["translations"]]
+
+
+def _tr_ready(p: str) -> str | None:
+    """서비스를 지금 쓸 수 없으면 이유, 쓸 수 있으면 None."""
+    if p == "ms" and not _azure_tr_cfg()[0]:
+        return "키 없음 (api/azure-translator.txt)"
+    if p == "google" and not os.path.exists(GOOGLE_TTS_KEY_FILE):
+        return "서비스 계정 키 없음"
+    until, why = _tr_down.get(p, (0, ""))
+    if time.time() < until:
+        return why
+    return None
+
+
+def translate_news_titles(titles: list[str]) -> int:
+    """아직 번역 안 된 영어 제목을 번역해 저장. 새로 번역한 개수를 돌려준다. 다른 번역이 돌고 있으면 0."""
+    if not _tr_run.acquire(blocking=False):
+        return 0
+    try:
+        with _tr_lock:
+            st = _tr_load()
+            todo = list(dict.fromkeys(t for t in titles if news_needs_tr(t) and t not in st["titles"]))
+        if not todo:
+            return 0
+        done = 0
+        for p, fn, max_n in (("ms", _tr_ms, 100), ("google", _tr_google, 100)):
+            if not todo:
+                break
+            if _tr_ready(p):
+                continue
+            for batch in _tr_batches(todo, max_n, 9000):
+                chars = sum(len(t) for t in batch)
+                with _tr_lock:
+                    used = st["usage"].setdefault(_tr_month(), {}).get(p, 0)
+                if used + chars > NEWS_TR_LIMITS[p]:
+                    _tr_down[p] = (time.time() + 3600, f"이번 달 상한 도달 ({used:,}자)")
+                    log.warning(f"번역 {NEWS_TR_NAMES[p]}: 이번 달 상한 {NEWS_TR_LIMITS[p]:,}자 도달 — 다음 달까지 쉼")
+                    break
+                try:
+                    out = fn(batch)
+                except Exception as e:
+                    msg = str(e)
+                    # 키·권한 문제(401·403)는 6시간, 그 밖(429·5xx·연결)은 15분 뒤 다시
+                    wait = 6 * 3600 if (" 401 " in msg or " 403 " in msg or "키 없음" in msg) else 900
+                    _tr_down[p] = (time.time() + wait, msg[:120])
+                    log.warning(f"번역 {NEWS_TR_NAMES[p]} 실패: {msg[:200]}")
+                    with _tr_lock:
+                        st["log"].append([int(time.time()), p, "fail", msg[:120]])
+                    break
+                now = int(time.time())
+                with _tr_lock:
+                    u = st["usage"].setdefault(_tr_month(), {})
+                    u[p] = u.get(p, 0) + chars
+                    for en, ko in zip(batch, out):
+                        if ko:
+                            st["titles"][en] = [ko, p, now]
+                    st["log"].append([now, p, "ok", f"{len(batch)}건 {chars}자"])
+                done += len(batch)
+                todo = [t for t in todo if t not in st["titles"]]
+        with _tr_lock:
+            _tr_save()
+        if done:
+            log.info(f"뉴스 제목 번역 {done}건 (남은 {len(todo)}건)")
+        return done
+    finally:
+        _tr_run.release()
+
+
+def translation_status() -> dict:
+    """서비스별 이번 달 사용량·상태 — /api/cache/status와 scripts/news_translate_status.py가 보여 준다."""
+    with _tr_lock:
+        st = _tr_load()
+        u = st["usage"].get(_tr_month(), {})
+        out = {"month": _tr_month(), "cached_titles": len(st["titles"]), "providers": [],
+               "last": st["log"][-5:]}
+    for p in ("ms", "google"):
+        why = _tr_ready(p)
+        out["providers"].append({"id": p, "name": NEWS_TR_NAMES[p], "used": u.get(p, 0),
+                                 "limit": NEWS_TR_LIMITS[p], "ok": why is None, "reason": why or ""})
+    return out
 
 
 def fetch_reports() -> list[dict]:

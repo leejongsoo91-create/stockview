@@ -560,23 +560,40 @@
 
       <!-- News 패널 -->
       <div id="news-panel">
-        <div class="news-filter-bar">
-          <button class="news-tag active" data-sentiment="all">전체</button>
-          <button class="news-tag positive" data-sentiment="positive">긍정</button>
-          <button class="news-tag negative" data-sentiment="negative">부정</button>
-          <button class="news-tag neutral"  data-sentiment="neutral">중립</button>
-          <span class="news-filter-sep"></span>
-          <button class="news-market-tag active" data-market="all">전체</button>
-          <button class="news-market-tag" data-market="US">🌐 해외</button>
-          <button class="news-market-tag" data-market="KR">🇰🇷 국내</button>
-          <button id="news-bookmark-toggle" class="news-tag" onclick="_toggleBookmarkFilter()">🔖 북마크</button>
+        <!-- 11-22 개편: 분야 탭 + 도구 줄 + (주요 뉴스·목록 | 오른쪽 요약 칸) -->
+        <div id="nx-cats" class="nx-cats"></div>
+        <div class="nx-tools">
+          <div class="nx-seg" id="nx-market">
+            <button class="on" data-market="all">전체</button>
+            <button data-market="US">🌐 해외</button>
+            <button data-market="KR">🇰🇷 국내</button>
+          </div>
+          <div class="nx-seg" id="nx-sent">
+            <button class="on" data-sentiment="all">전체</button>
+            <button data-sentiment="positive">긍정</button>
+            <button data-sentiment="negative">부정</button>
+            <button data-sentiment="neutral">중립</button>
+          </div>
           <select id="news-src-filter">
             <option value="all">전체 출처</option>
           </select>
-          <input id="news-kw-search" type="text" class="news-kw-input" placeholder="🔍 뉴스 검색…">
-          <span id="news-kw-count" class="news-kw-count" style="display:none"></span>
+          <div class="nx-seg">
+            <button id="news-bookmark-toggle" onclick="_toggleBookmarkFilter()">🔖 북마크</button>
+            <button id="nx-lang-toggle" onclick="_toggleNewsLang()" title="영어 기사 제목을 한글 번역으로 볼지 원문으로 볼지">가 한글</button>
+            <button id="nx-side-toggle" onclick="_toggleNewsSide()" title="오른쪽 요약 칸 접기·펴기">▤</button>
+          </div>
+          <div class="nx-search">
+            <input id="news-kw-search" type="text" class="news-kw-input" placeholder="🔍 뉴스 검색…">
+            <span id="news-kw-count" class="news-kw-count" style="display:none"></span>
+          </div>
         </div>
-        <div id="news-list"></div>
+        <div class="nx-grid" id="nx-grid">
+          <div class="nx-main">
+            <div id="nx-hero-wrap"></div>
+            <div id="news-list"></div>
+          </div>
+          <aside class="nx-side" id="nx-side"></aside>
+        </div>
       </div>
 
       <!-- Reports 패널 -->
