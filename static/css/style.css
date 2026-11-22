@@ -2201,6 +2201,26 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .vt-pos { color: var(--green); }
 .vt-neg { color: var(--red); }
 .vt-note { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+/* 📋 일별 시세 창 (11-23) — 거래 추이 창(.vt-*) + 주요 지표 6칸 + 시가·고가·저가 열 */
+.dq-box { width: min(1000px, 100%); }
+.dq-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.dq-st { background: var(--bg-input); border-radius: 8px; padding: 9px 11px; min-width: 0; }
+.dq-st .k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.dq-st .v { font-size: 15px; font-weight: 700; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.dq-st .v.up { color: var(--green); } .dq-st .v.down { color: var(--red); }
+.dq-st .v.dq-v-sm { font-size: 13px; }
+.dq-st .s { font-size: 10.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dq-pos { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; position: relative; }
+.dq-pos i { position: absolute; top: -3px; width: 3px; height: 10px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
+.dq-tag { font-size: 9.5px; padding: 0 5px; border-radius: 4px; background: var(--bg-card); color: var(--muted); margin-left: 3px; font-weight: 600; }
+.dq-na { color: var(--muted); }
+.dq-chart-empty { padding: 30px 0; }
+.dq-table .vt-row-hot td:last-child b { color: inherit; }
+.dq-table .vt-row-hot td:nth-child(8) b { color: var(--fg-c2); }
+@media (max-width: 760px) {
+  .dq-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dq-m-hide { display: none; }
+}
 
 .chart-dummy-banner {
   margin: 6px 0;
@@ -2299,7 +2319,16 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 }
 
 /* ── 종목 종합 진단 카드 ─────────────────────────────────────────────────────── */
-#stock-analysis-card { border-bottom: 1px solid var(--border); }
+#stock-analysis-card { border-top: 1px solid var(--border); }
+/* 11-23: 오른쪽 칸 맨 아래·기본 접힘 — 제목 줄(요약)을 누르면 펼침 */
+.sa-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px; color: var(--text); text-align: left; flex-wrap: wrap; }
+.sa-head:hover { background: var(--bg-input); }
+.sa-caret { color: var(--muted); transition: transform .15s; }
+.sa-title { font-size: 13px; font-weight: 700; }
+.sa-sum { font-size: 11.5px; color: var(--muted); }
+#stock-analysis-card .sa-body { display: none; }
+#stock-analysis-card.sa-open .sa-body { display: block; }
+#stock-analysis-card.sa-open .sa-caret { transform: rotate(90deg); }
 .analysis-disclaimer { font-size: 10px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); margin-left: 4px; }
 .analysis-loading { padding: 16px; color: var(--muted); font-size: 12.5px; text-align: center; }
 .analysis-summary {

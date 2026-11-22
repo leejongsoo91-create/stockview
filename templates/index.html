@@ -445,18 +445,18 @@
           <span class="ind-tools">
             <button id="ind-settings-btn" class="ind-icon-btn ind-settings-open" title="지표 설정 — 켜기/끄기" aria-haspopup="dialog">⚙ 지표</button>
             <button id="ind-help-btn" class="ind-icon-btn" title="지표 가이드 — 각 지표의 뜻" aria-haspopup="dialog">?</button>
-            <button id="vol-trend-btn" class="ind-icon-btn" title="거래 추이 — 최근 20·60일 일별 거래량·거래대금" aria-haspopup="dialog">📊 거래 추이</button>
+            <button id="vol-trend-btn" class="ind-icon-btn" title="일별 시세 — 주요 지표 + 일별 시가·고가·저가·종가·거래량·거래대금 (20일·60일·1년)" aria-haspopup="dialog">📋 일별 시세</button>
           </span>
           <span id="chart-live-badge" class="chart-live-badge" style="display:none">● 실시간</span>
           <span id="chart-updated-at" class="chart-updated-at"></span>
           <!-- ⚙ 지표 설정 창 -->
           <div id="ind-settings" class="ind-settings" role="dialog" aria-label="지표 설정" hidden></div>
         </div>
-        <!-- 📊 거래 추이 창 (11-17) -->
+        <!-- 📋 일별 시세 창 (11-23: 11-17 거래 추이 + 주요 지표 + 일별 시세를 합침) -->
         <div id="vt-modal" class="fg-modal-overlay" hidden>
-          <div class="fg-modal-box vt-modal-box" role="dialog" aria-modal="true" aria-labelledby="vt-modal-title">
+          <div class="fg-modal-box vt-modal-box dq-box" role="dialog" aria-modal="true" aria-labelledby="vt-modal-title">
             <div class="fg-modal-head">
-              <h3 id="vt-modal-title">📊 거래 추이<small id="vt-modal-sub"></small></h3>
+              <h3 id="vt-modal-title">📋 일별 시세<small id="vt-modal-sub"></small></h3>
               <button type="button" class="fg-modal-close" id="vt-modal-close" aria-label="닫기">✕</button>
             </div>
             <div class="fg-modal-body" id="vt-modal-body"></div>
@@ -548,11 +548,12 @@
             <div id="chart-draw-list"></div>
           </div>
           <div id="signal-card" style="display:none"></div>
-          <div id="stock-analysis-card" style="display:none"></div>
           <div id="financials-card" style="display:none"></div>
           <div id="stock-info-panel">
             <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>
           </div>
+          <!-- 종합 진단: 맨 아래·기본 접힘 (11-23) -->
+          <div id="stock-analysis-card" style="display:none"></div>
         </aside>
       </div>
     </div>

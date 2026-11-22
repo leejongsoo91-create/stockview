@@ -7,8 +7,10 @@ import queue
 import random
 import re
 import time
+import sqlite3
 import threading
 import requests
+from contextlib import closing
 from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
@@ -195,7 +197,7 @@ def refresh_stocks():
 # ── 미국 종목 실시간 시세 (네이버) ────────────────────────────────────────────
 # Nasdaq 스크리너 API는 장중에도 전일 종가를 돌려줘(11-06: 앱 AAPL +5.31% = 전일, 실제 -1.27%)
 # 가격·등락률·거래량·시총을 네이버 미국 시장 전체 목록으로 1분마다 덮어쓴다. 섹터·업종 등은 Nasdaq 그대로.
-_US_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "session", "session_open", "session_at")
+_US_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "value", "session", "session_open", "session_at")   # value = 실제 거래대금 누적(달러, 11-23)
 _EXT_MIN_GAP = 110   # 시간외(프리·애프터)에는 전체 목록을 2분에 한 번만 (정규장은 1분)
 
 
@@ -262,7 +264,7 @@ def refresh_us_quotes(force: bool = False):
 
 
 # ── 국내 종목 실시간 시세 (네이버) ────────────────────────────────────────────
-_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "market_cap", "kind",
+_KR_QUOTE_FIELDS = ("price", "change", "change_pct", "volume", "value", "market_cap", "kind",
                     "session", "session_open", "session_at")
 _kr_quotes_ts = 0.0     # 마지막 네이버 국내 시세 수신 시각
 _kr_yahoo_last = 0.0    # 마지막 Yahoo 국내 갱신 시작 시각
@@ -739,7 +741,52 @@ def record_us_market_flow(slot: str | None = None):
         return
     row[slot] = r
     _save_market_flow_row("US", day, row)
+    _save_us_stock_snaps(day, slot, stocks, quotes)
     log.info(f"시장 거래 기록 US {day} {slot}: 누적 거래량 {r['volume']:,}주 · 거래대금 ${r['amount'] / 1e9:.1f}B ({r['count']}종목)")
+
+
+# 미국 종목별 누적 거래량·실제 거래대금 (11-23) — 시장 합계와 같은 시각(09:29·16:01·20:05)에 종목마다 저장해
+# 차이로 프리·정규장·애프터를 나눈다. 종목 약 5,000개 × 하루 3번이라 JSON 대신 SQLite(표준 라이브러리) 한 파일.
+US_STOCK_FLOW_DB = os.path.join(os.path.dirname(__file__), "data", "us_stock_flow.sqlite")
+_usf_lock = threading.Lock()
+
+
+def _usf_db():
+    con = sqlite3.connect(US_STOCK_FLOW_DB, timeout=10)
+    con.execute("CREATE TABLE IF NOT EXISTS snap (tk TEXT, day TEXT, slot TEXT, volume INTEGER, amount REAL,"
+                " PRIMARY KEY (tk, day, slot)) WITHOUT ROWID")
+    return con
+
+
+def _save_us_stock_snaps(day: str, slot: str, stocks: list, quotes: dict):
+    rows = []
+    for s in stocks:
+        q = quotes.get(df._norm_us_ticker(s.get("ticker", "")))
+        if q and q.get("volume"):
+            rows.append((s["ticker"], day, slot, int(q["volume"]), float(q.get("value") or 0)))
+    try:
+        with _usf_lock, closing(_usf_db()) as con:
+            con.executemany("INSERT OR IGNORE INTO snap VALUES (?,?,?,?,?)", rows)
+            con.commit()
+        log.info(f"종목별 거래 기록 US {day} {slot}: {len(rows):,}종목")
+    except sqlite3.Error as e:
+        log.warning(f"종목별 거래 기록 실패: {e}")
+
+
+def _us_stock_flow_local(ticker: str, since: str) -> dict:
+    """{날짜: 정규장 volume·amount + 프리·애프터} — _us_flow_split과 같은 방식."""
+    if not os.path.exists(US_STOCK_FLOW_DB):
+        return {}
+    try:
+        with _usf_lock, closing(_usf_db()) as con:
+            cur = con.execute("SELECT day, slot, volume, amount FROM snap WHERE tk=? AND day>=?", (ticker, since))
+            days: dict = {}
+            for day, slot, vol, amt in cur:
+                days.setdefault(day, {})[slot] = {"volume": vol, "amount": amt}
+    except sqlite3.Error as e:
+        log.warning(f"종목별 거래 기록 읽기 실패: {e}")
+        return {}
+    return {d: _us_flow_split(v) for d, v in days.items()}
 
 
 def _us_flow_split(row: dict) -> dict:
@@ -1680,9 +1727,9 @@ def fear_greed_api():
     return jsonify(data or {})
 
 
-def _us_flow_from_home(days: int) -> dict | None:
-    """api/home-server-url.txt(집 서버 주소, git 제외)가 있는 서버만: 집 서버의 미국 시장 거래 기록을 받아온다(5분 캐시).
-    집 서버 자신에는 이 파일이 없어 자기 기록을 쓴다. 못 받으면 None → 이 서버 기록으로."""
+def _home_json(path: str, params: dict, key: str, need: str) -> dict | None:
+    """api/home-server-url.txt(집 서버 주소, git 제외)가 있는 서버만: 집 서버 API 결과를 받아온다(5분 캐시).
+    미국 기록은 24시간 켜진 집 서버에만 제대로 쌓인다. 집 서버 자신에는 이 파일이 없어 None → 자기 기록으로."""
     try:
         with open(os.path.join(os.path.dirname(__file__), "api", "home-server-url.txt"), encoding="utf-8") as f:
             base = f.readline().strip().rstrip("/")
@@ -1690,22 +1737,66 @@ def _us_flow_from_home(days: int) -> dict | None:
         return None
     if not base.startswith("http"):
         return None
-    key = f"us_flow_home_{days}"
     hit = cache.get_fresh(key)
     if hit is not None:
         return hit or None
     try:
-        r = requests.get(f"{base}/api/market-flow", params={"market": "US", "days": days}, timeout=6)
+        r = requests.get(f"{base}{path}", params=params, timeout=6)
         d = r.json() if r.ok else None
-        if not (d and d.get("rows") is not None):
+        if not (isinstance(d, dict) and d.get(need) is not None):
             d = None
     except Exception as e:
-        log.info(f"집 서버 미국 시장 거래 못 받음 — 이 서버 기록 사용: {e}")
+        log.info(f"집 서버 {path} 못 받음 — 이 서버 기록 사용: {e}")
         d = None
     if d:
         d["from_home"] = True
     cache.set(key, d or {}, ttl=300 if d else 120)
     return d
+
+
+def _us_flow_from_home(days: int) -> dict | None:
+    return _home_json("/api/market-flow", {"market": "US", "days": days}, f"us_flow_home_{days}", "rows")
+
+
+@app.route("/api/us-stock-flow/<ticker>")
+def us_stock_flow_api(ticker):
+    """미국 종목 하나의 일별 정규장·프리·애프터 거래량·실제 거래대금 (11-23부터 쌓임). 작업 PC는 집 서버 값."""
+    t = _canon_us_ticker(ticker)
+    since = (date.today() - timedelta(days=400)).isoformat()
+    home = _home_json(f"/api/us-stock-flow/{t}", {}, f"usf_home_{t}", "days")
+    if home:
+        return jsonify(home)
+    return jsonify({"ticker": t, "days": _us_stock_flow_local(t, since)})
+
+
+@app.route("/api/stock-daily/<ticker>")
+def stock_daily_api(ticker):
+    """차트 탭 📋 일별 시세 (11-23): 일별 시가·고가·저가·종가·거래량 + 실제 거래대금.
+    국내 = 다음 금융 종목 일별(KRX, 과거 거래대금까지). 미국 = 일봉(야후) + 11-23부터 쌓은 종목별 실제 거래대금(정규장)."""
+    raw = ticker.strip()
+    is_kr = raw.upper().endswith((".KS", ".KQ")) or (len(raw) == 6 and raw[:1].isdigit())
+    if is_kr:
+        code = df.kr_code(raw)
+        key = f"stock_days_kr_{code}"
+        rows = cache.get_fresh(key)
+        if rows is None:
+            rows = df.fetch_kr_stock_days_daum(code, 260)
+            cache.set(key, rows, ttl=(600 if _kr_market_window() else 3600) if rows else 120)
+        return jsonify({"ticker": raw, "market": "KR", "rows": rows, "amount_source": "daum"})
+    t = _canon_us_ticker(raw)
+    ohlcv = _chart_rows(t, "2y", "1d", None)[-260:]
+    flow = (us_stock_flow_api(t).get_json() or {}).get("days") or {}
+    rows = []
+    for c in ohlcv:
+        d = str(c.get("time"))[:10]
+        f = flow.get(d) or {}
+        rows.append({"date": d, "open": c.get("open"), "high": c.get("high"), "low": c.get("low"), "close": c.get("close"),
+                     "volume": c.get("volume"), "amount": f.get("amount"),
+                     "pre_amount": f.get("pre_amount"), "after_amount": f.get("after_amount"),
+                     "partial": bool(f.get("pre_unknown")) or None})
+    amt = [r["date"] for r in rows if r.get("amount")]
+    return jsonify({"ticker": t, "market": "US", "rows": rows, "amount_source": "naver",
+                    "amount_since": min(amt) if amt else None})
 
 
 @app.route("/api/market-flow")

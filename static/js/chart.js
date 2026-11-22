@@ -1404,26 +1404,31 @@ function _bindPeriodEvents() {
   });
 }
 
-// ── 📊 거래 추이 창 (11-17) — 일봉 기준 최근 20·60일 거래량·거래대금 ──────────
-const _vt = { days: 20, by: 'amt', ticker: null, bars: null };
+// ── 📋 일별 시세 창 (11-23) — 11-17 거래 추이 창 + 주요 지표 + 일별 시세를 합침 ──────────
+// 위: 주요 지표 6칸 / 가운데: 거래량·거래대금 막대(오른 날·내린 날, 20일 평균, 평소 2배) / 아래: 일별 표.
+// 거래대금은 실제 값만 — 국내 = 다음 금융 종목 일별(KRX), 미국 = 11-23부터 쌓은 네이버 실제 체결 금액(정규장).
+// 추정치(대표가×거래량)는 쓰지 않는다 → 미국은 쌓이기 전 날짜가 비어 있고, 쌓인 날이 5일 미만이면 거래량 그래프가 기본.
+const _vt = { days: 20, by: null, ticker: null, rows: null, amtDays: 0, at: 0 };
+let _dqInfo = null;   // renderStockInfo가 채움 (현재 종목의 시세·시총·PER 등)
 async function _openVolTrend() {
   const t = _currentTicker;
   if (!t) return;
   const ov = document.getElementById('vt-modal'), body = document.getElementById('vt-modal-body');
   const name = document.getElementById('chart-company-label')?.textContent || '';
-  document.getElementById('vt-modal-sub').textContent = `${t}${name && name !== '…' ? ' · ' + name : ''} · 일봉`;
+  const isKr = _isKrStock(t);
+  document.getElementById('vt-modal-sub').textContent = `${t}${name && name !== '…' ? ' · ' + name : ''} · ${isKr ? 'KRX' : '미국'} 정규장 기준`;
   ov.hidden = false;
-  if (_vt.ticker !== t || !_vt.bars) {
+  if (_vt.ticker !== t || !_vt.rows || Date.now() - _vt.at > 5 * 60 * 1000) {
     body.innerHTML = '<div class="vt-empty">불러오는 중…</div>';
     try {
-      // 지금 차트가 일봉이고 80봉 이상이면 그대로, 아니면 일봉 6개월을 따로 받음
-      const bars = (_currentInterval === '1d' && _lastOhlcv.length >= 80 && !_chartIsDummy)
-        ? _lastOhlcv : await api(`/api/chart/${encTk(t)}?interval=1d&period=6mo`);
+      const d = await api(`/api/stock-daily/${encTk(t)}`);
       if (_currentTicker !== t) return;
-      _vt.ticker = t;
-      _vt.bars = (bars || []).filter(b => !b._dummy);
+      _vt.ticker = t; _vt.at = Date.now();
+      _vt.rows = (d.rows || []).filter(r => r.close).map(r => ({ ...r, time: r.date }));
+      _vt.amtDays = _vt.rows.filter(r => r.amount).length;
+      _vt.by = _vt.amtDays >= 5 ? 'amt' : 'vol';
     } catch {
-      body.innerHTML = '<div class="vt-empty">거래 데이터를 불러오지 못했습니다.</div>';
+      body.innerHTML = '<div class="vt-empty">일별 시세를 불러오지 못했습니다.</div>';
       return;
     }
   }
@@ -1431,89 +1436,111 @@ async function _openVolTrend() {
 }
 function _closeVolTrend() { document.getElementById('vt-modal').hidden = true; }
 
+// n일 평균 (값이 없는 날은 빼고, 3일 미만이면 null)
+function _dqAvg(arr, i, n, f) {
+  const xs = arr.slice(Math.max(0, i - n), i).map(f).filter(v => v);
+  return xs.length >= Math.min(n, 3) ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+
+function _dqStatsHtml(all, isKr) {
+  const I = _dqInfo && _dqInfo.s && (_dqInfo.s.ticker || '').toUpperCase() === (_vt.ticker || '').toUpperCase() ? _dqInfo : null;
+  if (!I) return '';
+  const s = I.s, last = all[all.length - 1];
+  const avgV = _dqAvg(all, all.length - 1, 20, x => x.volume);
+  const vol = s.volume || last?.volume, ratio = avgV && vol ? vol / avgV : null;
+  const hi = s.week52_high, lo = s.week52_low, pos = hi && lo && hi > lo && s.price ? Math.min(100, Math.max(0, (s.price - lo) / (hi - lo) * 100)) : null;
+  const hiPct = hi && s.price ? (s.price / hi - 1) * 100 : null;
+  const cell = (k, v, sub, cls = '') => `<div class="dq-st"><div class="k">${k}</div><div class="v ${cls}">${v}</div><div class="s">${sub || ''}</div></div>`;
+  return `<div class="dq-stats">
+    ${cell('현재가', s.price ? _fmtQuote(s.price, s.ticker) : '—', `<span class="${I.cls}">${_fmtQuoteChange(s.change, s.ticker)} (${s.change_pct != null ? fmtPct(s.change_pct) : '—'})</span>`, I.cls)}
+    ${cell('오늘 거래량', vol ? _fmtVolN(vol, isKr) : '—', ratio ? `20일 평균의 <b>${ratio.toFixed(1)}배</b>` : '')}
+    ${cell('오늘 거래대금 <span class="dq-tag">실제</span>', s.value ? _fmtAmt(s.value, isKr) : '—', s.value ? '오늘 누적 · 시간외 포함' : '장 시작 전이거나 정보 없음')}
+    ${cell('시가총액', I.capStr, `PER ${I.peStr} · EPS ${I.epsStr}`)}
+    <div class="dq-st"><div class="k">52주 범위</div><div class="v dq-v-sm">${lo ? I.fmtP(lo) : '—'} ~ ${hi ? I.fmtP(hi) : '—'}</div>${pos != null ? `<div class="dq-pos" title="52주 범위 안 위치 ${pos.toFixed(0)}%"><i style="left:${pos}%"></i></div>` : ''}</div>
+    ${cell('52주 최고 대비', hiPct != null ? `${hiPct > 0 ? '+' : ''}${hiPct.toFixed(1)}%` : '—', I.sector ? `${isKr ? '업종' : '섹터'} · ${I.sector}` : '', hiPct != null ? colorCls(hiPct) : '')}
+  </div>`;
+}
+
 function _renderVolTrend() {
   const body = document.getElementById('vt-modal-body');
-  const all = _vt.bars || [];
+  const all = _vt.rows || [];
   const isKr = _isKrStock(_vt.ticker || '');
-  if (!all.length || !all.some(b => b.volume)) {
-    body.innerHTML = '<div class="vt-empty">이 종목은 거래량 정보가 없습니다.</div>';
-    return;
-  }
-  const valOf = b => _vt.by === 'amt' ? _barAmt(b) : (b.volume || 0);
+  if (!all.length) { body.innerHTML = '<div class="vt-empty">이 종목은 일별 시세 정보가 없습니다.</div>'; return; }
+  const valOf = b => _vt.by === 'amt' ? (b.amount || 0) : (b.volume || 0);
   const fmtV  = v => _vt.by === 'amt' ? _fmtAmt(v, isKr) : _fmtVolN(v, isKr);
   const start = Math.max(0, all.length - _vt.days);
   const rows = [];
   for (let i = start; i < all.length; i++) {
     const b = all[i], p = all[i - 1];
-    const avgV = _avgBefore(all, i, 20, x => x.volume || 0);
-    rows.push({
-      b, i,
-      chg: p && p.close ? (b.close / p.close - 1) * 100 : null,
-      vsPrev: p && p.volume ? (b.volume / p.volume - 1) * 100 : null,
-      ratio: avgV ? b.volume / avgV : null,
-    });
+    const avgV = _dqAvg(all, i, 20, x => x.volume);
+    rows.push({ b, i, chg: p && p.close ? (b.close / p.close - 1) * 100 : null, ratio: avgV && b.volume ? b.volume / avgV : null });
   }
 
-  // 요약: 마지막 날·최근 5일 평균을 그 전 20일 평균과 비교
-  const last = rows[rows.length - 1];
-  const avg20 = _avgBefore(all, all.length - 1, 20, valOf);
-  const avg5  = all.length >= 5 ? all.slice(-5).reduce((s, b) => s + valOf(b), 0) / 5 : null;
-  const prev20 = _avgBefore(all, all.length - 5, 20, valOf);
-  const r5 = avg5 && prev20 ? avg5 / prev20 : null;
-
-  // 막대 그래프 (SVG) — 오른 날 초록·내린 날 빨강, 20일 평균 점선
+  // 막대 그래프 (SVG) — 오른 날 초록·내린 날 빨강, 20일 평균 점선, 평소의 2배 이상 주황 테두리
   const W = 700, H = 150, padB = 18, n = rows.length;
   const vals = rows.map(r => valOf(r.b));
-  const avgs = rows.map(r => _avgBefore(all, r.i, 20, valOf));
+  const avgs = rows.map(r => _dqAvg(all, r.i, 20, valOf));
   const max = Math.max(...vals, ...avgs.filter(Boolean)) * 1.08 || 1;
   const bw = W / n, y = v => (H - padB) * (1 - v / max);
   const bars = rows.map((r, k) => {
-    const up = !r.chg || r.chg >= 0, v = vals[k];
+    const v = vals[k];
+    if (!v) return '';
+    const up = !r.chg || r.chg >= 0, rr = avgs[k] ? v / avgs[k] : null;
     return `<rect x="${(k * bw + bw * 0.15).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" ` +
-      `height="${(H - padB - y(v)).toFixed(1)}" class="${up ? 'vt-up' : 'vt-down'}${r.ratio >= 2 ? ' vt-hot' : ''}">` +
-      `<title>${r.b.time}  ${fmtV(v)}${r.ratio ? ` · 20일 평균의 ${r.ratio.toFixed(1)}배` : ''}</title></rect>`;
+      `height="${(H - padB - y(v)).toFixed(1)}" class="${up ? 'vt-up' : 'vt-down'}${rr >= 2 ? ' vt-hot' : ''}">` +
+      `<title>${r.b.time}  ${fmtV(v)}${rr ? ` · 20일 평균의 ${rr.toFixed(1)}배` : ''}</title></rect>`;
   }).join('');
   const avgPts = avgs.map((a, k) => a ? `${(k * bw + bw / 2).toFixed(1)},${y(a).toFixed(1)}` : null).filter(Boolean).join(' ');
-  const lbl = k => `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${rows[k].b.time.slice(5).replace('-', '/')}</text>`;
   const step = Math.max(1, Math.ceil(n / 8));
-  const labels = rows.map((_, k) => (k % step === 0 || k === n - 1) ? lbl(k) : '').join('');
+  const labels = rows.map((r, k) => (k % step === 0 || k === n - 1)
+    ? `<text x="${(k * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${r.b.time.slice(5).replace('-', '/')}</text>` : '').join('');
+  const emptyAmt = _vt.by === 'amt' && !vals.some(Boolean);
 
-  const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'vt-pos' : v < 0 ? 'vt-neg' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
-  const price = v => isKr ? Math.round(v).toLocaleString() : v.toFixed(2);
-  const trs = rows.slice().reverse().map(r => `
-    <tr class="${r.ratio >= 2 ? 'vt-row-hot' : ''}">
+  const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'vt-pos' : v < 0 ? 'vt-neg' : ''}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  const price = v => v == null ? '—' : isKr ? Math.round(v).toLocaleString() : v.toFixed(2);
+  const amtCell = b => {
+    if (!b.amount) return '<span class="dq-na">—</span>';
+    const ext = [b.pre_amount ? `프리 ${_fmtAmt(b.pre_amount, false)}` : '', b.after_amount ? `애프터 ${_fmtAmt(b.after_amount, false)}` : ''].filter(Boolean).join(' · ');
+    return `<span${ext ? ` title="정규장 기준 · ${ext}"` : ''}>${_fmtAmt(b.amount, isKr)}${b.partial ? '<sup title="09:29 기록이 없어 프리마켓이 섞였을 수 있음">*</sup>' : ''}</span>`;
+  };
+  const trs = rows.slice().reverse().map(r => {
+    const c = r.chg > 0 ? 'vt-pos' : r.chg < 0 ? 'vt-neg' : '';
+    return `<tr class="${r.ratio >= 2 ? 'vt-row-hot' : ''}">
       <td>${r.b.time.slice(2).replace(/-/g, '.')}</td>
-      <td>${price(r.b.close)}</td><td>${pct(r.chg)}</td>
-      <td>${_fmtVolN(r.b.volume, isKr)}</td><td>${_fmtAmt(_barAmt(r.b), isKr)}</td>
-      <td>${pct(r.vsPrev)}</td>
-      <td>${r.ratio == null ? '—' : `<b>${r.ratio.toFixed(1)}배</b>`}</td>
-    </tr>`).join('');
+      <td class="${c}"><b>${price(r.b.close)}</b></td><td>${pct(r.chg)}</td>
+      <td class="dq-m-hide">${price(r.b.open)}</td><td class="dq-m-hide vt-pos">${price(r.b.high)}</td><td class="dq-m-hide vt-neg">${price(r.b.low)}</td>
+      <td>${_fmtVolN(r.b.volume, isKr)}</td>
+      <td class="dq-m-hide">${r.ratio == null ? '—' : `<b>${r.ratio.toFixed(1)}배</b>`}</td>
+      <td>${amtCell(r.b)}</td>
+    </tr>`;
+  }).join('');
 
   const byName = _vt.by === 'amt' ? '거래대금' : '거래량';
+  const since = all.find(r => r.amount)?.time;
+  const note = isKr
+    ? '시가·고가·저가·종가·거래량·거래대금은 다음 금융 일별 시세(KRX 정규장, 실제 값)입니다.'
+    : `거래량·시가·고가·저가·종가는 정규장 일봉입니다. 거래대금은 네이버 실제 체결 금액을 <b>11/23부터 날마다 쌓아</b> 보여 줍니다(추정치 없음` +
+      `${since ? `, ${since.slice(5).replace('-', '/')}부터 ${_vt.amtDays}일` : ''}) — 쌓이기 전 날짜는 "—", 마우스를 올리면 프리·애프터.`;
   body.innerHTML = `
+    ${_dqStatsHtml(all, isKr)}
     <div class="vt-ctrls">
-      <span class="vt-seg" data-k="days"><button data-v="20">20일</button><button data-v="60">60일</button></span>
-      <span class="vt-seg" data-k="by"><button data-v="amt">거래대금</button><button data-v="vol">거래량</button></span>
+      <span class="vt-seg" data-k="days"><button data-v="20">20일</button><button data-v="60">60일</button><button data-v="260">1년</button></span>
+      <span class="vt-seg" data-k="by"><button data-v="vol">거래량</button><button data-v="amt">거래대금</button></span>
     </div>
-    <div class="vt-summary">
-      <div><small>최근 거래일 ${byName}</small><b>${fmtV(valOf(last.b))}</b>
-        <small>${avg20 ? `20일 평균 ${fmtV(avg20)}의 <b class="${valOf(last.b) / avg20 >= 2 ? 'vt-hot-t' : ''}">${(valOf(last.b) / avg20).toFixed(1)}배</b>` : ''}</small></div>
-      <div><small>최근 5일 평균 ${byName}</small><b>${avg5 ? fmtV(avg5) : '—'}</b>
-        <small>${r5 ? `그 전 20일보다 <b>${r5 >= 1 ? '+' : ''}${((r5 - 1) * 100).toFixed(0)}%</b>` : ''}</small></div>
-    </div>
-    <svg class="vt-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 ${byName} 막대 그래프">
+    ${emptyAmt ? `<div class="vt-empty dq-chart-empty">이 기간에는 아직 쌓인 거래대금이 없어요${isKr ? '' : ' (미국은 11/23부터 쌓임)'}. 거래량으로 보세요.</div>` :
+    `<svg class="vt-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 ${byName} 막대 그래프">
       ${bars}
       ${avgPts ? `<polyline points="${avgPts}" class="vt-avg"/>` : ''}
       ${labels}
     </svg>
-    <div class="vt-legend"><span><i class="vt-lg-up"></i>오른 날</span><span><i class="vt-lg-down"></i>내린 날</span><span><i class="vt-lg-avg"></i>20일 평균</span><span><i class="vt-lg-hot"></i>평소의 2배 이상</span></div>
+    <div class="vt-legend"><span><i class="vt-lg-up"></i>오른 날</span><span><i class="vt-lg-down"></i>내린 날</span><span><i class="vt-lg-avg"></i>20일 평균</span><span><i class="vt-lg-hot"></i>평소의 2배 이상</span></div>`}
     <div class="vt-table-wrap">
-      <table class="vt-table">
-        <thead><tr><th>날짜</th><th>종가</th><th>등락</th><th>거래량</th><th>거래대금<small>추정</small></th><th>거래량<br>전일 대비</th><th>20일 평균<br>대비</th></tr></thead>
+      <table class="vt-table dq-table">
+        <thead><tr><th>날짜</th><th>종가</th><th>등락률</th><th class="dq-m-hide">시가</th><th class="dq-m-hide">고가</th><th class="dq-m-hide">저가</th><th>거래량</th><th class="dq-m-hide">거래량<br>20일 평균 대비</th><th>거래대금${isKr ? '' : '<small>정규장</small>'}</th></tr></thead>
         <tbody>${trs}</tbody>
       </table>
     </div>
-    <p class="vt-note">거래대금은 하루 대표가((고가+저가+종가)÷3) × 거래량으로 계산한 추정값이라 거래소 공식 값과 몇 % 다를 수 있습니다. "20일 평균 대비"는 그날 거래량 ÷ 그 전 20거래일 평균 거래량입니다.</p>`;
+    <p class="vt-note">${note} "20일 평균 대비"는 그날 거래량 ÷ 그 전 20거래일 평균입니다.</p>`;
   body.querySelectorAll('.vt-seg').forEach(seg => {
     const k = seg.dataset.k;
     seg.querySelectorAll('button').forEach(b => {
@@ -3439,12 +3466,28 @@ async function renderStockAnalysis(ticker) {
     return `<div class="analysis-info-block"><div class="analysis-info-label">${it.label}</div><div class="analysis-info-note">${it.detail}</div></div>`;
   }).join('');
 
+  // 11-23: 오른쪽 칸 맨 아래·기본 접힘. 제목 줄에 요약, 누르면 펼침 (펼침 상태는 localStorage SAO)
+  let open = false;
+  try { open = localStorage.getItem('SAO') === '1'; } catch {}
+  card.classList.toggle('sa-open', open);
   card.innerHTML = `
-    <div class="info-section-title">📊 종합 진단 <span class="analysis-disclaimer">(참고용 · 투자 조언 아님)</span></div>
-    <div class="analysis-summary">${summary.total}개 항목 중 매수 우호 ${summary.buy} · 매도 우호 ${summary.sell} · 중립 ${summary.neutral}</div>
-    <div class="analysis-items">${itemsHtml}</div>
-    ${infoHtml ? `<div class="analysis-info">${infoHtml}</div>` : ''}
+    <button type="button" class="sa-head" aria-expanded="${open}" onclick="_toggleStockAnalysis()">
+      <span class="sa-caret">▸</span><span class="sa-title">📊 종합 진단</span>
+      <span class="sa-sum">${summary.total}개 · 매수 우호 ${summary.buy} · 매도 우호 ${summary.sell} · 중립 ${summary.neutral}</span>
+    </button>
+    <div class="sa-body">
+      <div class="analysis-summary">${summary.total}개 항목 중 매수 우호 ${summary.buy} · 매도 우호 ${summary.sell} · 중립 ${summary.neutral} <span class="analysis-disclaimer">(참고용 · 투자 조언 아님)</span></div>
+      <div class="analysis-items">${itemsHtml}</div>
+      ${infoHtml ? `<div class="analysis-info">${infoHtml}</div>` : ''}
+    </div>
   `;
+}
+function _toggleStockAnalysis() {
+  const card = document.getElementById('stock-analysis-card');
+  if (!card) return;
+  const open = card.classList.toggle('sa-open');
+  card.querySelector('.sa-head')?.setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('SAO', open ? '1' : '0'); } catch {}
 }
 
 // ── 재무제표 (KR: 네이버 금융 / US: SEC EDGAR) ────────────────────────────────
@@ -3540,29 +3583,11 @@ function renderStockInfo(s) {
     ? ((s.price / s.week52_high - 1) * 100).toFixed(1) + '%'
     : '—';
 
+  // 주요 지표(현재가·변동·등락률·거래량·시가총액)는 📋 일별 시세 창 맨 위로 옮김 (11-23)
+  _dqInfo = { s, isKr, cls, capStr, peStr, epsStr, fmtP,
+              sector: stockKind(s) !== 'stock' ? stockKind(s).toUpperCase() : s.sector ? (isKr ? s.sector : koSector(s.sector)) : '' };
   document.getElementById('stock-info-panel').innerHTML = `
-    <div class="info-section-title">주요 지표</div>
-    <div class="info-row">
-      <span class="info-label">현재가</span>
-      <span class="info-val">${s.price ? _fmtQuote(s.price, s.ticker) : '—'}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">변동</span>
-      <span class="info-val ${cls}">${_fmtQuoteChange(s.change, s.ticker)}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">등락률</span>
-      <span class="info-val ${cls}">${s.change_pct != null ? fmtPct(s.change_pct) : '—'}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">거래량</span>
-      <span class="info-val">${s.volume ? fmtVol(s.volume) : '—'}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">시가총액</span>
-      <span class="info-val">${capStr}</span>
-    </div>
-    <div class="info-section-title" style="margin-top:4px">가치 평가</div>
+    <div class="info-section-title">가치 평가</div>
     <div class="info-row">
       <span class="info-label">PER</span>
       <span class="info-val">${peStr}</span>

@@ -45,6 +45,7 @@
 | `data/kr_per_cache.json` | KR | KR PER/EPS (서버가 24h마다 갱신, gitignore) |
 | `data/market_flow.json` | 공용 | 시장 전체 일별 거래량·거래대금 `{KOSPI·KOSDAQ·US: {날짜: {volume, amount}}}` — 서버가 매일 장 마감 뒤 한 줄씩 쌓음(거래대금 과거치는 무료 출처 없음), gitignore (11-18) |
 | `data/market_breadth.json` | 공용 | 미국·국내(주식만) 상승·하락·보합 종목 수 `{us, kr: {n, up, down, flat, at, date, kospi?, kosdaq?}}` — 정규장 동안 1분마다 덮어쓰고 마감 뒤엔 그대로(정규장 종가 기준), gitignore (11-23) |
+| `data/us_stock_flow.sqlite` | 공용 | 미국 종목별 누적 거래량·실제 체결 금액 스냅숏 `snap(tk, day, slot, volume, amount)` — 시장 거래와 같은 뉴욕 09:29·16:01·20:05에 약 5,000종목 저장(SQLite, 표준 라이브러리), 차이로 정규장·프리·애프터. `/api/us-stock-flow/<종목>`·`/api/stock-daily/<종목>`(📋 일별 시세)이 읽음, 작업 PC는 집 서버 값, gitignore (11-23) |
 | `data/us_names_ko.json` | US | 미국 종목 한글명 (네이버 해외주식 목록, 서버가 주 1회 갱신, gitignore). 표시 우선순위: 네이버 → `NAME_KO` 수동 사전 → 빈칸 (`df.name_ko()`) |
 | `data/news_translations.json` | 공용 | 뉴스 영어 제목 → 한글 번역 저장 `{titles: {원문: [한글, 서비스, 시각]}, usage: {YYYY-MM: {ms, google}}, log}` — 14일 지나면 지움, 서비스별 월 글자 수 상한(Microsoft 190만·Google 45만) 계산에 사용, gitignore (11-22, 결정 007) |
 | `data/signal_history.json`, `voice_briefing.json`, `audio/` | 공통 | 서버 런타임 상태 (gitignore) |

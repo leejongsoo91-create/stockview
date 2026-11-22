@@ -1260,6 +1260,7 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                         "change":     ext["change"],
                         "change_pct": ext["change_pct"],
                         "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
+                        "value":      _naver_num(s.get("accumulatedTradingValueRaw")) or 0.0,   # 실제 거래대금 누적(원, 11-23)
                         "market_cap": int(mv * 1e8 * ext["price"] / price) if mv else None,
                         "kind":       s.get("stockEndType") or "stock",
                         **{k: ext[k] for k in _NO_EXT},
@@ -1270,6 +1271,7 @@ def fetch_kr_quotes_naver() -> dict[str, dict]:
                     "change":     _naver_num(s.get("compareToPreviousClosePrice")) or 0.0,
                     "change_pct": _naver_num(s.get("fluctuationsRatio")) or 0.0,
                     "volume":     int(_naver_num(s.get("accumulatedTradingVolume")) or 0),
+                    "value":      _naver_num(s.get("accumulatedTradingValueRaw")) or 0.0,   # 실제 거래대금 누적(원, 11-23)
                     "market_cap": int(mv * 1e8) if mv else None,
                     "kind":       s.get("stockEndType") or "stock",   # 주식·ETF·ETN 구분 (11-06: ETF 856·ETN 324개가 섞여 있었음)
                     **_NO_EXT,
@@ -2593,6 +2595,39 @@ def fetch_kr_market_history_daum(index: str, count: int = 500) -> dict[str, dict
             continue
         out[d] = {"volume": int(vol * 1000), "amount": int(amt * 1e6)}
     return out
+
+
+def fetch_kr_stock_days_daum(code: str, count: int = 260) -> list[dict]:
+    """국내 종목 일별 시세 — 다음 금융 종목 일별(KRX 정규장 시가·고가·저가·종가·거래량·실제 거래대금, 약 8,000일).
+    단위는 주·원 그대로(11-23: 삼성전자 11-20 16,646,588주·3,074,615,398,400원). 한 쪽 100일씩.
+    장 시작 전 오늘 줄은 거래량 0으로 미리 오므로 거래 없는 줄은 뺀다. [{date, open, high, low, close, volume, amount}] (오래된 날 먼저), 실패 시 []."""
+    sym = "A" + code.split(".")[0]
+    rows, page = [], 1
+    try:
+        while len(rows) < count and page <= 5:
+            r = requests.get(f"https://finance.daum.net/api/quote/{sym}/days",
+                             params={"symbolCode": sym, "page": page, "perPage": 100, "pagination": "true"},
+                             headers={**_DAUM_INV_HEADERS, "Referer": f"https://finance.daum.net/quotes/{sym}"}, timeout=10)
+            r.raise_for_status()
+            j = r.json()
+            data = j.get("data") or []
+            for x in data:
+                vol = _safe(x.get("accTradeVolume"))
+                if not vol:
+                    continue
+                rows.append({"date": str(x.get("date") or "")[:10], "open": _safe(x.get("openingPrice")),
+                             "high": _safe(x.get("highPrice")), "low": _safe(x.get("lowPrice")),
+                             "close": _safe(x.get("tradePrice")), "volume": int(vol),
+                             "amount": int(_safe(x.get("accTradePrice")) or 0) or None})
+            if not data or page >= (j.get("totalPages") or 1):
+                break
+            page += 1
+    except Exception as e:
+        log.warning(f"fetch_kr_stock_days_daum({code}): {e}")
+        if not rows:
+            return []
+    rows.sort(key=lambda x: x["date"])
+    return rows[-count:]
 
 
 def fetch_kr_market_volume_history(index: str, count: int = 300) -> dict[str, int]:

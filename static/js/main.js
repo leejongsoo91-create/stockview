@@ -631,7 +631,7 @@ async function loadSectorPerf(period, silent = false) {
 // ── 홈 상위 종목 Top 100 (거래량·거래대금·시총 / 미국·국내) ─────────────────────
 // 기준·시장 버튼으로 바꾸고, 1분 갱신(stocks_update·kr_stocks_update) 때 다시 정렬한다.
 // 같은 시장 안에서 순위가 바뀌면 줄이 새 자리로 스르륵 이동하고 ▲n·▼n·NEW를 3초간 표시(FLIP 애니메이션).
-// 선택값은 localStorage HMV({market, by})에 저장. 거래대금 = 현재가 × 거래량(서버에 별도 값 없음).
+// 선택값은 localStorage HMV({market, by})에 저장. 거래대금 = 네이버 실제 체결 금액 누적(시간외 포함, 11-23).
 const _TOP_N = 100;
 const _top = { market: 'us', by: 'volume', us: null, rows: {}, rank: {}, shownMarket: null, fadeT: null, bound: false };
 try {
@@ -642,7 +642,7 @@ try {
 
 function _topVal(s, market, by) {
   if (by === 'volume') return s.volume || 0;
-  if (by === 'amount') return (s.price || 0) * (s.volume || 0);
+  if (by === 'amount') return s.value || 0;   // 네이버 실제 거래대금 누적 (11-23: 현재가×거래량 추정 대신)
   return market === 'us' ? (s.market_cap || 0) * 1e9 : (s.market_cap || 0);   // 미국 market_cap은 십억달러 단위
 }
 function _topFmtUsd(n) {
@@ -782,7 +782,7 @@ function _renderTop() {
   if (cnt) cnt.textContent = `· Top ${top.length}`;
   const foot = document.getElementById('top-foot');
   if (foot) foot.textContent = (market === 'us' ? '미국 보통주만 (워런트·우선주 제외)' : '국내 주식만 (ETF·ETN 제외)')
-    + ' · 거래대금 = 현재가 × 거래량 · 장중 1분마다 갱신';
+    + ' · 거래대금 = 실제 체결 금액(오늘 누적, 시간외 포함) · 장중 1분마다 갱신';
 }
 
 function renderMarketStatBar(stocks) {
