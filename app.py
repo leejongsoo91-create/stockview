@@ -1021,6 +1021,94 @@ def initial_load():
         log.info("kr_stocks.json 없음 — scripts/fetch_kr_stocks.py 실행 필요")
 
 
+# ── 시장 상승·하락·보합 종목 수 (11-23) ─────────────────────────────────────
+# 정규장 동안만 1분마다 새로 세고, 장이 끝나면 마지막 값(정규장 종가 기준)을 고정해 보여 준다.
+# 장 마감 뒤에는 시세가 시간외 가격으로 바뀌므로 브라우저가 직접 세면 애프터마켓이 섞였다.
+MARKET_BREADTH_FILE = os.path.join(os.path.dirname(__file__), "data", "market_breadth.json")
+_breadth: dict = {}
+try:
+    with open(MARKET_BREADTH_FILE, encoding="utf-8") as _f:
+        _breadth = json.load(_f)
+except (OSError, ValueError):
+    _breadth = {}
+
+
+def _breadth_regular(market: str) -> bool:
+    """정규장 시간인지 — 미국 뉴욕 09:30~16:01, 국내 09:00~15:31 (평일). 마감 직후 1분은 종가 반영용."""
+    from zoneinfo import ZoneInfo
+    if market == "us":
+        t = datetime.now(ZoneInfo("America/New_York")); lo, hi = 9 * 60 + 30, 16 * 60 + 1
+    else:
+        t = datetime.now(ZoneInfo("Asia/Seoul")); lo, hi = 9 * 60, 15 * 60 + 31
+    hm = t.hour * 60 + t.minute
+    return t.weekday() < 5 and lo <= hm <= hi
+
+
+def _breadth_count(rows: list) -> dict:
+    up = down = flat = 0
+    for s in rows:
+        p = s.get("change_pct") or 0
+        if p > 0: up += 1
+        elif p < 0: down += 1
+        else: flat += 1
+    return {"n": len(rows), "up": up, "down": down, "flat": flat}
+
+
+def _breadth_rows(market: str) -> list:
+    if market == "us":
+        return [s for s in (cache.get("stocks") or []) if s.get("ticker")]
+    return [s for s in (cache.get("kr_stocks") or []) if (s.get("kind") or "stock") == "stock"]   # ETF·ETN 제외
+
+
+def _breadth_make(market: str, rows: list) -> dict:
+    from zoneinfo import ZoneInfo
+    tz = "America/New_York" if market == "us" else "Asia/Seoul"
+    d = _breadth_count(rows)
+    d.update(at=int(time.time()), date=datetime.now(ZoneInfo(tz)).strftime("%Y-%m-%d"))
+    if market == "kr":
+        d["kospi"] = _breadth_count([s for s in rows if s.get("market") == "KOSPI"])
+        d["kosdaq"] = _breadth_count([s for s in rows if s.get("market") == "KOSDAQ"])
+    return d
+
+
+def refresh_market_breadth():
+    """1분마다: 정규장인 시장만 새로 세서 저장하고 화면에 알린다."""
+    changed = False
+    for m in ("us", "kr"):
+        if not _breadth_regular(m):
+            continue
+        rows = _breadth_rows(m)
+        if len(rows) < 1000:      # 서버 시작 직후 예시 데이터 등
+            continue
+        # 휴장일: 정규장 시간인데 대부분 종목이 시간외 값이면(시장이 안 열림) 세지 않는다 — 직전 거래일 값 유지
+        if sum(1 for s in rows if s.get("session")) > len(rows) * 0.3:
+            continue
+        _breadth[m] = _breadth_make(m, rows)
+        changed = True
+    if changed:
+        try:
+            with open(MARKET_BREADTH_FILE, "w", encoding="utf-8") as f:
+                json.dump(_breadth, f, ensure_ascii=False)
+        except OSError as e:
+            log.warning(f"상승·하락 저장 실패: {e}")
+        _emit_queue.put(("breadth_update", _breadth_payload()))
+
+
+def _breadth_payload() -> dict:
+    out = {}
+    for m in ("us", "kr"):
+        d = _breadth.get(m)
+        if d:
+            d = dict(d, live=_breadth_regular(m) and time.time() - d.get("at", 0) < 300, approx=False)
+        else:   # 정규장 기록이 아직 없음(처음 설치) → 지금 시세로 세되 시간외가 섞였을 수 있다고 표시
+            rows = _breadth_rows(m)
+            if len(rows) < 1000:
+                continue
+            d = dict(_breadth_make(m, rows), live=False, approx=True)
+        out[m] = d
+    return out
+
+
 # ── 스케줄러 ─────────────────────────────────────────────────────────────────
 # 느린 서버에서 30초 주기 작업이 밀릴 때 'missed' 경고가 쌓이지 않도록 1회로 합치고 60초까지 허용
 _scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "misfire_grace_time": 60})
@@ -1028,6 +1116,7 @@ _scheduler.add_job(refresh_stocks,          "interval", minutes=5,  id="stocks")
 _scheduler.add_job(refresh_us_quotes,       "interval", minutes=1,  id="us_quotes")   # 장중만 실제 수집 (네이버, 약 70요청)
 _scheduler.add_job(refresh_kr_stocks,       "interval", minutes=5,  id="kr_stocks")   # 네이버 시세가 살아 있으면 30분에 한 번만 실제 실행
 _scheduler.add_job(refresh_kr_quotes,       "interval", minutes=1,  id="kr_quotes")   # 장중만 실제 수집 (네이버, 약 44요청)
+_scheduler.add_job(refresh_market_breadth,  "interval", minutes=1,  id="market_breadth")   # 정규장만 실제로 셈 (11-23)
 _scheduler.add_job(lambda: refresh_kr_quotes(force=True), "cron", day_of_week="mon-fri", hour=16, minute=5,
                    timezone="Asia/Seoul", id="kr_quotes_close")   # 장 마감 확정 종가 (15:30~15:45 야후 값이 늦을 수 있어 한 번 더)
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
@@ -1075,6 +1164,12 @@ def _get_merged_us_stocks() -> list:
             row.update(pe_eps[tick])
         merged.append(row)
     return merged
+
+
+@app.route("/api/market-breadth")
+def market_breadth():
+    """미국·국내 상승·하락·보합 종목 수 — 정규장 중엔 1분마다, 마감 뒤엔 정규장 종가 기준 고정 (11-23)."""
+    return jsonify(_breadth_payload())
 
 
 @app.route("/api/stocks")

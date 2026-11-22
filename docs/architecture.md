@@ -44,6 +44,7 @@
 | `data/pe_eps_cache.json` | US | PE/EPS 캐시 (서버가 24h마다 갱신, git 추적) |
 | `data/kr_per_cache.json` | KR | KR PER/EPS (서버가 24h마다 갱신, gitignore) |
 | `data/market_flow.json` | 공용 | 시장 전체 일별 거래량·거래대금 `{KOSPI·KOSDAQ·US: {날짜: {volume, amount}}}` — 서버가 매일 장 마감 뒤 한 줄씩 쌓음(거래대금 과거치는 무료 출처 없음), gitignore (11-18) |
+| `data/market_breadth.json` | 공용 | 미국·국내(주식만) 상승·하락·보합 종목 수 `{us, kr: {n, up, down, flat, at, date, kospi?, kosdaq?}}` — 정규장 동안 1분마다 덮어쓰고 마감 뒤엔 그대로(정규장 종가 기준), gitignore (11-23) |
 | `data/us_names_ko.json` | US | 미국 종목 한글명 (네이버 해외주식 목록, 서버가 주 1회 갱신, gitignore). 표시 우선순위: 네이버 → `NAME_KO` 수동 사전 → 빈칸 (`df.name_ko()`) |
 | `data/news_translations.json` | 공용 | 뉴스 영어 제목 → 한글 번역 저장 `{titles: {원문: [한글, 서비스, 시각]}, usage: {YYYY-MM: {ms, google}}, log}` — 14일 지나면 지움, 서비스별 월 글자 수 상한(Microsoft 190만·Google 45만) 계산에 사용, gitignore (11-22, 결정 007) |
 | `data/signal_history.json`, `voice_briefing.json`, `audio/` | 공통 | 서버 런타임 상태 (gitignore) |
@@ -64,6 +65,7 @@
 | `refresh_reports` | 15분 | |
 | `refresh_fear_greed` | 30분 | CNN Fear & Greed. 현재 점수·지난 값 4개 + `history`(1년 추이, 하루 1개) + `components`(구성 지표 7개 점수·판정, 11-20부터 `series` 원본 값 1년 [[ms, 값]] 미국 거래일당 1개 + 모멘텀·VIX는 `compare` 비교선 125일·50일 평균) — 홈 상단 배지·상세 창(지표를 누르면 원본 데이터), Brief 게이지에서 사용 (11-17) — 응답 약 65 KB |
 | `record_us_market_flow(slot)` | 뉴욕 평일 09:29·16:01·20:05 + 서버 시작 때(기록 시각 10분 안이면) | 미국 보통주 **누적** 거래량·**실제 체결 금액**(네이버 `accumulatedTradingValueRaw`) 합계를 그 시각에 새로 받아 `data/market_flow.json` `US[날짜].s0929·s1601·s2005`에 기록(이미 있는 칸은 덮어쓰지 않음, AAPL 오늘 체결 없으면 휴장). 네이버 누적값엔 시간외가 계속 더해져(11-20 16:20 110.6억주 → 19:30 123.8억주) `/api/market-flow`가 차이로 나눔: 프리 = s0929, **정규장 = s1601 − s0929**(막대·평균 기준), 애프터 = s2005 − s1601. 11-19·20은 예전 한 번 저장(현재가×거래량 추정, `mixed`). **국내는 11-21부터 저장하지 않음** — 코스피·코스닥은 다음 금융 지수 일별(`finance.daum.net/api/market_index/days`, 거래대금 백만원·거래량 천주, 500일, 1시간 캐시, 15:40 전엔 오늘 줄 제외)을 불러오고, 실패하면 예전 저장값 + 네이버 거래량 과거치(fchart). 16:10 네이버 값은 장 마감 뒤 확정 전 중간값이었음(11-20 코스피 16:10 14.11조 → 확정 14.95조) (11-18, 11-21 변경) |
+| `refresh_market_breadth` | 1분마다 (정규장만 실제로 셈: 뉴욕 09:30~16:01, 국내 09:00~15:31) | 상승·하락·보합 종목 수를 세서 `data/market_breadth.json`에 저장하고 `breadth_update`로 알림. 정규장 시간인데 30% 넘는 종목이 시간외 값이면 휴장으로 보고 건너뜀. `/api/market-breadth`는 `live`(장중)·`approx`(정규장 기록 전, 지금 시세로 셈) 표시 — 홈 상태 줄 배지 (11-23) |
 | (요청 시) `/api/market-investors?market=KOSPI\|KOSDAQ&days=` | 일별 1시간 · 장중 60초 캐시 | 코스피·코스닥 투자자별 **순매수**(원) — 다음 금융 `finance.daum.net/api/investor/{시장}/days\|times?details=true`(Referer 필수, 없으면 403). 개인·외국인·기관 + 기관 세부 7개(금융투자·보험·투신·사모·은행·기타금융·연기금)·기타법인·기타외국인, 일별 약 10년(한 번에 300일)·장중 1~2분 갱신(20:00까지). 오늘 일별 줄이 없으면 장중 값을 붙임. 총 매수·매도 금액·주식 수는 KRX 정보데이터시스템만 있고 로그인 필요(11-20). 네이버 `m.stock.naver.com/api/index/{시장}/trend`(개인·외국인·기관 3개만)와 날마다 수십억~수백억 차이 — 홈 📊 시장 거래 창 (11-20) |
 | `refresh_earnings` | 1시간 | |
 | `refresh_market_caps`, `refresh_extra_fields`(52W) | 6시간 | |

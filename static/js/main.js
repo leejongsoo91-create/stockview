@@ -794,36 +794,38 @@ function renderMarketStatBar(stocks) {
     _waitRealUs();
     return;
   }
-  // 오늘 오른·내린·변동 없는 종목 수 (종목마다 1개로 셈 — 시총 가중 지수와 다를 수 있음)
-  const count = list => {
-    let up = 0, down = 0, flat = 0;
-    list.forEach(s => { const p = parseFloat(s.change_pct) || 0; if (p > 0) up++; else if (p < 0) down++; else flat++; });
-    return { up, down, flat };
-  };
-  const group = (label, n, c, tip) =>
-    `<span class="msb-group" title="${tip}"><span class="msb-label">${label} ${n.toLocaleString()}종목</span>` +
-    `<span class="msb-up">상승 ${c.up.toLocaleString()}</span><span class="msb-sep">·</span>` +
-    `<span class="msb-down">하락 ${c.down.toLocaleString()}</span><span class="msb-sep">·</span>` +
-    `<span class="msb-flat">보합 ${c.flat.toLocaleString()}</span></span>`;
-  el.title = '';
-  let html = group('미국', stocks.length, count(stocks), '종목검색의 미국 전체 종목 중 오늘 오른 종목·내린 종목·변동 없는 종목 수');
-  // 국내 (11-23): 주식만(ETF·ETN 제외) — 코스피·코스닥 합계, 마우스를 올리면 시장별
-  const kr = (window._krStocks || []).filter(s => (s.kind || 'stock') === 'stock');
-  if (kr.length) {
-    const ks = kr.filter(s => s.market === 'KOSPI'), kq = kr.filter(s => s.market === 'KOSDAQ');
-    const f = (name, l) => { const c = count(l); return `${name} ${l.length.toLocaleString()}종목: 상승 ${c.up} · 하락 ${c.down} · 보합 ${c.flat}`; };
-    html += `<span class="msb-div"></span>` + group('국내', kr.length, count(kr),
-      `국내 주식(ETF·ETN 제외) 중 오늘 오른·내린·변동 없는 종목 수&#10;${f('코스피', ks)}&#10;${f('코스닥', kq)}`);
-  } else if (!_msbKrLoading) {   // 국내 목록을 아직 안 받았으면 한 번 받아서 다시 그림
-    _msbKrLoading = true;
-    api('/api/kr-stocks').then(d => {
-      if (Array.isArray(d) && d.length) window._krStocks = d;
-      if (_currentView === 'home') renderMarketStatBar(_homeStocks || stocks);
-    }).catch(() => {}).finally(() => { _msbKrLoading = false; });
-  }
-  el.innerHTML = html;
+  _loadBreadth();
 }
-let _msbKrLoading = false;
+
+// 상승·하락·보합 배지 (11-23): 서버가 정규장 동안 1분마다 세고, 마감 뒤엔 정규장 종가 기준으로 고정한 값
+//   (브라우저에서 세면 장 마감 뒤 시간외 가격이 섞였음). 새 값은 소켓 breadth_update로 바로 옴
+let _breadthData = null, _breadthAt = 0;
+async function _loadBreadth(force) {
+  if (!force && _breadthData && Date.now() - _breadthAt < 50000) { _renderBreadth(); return; }
+  try { _breadthData = await api('/api/market-breadth'); _breadthAt = Date.now(); } catch {}
+  _renderBreadth();
+}
+function _renderBreadth() {
+  const el = document.getElementById('market-stat-bar');
+  if (!el || !_breadthData) return;
+  const md = ymd => { const p = (ymd || '').split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : ''; };
+  const n = v => (v || 0).toLocaleString();
+  const line = (name, c) => `${name} ${n(c.n)}종목: 상승 ${n(c.up)} · 하락 ${n(c.down)} · 보합 ${n(c.flat)}`;
+  const badge = (label, d, extra) => {
+    if (!d) return '';
+    const state = d.live ? `<span class="msb-state live"><span class="msb-live-dot"></span>장중</span>`
+      : `<span class="msb-state">${d.approx ? '시간외 포함' : `마감 ${md(d.date)}`}</span>`;
+    const time = new Date((d.at || 0) * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    const tip = (d.live ? `정규장 실시간 (1분마다, ${time} 기준)` : d.approx ? '정규장 기록 전이라 지금 시세(시간외 포함)로 셈'
+      : `정규장 종가 기준 (${md(d.date)} ${time} 마지막 집계)`) + `&#10;${line(label, d)}` + (extra || '');
+    return `<span class="fg-badge msb-badge" title="${tip}"><span class="msb-label">${label}</span>${state}` +
+      `<span class="msb-up">상승 ${n(d.up)}</span><span class="msb-down">하락 ${n(d.down)}</span><span class="msb-flat">보합 ${n(d.flat)}</span></span>`;
+  };
+  const kr = _breadthData.kr;
+  el.title = '';
+  el.innerHTML = badge('미국', _breadthData.us) +
+    badge('국내', kr, kr && kr.kospi ? `&#10;(ETF·ETN 제외)&#10;${line('코스피', kr.kospi)}&#10;${line('코스닥', kr.kosdaq)}` : '');
+}
 
 // ── 홈 📊 시장 거래 창 (11-18) — 코스피·코스닥·미국 시장 전체 일별 거래량·거래대금 ──────────
 // 국내는 다음 금융 과거치(11-21~, 약 2년)를 불러오고, 미국은 무료 과거치가 없어 서버가 매일 장 마감 뒤 저장
@@ -2397,7 +2399,6 @@ function initSocketIO() {
       }
       if (Array.isArray(krStocks) && krStocks.length) window._krStocks = krStocks;   // 글로벌 검색·홈 상위 종목 공용
       if (_currentView === 'home' && _top.market === 'kr') _renderTop();
-      if (_currentView === 'home' && _homeStocks) renderMarketStatBar(_homeStocks);   // 국내 상승·하락 수 갱신
       if (typeof _checkAllAlerts === 'function') _checkAllAlerts(krStocks);
       updateTimestamp();
     } catch {}
@@ -2414,6 +2415,9 @@ function initSocketIO() {
       updateTimestamp();
     } catch {}
   });
+
+  // 상승·하락 수 (정규장 1분마다, 11-23)
+  socket.on('breadth_update', d => { if (d) { _breadthData = d; _breadthAt = Date.now(); _renderBreadth(); } });
 
   // 뉴스 갱신 Push
   socket.on('news_update', async () => {
