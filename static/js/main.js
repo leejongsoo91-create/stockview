@@ -794,23 +794,36 @@ function renderMarketStatBar(stocks) {
     _waitRealUs();
     return;
   }
-  let up = 0, down = 0, flat = 0;
-  stocks.forEach(s => {
-    const p = parseFloat(s.change_pct) || 0;
-    if (p > 0) up++;
-    else if (p < 0) down++;
-    else flat++;
-  });
-  // 미국 전 종목 중 오늘 오른·내린·변동 없는 종목 수 (종목마다 1개로 셈 — 시총 가중 지수와 다를 수 있음)
-  el.title = '종목검색의 미국 전체 종목 중 오늘 오른 종목·내린 종목·변동 없는 종목 수';
-  el.innerHTML =
-    `<span class="msb-label">미국 ${stocks.length.toLocaleString()}종목</span>` +
-    `<span class="msb-up">상승 ${up.toLocaleString()}</span>` +
-    `<span class="msb-sep">·</span>` +
-    `<span class="msb-down">하락 ${down.toLocaleString()}</span>` +
-    `<span class="msb-sep">·</span>` +
-    `<span class="msb-flat">보합 ${flat.toLocaleString()}</span>`;
+  // 오늘 오른·내린·변동 없는 종목 수 (종목마다 1개로 셈 — 시총 가중 지수와 다를 수 있음)
+  const count = list => {
+    let up = 0, down = 0, flat = 0;
+    list.forEach(s => { const p = parseFloat(s.change_pct) || 0; if (p > 0) up++; else if (p < 0) down++; else flat++; });
+    return { up, down, flat };
+  };
+  const group = (label, n, c, tip) =>
+    `<span class="msb-group" title="${tip}"><span class="msb-label">${label} ${n.toLocaleString()}종목</span>` +
+    `<span class="msb-up">상승 ${c.up.toLocaleString()}</span><span class="msb-sep">·</span>` +
+    `<span class="msb-down">하락 ${c.down.toLocaleString()}</span><span class="msb-sep">·</span>` +
+    `<span class="msb-flat">보합 ${c.flat.toLocaleString()}</span></span>`;
+  el.title = '';
+  let html = group('미국', stocks.length, count(stocks), '종목검색의 미국 전체 종목 중 오늘 오른 종목·내린 종목·변동 없는 종목 수');
+  // 국내 (11-23): 주식만(ETF·ETN 제외) — 코스피·코스닥 합계, 마우스를 올리면 시장별
+  const kr = (window._krStocks || []).filter(s => (s.kind || 'stock') === 'stock');
+  if (kr.length) {
+    const ks = kr.filter(s => s.market === 'KOSPI'), kq = kr.filter(s => s.market === 'KOSDAQ');
+    const f = (name, l) => { const c = count(l); return `${name} ${l.length.toLocaleString()}종목: 상승 ${c.up} · 하락 ${c.down} · 보합 ${c.flat}`; };
+    html += `<span class="msb-div"></span>` + group('국내', kr.length, count(kr),
+      `국내 주식(ETF·ETN 제외) 중 오늘 오른·내린·변동 없는 종목 수&#10;${f('코스피', ks)}&#10;${f('코스닥', kq)}`);
+  } else if (!_msbKrLoading) {   // 국내 목록을 아직 안 받았으면 한 번 받아서 다시 그림
+    _msbKrLoading = true;
+    api('/api/kr-stocks').then(d => {
+      if (Array.isArray(d) && d.length) window._krStocks = d;
+      if (_currentView === 'home') renderMarketStatBar(_homeStocks || stocks);
+    }).catch(() => {}).finally(() => { _msbKrLoading = false; });
+  }
+  el.innerHTML = html;
 }
+let _msbKrLoading = false;
 
 // ── 홈 📊 시장 거래 창 (11-18) — 코스피·코스닥·미국 시장 전체 일별 거래량·거래대금 ──────────
 // 국내는 다음 금융 과거치(11-21~, 약 2년)를 불러오고, 미국은 무료 과거치가 없어 서버가 매일 장 마감 뒤 저장
@@ -1382,6 +1395,35 @@ function renderEconomicCalendar(events, elId = 'eco-cal-body') {
   }).join('');
 }
 
+// ── 홈 경제 일정 배지 + 창 (11-23: 홈 아래 칸 대신, 공포·탐욕 배지처럼) ──
+let _homeEco = null;
+async function loadHomeEcoBadge() {
+  try { _homeEco = await api('/api/economic-calendar?days=21'); } catch { _homeEco = null; }
+  const b = document.getElementById('eco-badge');
+  if (!b) return;
+  if (!_homeEco) { b.hidden = true; return; }
+  // 가장 가까운 일정 (같은 날 여러 건이면 중요도 높은 것)
+  const rank = { high: 0, medium: 1, low: 2 };
+  const next = [..._homeEco].sort((a, c) => (a.days_until - c.days_until) || ((rank[a.importance] ?? 3) - (rank[c.importance] ?? 3)))[0];
+  const dday = ev => ev.is_today ? '오늘' : ev.is_tomorrow ? '내일' : `D-${ev.days_until}`;
+  const sameDay = next ? _homeEco.filter(e => e.date === next.date).length : 0;
+  b.innerHTML = `<span>📅 경제 일정</span>` +
+    (next ? `<span class="eco-badge-when${next.is_today ? ' today' : ''}">${dday(next)}</span>` +
+            `<span class="eco-badge-ev">${_IMP_DOT[next.importance] || ''}${koEcoEvent(next.event)}${sameDay > 1 ? ` 외 ${sameDay - 1}` : ''}</span>`
+          : `<span class="eco-badge-ev">3주 안 일정 없음</span>`) +
+    `<span class="fg-badge-arrow">›</span>`;
+  b.hidden = false;
+  if (!b._bound) {
+    b._bound = true;
+    const ov = document.getElementById('eco-modal');
+    b.addEventListener('click', () => { renderEconomicCalendar(_homeEco || [], 'eco-modal-body'); ov.hidden = false; });
+    const close = () => { ov.hidden = true; };
+    document.getElementById('eco-modal-close')?.addEventListener('click', close);
+    ov?.addEventListener('click', e => { if (e.target === ov) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && ov && !ov.hidden) close(); });
+  }
+}
+
 async function loadEconomicCalendar(elId = 'eco-cal-body') {
   try {
     const events = await api('/api/economic-calendar?days=21');
@@ -1411,7 +1453,7 @@ async function loadHome() {
   renderHomeNews(news);
   buildNewsTape(news);
   renderMarketStatBar(stocks);
-  loadEconomicCalendar();
+  loadHomeEcoBadge();
   renderHomeWatchlistSummary();
   renderHomePortfolioSummary();
   // 섹터 기간 버튼 이벤트 (최초 1회 바인딩)
@@ -2355,6 +2397,7 @@ function initSocketIO() {
       }
       if (Array.isArray(krStocks) && krStocks.length) window._krStocks = krStocks;   // 글로벌 검색·홈 상위 종목 공용
       if (_currentView === 'home' && _top.market === 'kr') _renderTop();
+      if (_currentView === 'home' && _homeStocks) renderMarketStatBar(_homeStocks);   // 국내 상승·하락 수 갱신
       if (typeof _checkAllAlerts === 'function') _checkAllAlerts(krStocks);
       updateTimestamp();
     } catch {}

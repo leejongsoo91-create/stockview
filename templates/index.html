@@ -62,8 +62,24 @@
         <div class="home-stat-right">
           <!-- 공포·탐욕 배지 (11-17: 왼쪽 큰 게이지 패널 대신) — 누르면 상세 창 -->
           <button type="button" id="fg-badge" class="fg-badge" title="CNN 공포·탐욕 지수 — 눌러서 자세히 보기" hidden></button>
+          <!-- 경제 일정 배지 (11-23: 홈 아래 칸 대신) — 가장 가까운 일정, 누르면 3주 일정 창 -->
+          <button type="button" id="eco-badge" class="fg-badge eco-badge" title="다가오는 미국 주요 경제지표 발표 — 눌러서 3주 일정 보기" aria-haspopup="dialog" hidden></button>
           <div id="market-stat-bar" class="market-stat-bar"></div>
           <button type="button" id="mf-btn" class="mf-btn" title="시장 전체 일별 거래량·거래대금 추이 (코스피·코스닥·미국)" aria-haspopup="dialog">📊 시장 거래</button>
+        </div>
+      </div>
+
+      <!-- 📅 경제 일정 창 (11-23) -->
+      <div id="eco-modal" class="fg-modal-overlay" hidden>
+        <div class="fg-modal-box" role="dialog" aria-modal="true" aria-labelledby="eco-modal-title">
+          <div class="fg-modal-head">
+            <h3 id="eco-modal-title">📅 경제 일정<small>다가오는 미국 주요 경제지표 발표 · 3주</small></h3>
+            <button type="button" class="fg-modal-close" id="eco-modal-close" aria-label="닫기">✕</button>
+          </div>
+          <div class="fg-modal-body">
+            <div class="eco-legend"><span class="eco-dot eco-high"></span>중요도 높음 <span class="eco-dot eco-med"></span>보통 <span class="eco-dot eco-low"></span>낮음 · 발표일은 미국 날짜 기준</div>
+            <div id="eco-modal-body" class="eco-cal-body"></div>
+          </div>
         </div>
       </div>
 
@@ -132,17 +148,6 @@
           </div>
         </div>
 
-      </div>
-
-      <!-- 경제 지표 캘린더 -->
-      <div class="eco-cal-wrap">
-        <div class="eco-cal-header">
-          <span class="eco-cal-title">📅 경제 일정</span>
-          <span class="eco-cal-sub">다가오는 미국 주요 경제지표 발표</span>
-        </div>
-        <div id="eco-cal-body" class="eco-cal-body">
-          <span style="color:var(--muted);font-size:13px">불러오는 중…</span>
-        </div>
       </div>
 
     </div>

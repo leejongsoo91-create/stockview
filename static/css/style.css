@@ -307,6 +307,8 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .msb-up   { color: var(--green); }
 .msb-down { color: var(--red); }
 .msb-flat { color: var(--muted); }
+.msb-group { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.msb-div   { width: 1px; height: 12px; background: var(--border); margin: 0 4px; }   /* 미국 | 국내 구분 (11-23) */
 /* 📊 시장 거래 버튼 (11-18) — 상태 줄 오른쪽 끝 */
 .mf-btn {
   background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px; color: var(--muted);
@@ -352,6 +354,12 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 @media (max-width: 600px) { .inv-row { grid-template-columns: 78px 1fr 70px; gap: 6px; font-size: 12px; } }
 /* 상태 줄 오른쪽 묶음: 공포·탐욕 배지 + 미국 종목 수 */
 .home-stat-right { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 760px) {   /* 휴대폰: 배지·상승/하락 수가 화면 밖으로 밀리지 않게 줄바꿈 (11-23) */
+  .home-status-bar { flex-wrap: wrap; }
+  .home-stat-right { flex: 1 1 100%; min-width: 0; justify-content: flex-start; gap: 8px; }
+  .home-stat-right .market-stat-bar { margin-left: 0; flex-wrap: wrap; row-gap: 4px; }
+  .eco-badge-ev { max-width: 150px; }
+}
 
 /* ── HOME — 지수·선물·채권 Overview 3그룹 ───────────────────────────────── */
 .home-overview {
@@ -589,6 +597,12 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .fg-badge-score  { font-weight: 800; }
 .fg-badge-rating { font-weight: 700; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; color: var(--fg-on); }
 .fg-badge-arrow  { color: var(--muted); font-size: 13px; line-height: 1; }
+/* 경제 일정 배지 (11-23) — 공포·탐욕 배지 모양 재사용 */
+.eco-badge-when  { font-weight: 700; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; background: var(--bg-input); color: var(--text); }
+.eco-badge-when.today { background: var(--red); color: #fff; }
+.eco-badge-ev    { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eco-badge-ev .eco-dot { flex-shrink: 0; }
+.eco-legend      { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-bottom: 10px; }
 
 /* 공포·탐욕 상세 창 */
 .fg-modal-overlay {
