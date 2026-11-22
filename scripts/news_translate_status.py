@@ -63,6 +63,8 @@ def main() -> None:
 
     print(f"\n📰 뉴스 제목 번역 상태 — {where}")
     print(f"   {st['month']} (UTC 기준 달) · 저장된 번역 {st['cached_titles']:,}건\n")
+    if st.get("enabled") is False:
+        print("   ⏸ 이 서버는 새 번역을 하지 않습니다 (STOCKVIEW_TRANSLATE=1인 서버만 번역 — 집 서버). 저장된 번역은 그대로 보여 줘요.\n")
     for i, p in enumerate(st["providers"], 1):
         state = "알 수 없음" if p["ok"] is None else ("✅ 사용 가능" if p["ok"] else f"⏸ 쉬는 중 — {p['reason'].splitlines()[0][:70]}")
         role = "주 번역" if p["id"] == "ms" else "예비 (①이 안 될 때만)"

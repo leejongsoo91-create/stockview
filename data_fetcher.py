@@ -102,6 +102,8 @@ RSS_FEEDS = [
     {"url": "https://oilprice.com/rss/main",                                      "source": "OilPrice.com",    "cat": "energy"},
     {"url": "https://www.sec.gov/news/pressreleases.rss",                         "source": "SEC",             "cat": "policy"},
     {"url": "https://www.ecb.europa.eu/rss/press.html",                           "source": "ECB",             "cat": "policy"},
+    # 11-23 스포츠 분야 (주요 뉴스에는 안 나옴)
+    {"url": "https://feeds.bbci.co.uk/sport/rss.xml",                             "source": "BBC Sport",       "cat": "sports"},
 ]
 
 # 국내 경제/증시 뉴스 -- 실제 접속 테스트로 살아있는 피드만 선정 (2026-08-25)
@@ -129,6 +131,9 @@ KR_RSS_FEEDS = [
     {"url": "https://www.yna.co.kr/rss/international.xml",                        "source": "연합뉴스 국제", "cat": "world"},
     {"url": "https://www.yna.co.kr/rss/industry.xml",                             "source": "연합뉴스 산업", "cat": "auto:econ"},
     {"url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01",         "source": "SBS 뉴스",      "cat": "auto:general"},
+    # 11-23 스포츠 분야 (실제 접속 확인: 연합 120건·SBS 29건)
+    {"url": "https://www.yna.co.kr/rss/sports.xml",                               "source": "연합뉴스 스포츠", "cat": "sports"},
+    {"url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=09",         "source": "SBS 스포츠",    "cat": "sports"},
 ]
 
 REPORT_FEEDS = [
@@ -2894,14 +2899,16 @@ def _time_ago(published_parsed) -> str:
 
 # ── 뉴스 분야 (11-22) ─────────────────────────────────────────────────────────
 # 출처 단위로 정하고(피드의 "cat"), "auto:<기본>" 피드만 제목 단어로 고른다. 위에서부터 먼저 맞는 분야.
-NEWS_CATS = ("econ", "world", "tech", "energy", "policy", "general")
+NEWS_CATS = ("econ", "world", "tech", "energy", "policy", "sports", "general")
 _CAT_WORDS = [
-    # 스포츠·연예는 나라 이름이 들어가도 세계·정치가 아니라 종합으로 (11-22 "프로야구 한화, 일본서 훈련")
-    ("general", re.compile(r"\b(nfl|nba|mlb|soccer|football|tennis|golf|olympics?|celebrity|movie|album)\b|야구|축구|농구|배구|골프|올림픽|월드컵|K리그|KBO|선수|연예|드라마|영화|배우|가수|아이돌|예능|결혼|부고", re.I)),
+    # 스포츠는 나라 이름이 들어가도 세계·정치가 아니라 스포츠로 (11-22 "프로야구 한화, 일본서 훈련", 11-23 스포츠 분리)
+    ("sports",  re.compile(r"\b(nfl|nba|mlb|nhl|soccer|football|tennis|golf|olympics?|premier league|world cup|f1|ufc)\b|야구|축구|농구|배구|골프|올림픽|월드컵|K리그|KBO|프로야구|프로축구|선수|전적\]|쇼트트랙|빙속|피겨|e스포츠", re.I)),
+    # 연예·부고는 종합으로
+    ("general", re.compile(r"\b(celebrity|movie|album)\b|연예|드라마|영화|배우|가수|아이돌|예능|결혼|부고", re.I)),
     ("energy", re.compile(r"\b(oil|crude|opec|brent|natural gas|lng|gasoline|refiner\w*)\b|유가|원유|석유|천연가스|정유|휘발유", re.I)),
-    ("tech",   re.compile(r"\b(ai|a\.i\.|chips?|semiconductors?|software|openai|nvidia|apple|google|microsoft|meta|amazon|tesla|cyber\w*|robot\w*|quantum|smartphones?)\b|반도체|인공지능|(?<![A-Za-z])AI(?![A-Za-z])|챗GPT|로봇|소프트웨어|플랫폼|해킹|사이버|스마트폰|통신사|배터리|우주", re.I)),
+    ("tech",   re.compile(r"\b(ai|a\.i\.|chips?|semiconductors?|software|openai|nvidia|apple|google|microsoft|meta|amazon|tesla|cyber\w*|robot\w*|quantum|smartphones?)\b|반도체|인공지능|(?<![A-Za-z])AI(?![A-Za-z])|챗GPT|엔비디아|애플|구글|테슬라|오픈AI|로봇|소프트웨어|플랫폼|해킹|사이버|스마트폰|통신사|배터리|우주", re.I)),
     ("econ",   re.compile(r"\b(stocks?|shares|markets?|economy|economic|inflation|tariffs?|fed|rates?|earnings|banks?|dollar|bonds?|treasur\w*|gdp|trade|investors?|prices?|sales|profit\w*|ipo|merger|acquisition)\b|증시|코스피|코스닥|주가|금리|환율|경제|기업|실적|수출|수입|매출|투자|부동산|은행|금융|물가|관세|산업|공장|일자리|고용|세금|예산|주식|채권|원화|달러", re.I)),
-    ("world",  re.compile(r"\b(election|president|war|minister|government|parliament|congress|senate|ukraine|russia|israel|gaza|iran|china|beijing|nato|military|troops|ceasefire|diplomat\w*|sanctions?|trump|white house)\b|대통령|국회|정부|장관|여당|야당|선거|북한|외교|전쟁|국방|군|정상회담|총리|의원|민주당|국민의힘|미국|중국|일본|러시아|우크라이나|이스라엘", re.I)),
+    ("world",  re.compile(r"\b(election|president|war|minister|government|parliament|congress|senate|ukraine|russia|israel|gaza|iran|china|beijing|nato|military|troops|ceasefire|diplomat\w*|sanctions?|trump|white house)\b|대통령|국회|정부|장관|여당|야당|선거|북한|외교|전쟁|국방|군|정상회담|총리|의원|민주당|국민의힘|미국|중국|일본|러시아|우크라|이스라엘|트럼프|(?<![가-힣])이란|가자지구|팔레스타인|중동|나토|유엔|EU|유럽|바레인|시리아|대만|기후총회", re.I)),
 ]
 
 
@@ -3202,6 +3209,9 @@ def fetch_finnhub_top_company_news(tickers: list[str], per: int = 4) -> list[dic
 NEWS_TR_FILE   = os.path.join(os.path.dirname(__file__), "data", "news_translations.json")
 NEWS_TR_LIMITS = {"ms": 1_900_000, "google": 450_000}   # 월 상한(글자) — 무료 200만·50만에서 여유를 뺀 값
 NEWS_TR_NAMES  = {"ms": "Microsoft", "google": "Google Cloud"}
+# 번역은 환경변수 STOCKVIEW_TRANSLATE=1인 서버만 한다(11-23) — 집 서버만 켜서 무료 한도를 서버 하나가 쓰게.
+# 꺼진 서버(작업 PC 5001·병렬 5002~)도 이미 저장된 번역은 그대로 보여 준다.
+NEWS_TR_ENABLED = os.environ.get("STOCKVIEW_TRANSLATE", "").strip() == "1"
 _tr_lock  = threading.Lock()          # 파일·메모리 상태 보호
 _tr_run   = threading.Lock()          # 번역 작업 한 번에 하나만
 _tr_state: dict | None = None
@@ -3323,7 +3333,7 @@ def _tr_ready(p: str) -> str | None:
 
 def translate_news_titles(titles: list[str]) -> int:
     """아직 번역 안 된 영어 제목을 번역해 저장. 새로 번역한 개수를 돌려준다. 다른 번역이 돌고 있으면 0."""
-    if not _tr_run.acquire(blocking=False):
+    if not NEWS_TR_ENABLED or not _tr_run.acquire(blocking=False):
         return 0
     try:
         with _tr_lock:
@@ -3380,7 +3390,7 @@ def translation_status() -> dict:
     with _tr_lock:
         st = _tr_load()
         u = st["usage"].get(_tr_month(), {})
-        out = {"month": _tr_month(), "cached_titles": len(st["titles"]), "providers": [],
+        out = {"month": _tr_month(), "cached_titles": len(st["titles"]), "providers": [], "enabled": NEWS_TR_ENABLED,
                "last": st["log"][-5:]}
     for p in ("ms", "google"):
         why = _tr_ready(p)

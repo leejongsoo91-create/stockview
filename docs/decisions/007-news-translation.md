@@ -27,6 +27,10 @@
 - 키 파일: `api/azure-translator.txt`(1줄 키, 2줄 지역), Google은 기존 `api/google-tts-key.json`. 저장소 공개라 키는 `api/`에만.
 - 키 받는 법: `docs/guides/azure-translator-key.md` (터미널: `scripts/news_translate_status.py --guide`).
 
+## 11-23 추가: 번역은 집 서버만
+- Azure 무료 한도(월 200만 자)는 키 하나에 걸려 있는데 서버마다 사용량을 따로 세서, 작업 PC와 집 서버가 함께 번역하면 월 약 220만 자로 넘칠 수 있음.
+- → `STOCKVIEW_TRANSLATE=1`인 서버만 번역(기본은 끔). 집 서버 systemd 설정에만 넣는다. 끈 서버도 `data/news_translations.json`에 저장된 번역은 그대로 보여 준다.
+
 ## 바꿀 조건
 - 사용량이 월 190만 자에 자주 닿으면: 번역 대상 출처 줄이기 또는 유료 전환 검토(사용자 확인 필수).
 - Microsoft F0 정책이 바뀌어 요금이 생기면 즉시 키 파일을 빼서 끈다(원문 표시로 자동 전환).

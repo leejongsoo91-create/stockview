@@ -1723,14 +1723,18 @@ let _showBookmarkedOnly = false;
 
 // 11-22 개편: 분야 탭·주요 뉴스·한 줄 목록·오른쪽 요약. 보기 설정(분야·오른쪽 칸·한글/원문)은 localStorage NXV
 const NX_CATS = { all: '전체', econ: '📈 경제·증시', world: '🌍 세계·정치', tech: '💻 기술',
-                  energy: '🛢 에너지', policy: '🏛 정책기관', general: '📰 종합' };
-// 주요 뉴스 카드 후보: 통신사·주요 언론 (출처 이름 앞부분)
+                  energy: '🛢 에너지', policy: '🏛 정책기관', sports: '⚽ 스포츠', general: '📰 종합' };
+// 실시간 주요 뉴스 후보: 통신사·주요 언론 (출처 이름 앞부분). 스포츠·종합(연예·부고)은 넣지 않는다 (11-23)
 const _NX_TOP = /^(Reuters|AP|Financial Times|NYT|BBC|연합뉴스|Finnhub\/(Reuters|Bloomberg))/;
 let _nxView = (() => {
   const d = { cat: 'all', side: true, lang: 'ko' };
   try { return Object.assign(d, JSON.parse(localStorage.getItem('NXV') || '{}')); } catch { return d; }
 })();
 let _nxLimit = 150;
+const _NX_HOT_SKIP = new Set(['sports', 'general']);
+let _nxHot = [];                                   // 실시간 주요 뉴스 (오른쪽 칸 ④ · 한 줄 넘김 ②가 같이 씀)
+let _nxRot = { i: 0, timer: null, hover: false };  // ② 한 줄 자동 넘김 상태
+let _nxPending = null;                             // ⑤ 아직 화면에 안 넣은 새 뉴스 목록
 function _nxSave() { try { localStorage.setItem('NXV', JSON.stringify(_nxView)); } catch {} }
 function _nxTitle(n) { return (_nxView.lang === 'ko' && n.title_ko) ? n.title_ko : n.title; }
 function _newsTitleKo(n) { return n.title_ko || n.title; }   // 홈·테이프용
@@ -2034,27 +2038,31 @@ function renderNews() {
   };
   const open = n => `onclick="window.open('${_escHtml(n.url)}','_blank')"`;
 
-  // ⭐ 주요 뉴스: 통신사·주요 언론의 12시간 이내 최신 3건 (북마크·검색 중엔 숨김)
+  // 실시간 주요 뉴스: 통신사·주요 언론의 12시간 이내 최신 15건 (지금 분야 탭을 따름, 스포츠·종합 제외, 북마크·검색 중엔 숨김)
+  //   데스크톱은 오른쪽 칸 맨 위(④), 오른쪽 칸을 접었거나 휴대폰이면 목록 위 한 줄 넘김(②) — 11-23
   const now = Date.now() / 1000;
-  const hero = (_showBookmarkedOnly || kw) ? [] :
-    (() => {   // 같은 언론사가 겹치지 않게 (연합뉴스 정치·국제, NYT World·Politics는 한 곳으로 봄)
-      const used = new Set(), out = [];
+  _nxHot = (_showBookmarkedOnly || kw) ? [] :
+    (() => {   // 같은 제목이 두 출처에서 오면 하나만
+      const seen = new Set(), out = [];
       for (const n of list) {
-        if (out.length >= 3) break;
-        if (!_NX_TOP.test(n.source || '') || now - (n.timestamp || 0) >= 12 * 3600) continue;
-        const key = (n.source || '').replace(/^Finnhub\//, '').split(' ')[0];
-        if (!used.has(key)) { used.add(key); out.push(n); }
+        if (out.length >= 15) break;
+        if (!_NX_TOP.test(n.source || '') || _NX_HOT_SKIP.has(catOf(n)) || now - (n.timestamp || 0) >= 12 * 3600) continue;
+        if (seen.has(n.title)) continue;
+        seen.add(n.title); out.push(n);
       }
       return out;
     })();
-  if (heroEl) heroEl.innerHTML = hero.length < 2 ? '' :
-    `<div class="nx-h">⭐ 주요 뉴스 <span>— 통신사·주요 언론 최신</span></div><div class="nx-hero">` +
-    hero.map(n => `<div class="nx-hc" ${open(n)} title="${_escHtml(n.title)}"><div class="t">${_highlightKw(_nxTitle(n), kw)}</div>` +
-      `${n.summary ? `<div class="s">${_escHtml(n.summary)}</div>` : ''}${meta(n)}</div>`).join('') + '</div>';
-  const heroSet = new Set(hero.length < 2 ? [] : hero);
+  if (heroEl) {
+    _nxNewBarRender();
+    heroEl.innerHTML = (_nxHot.length ? `<div class="nx-rot" id="nx-rot" onmouseenter="_nxRot.hover=true" onmouseleave="_nxRot.hover=false"></div>` : '');
+    if (_nxRot.i >= _nxHot.length) _nxRot.i = 0;
+    _nxRotShow();
+    _nxRotStart();
+  }
+  _renderNewsHot();
 
   // 시간대별 묶음 한 줄 목록
-  const rest = list.filter(n => !heroSet.has(n));
+  const rest = list;
   const shown = rest.slice(0, _nxLimit);
   const grp = n => { const h = (now - (n.timestamp || 0)) / 3600; return h < 1 ? '최근 1시간' : h < 6 ? '6시간 이내' : h < 24 ? '오늘' : '그 이전'; };
   let html = '', g = null;
@@ -2073,6 +2081,94 @@ function renderNews() {
   if (rest.length > shown.length)
     html += `<button class="nx-more" onclick="_nxLimit += 150; renderNews()">더 보기 (${rest.length - shown.length}건 남음)</button>`;
   el.innerHTML = html;
+}
+
+function _nxAgo(ts) {
+  const m = Math.max(0, Math.round((Date.now() / 1000 - (ts || 0)) / 60));
+  return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.floor(m / 60)}시간 전` : `${Math.floor(m / 1440)}일 전`;
+}
+function _nxIsNew(n) { return Date.now() / 1000 - (n.timestamp || 0) < 30 * 60; }   // 30분 이내 = NEW
+function _nxSrc(n) { return _escHtml((n.source || '').replace(/^Finnhub\//, '')); }
+
+// ④ 오른쪽 칸 맨 위: 실시간 주요 뉴스 8건 (스크롤해도 따라옴)
+function _renderNewsHot() {
+  const side = document.getElementById('nx-side');
+  if (!side || !_nxView.side) return;
+  side.querySelector('.nx-hot')?.remove();
+  if (!_nxHot.length) return;
+  side.insertAdjacentHTML('afterbegin',
+    `<div class="nx-box nx-hot"><div class="nx-hot-hd"><span class="nx-dot"></span>실시간 주요 뉴스<span>통신사·주요 언론</span></div>` +
+    _nxHot.slice(0, 8).map(n => `<div class="nx-hot-row${_nxIsNew(n) ? ' new' : ''}" onclick="window.open('${_escHtml(n.url)}','_blank')" title="${_escHtml(n.title)}">` +
+      `<div class="t">${_nxIsNew(n) ? '<span class="nx-new">NEW</span>' : ''}${_escHtml(_nxTitle(n))}</div>` +
+      `<div class="m">${_nxSrc(n)} · ${_nxAgo(n.timestamp)}</div></div>`).join('') + `</div>`);
+}
+
+// ② 한 줄 자동 넘김: 6초마다 다음 기사 (마우스를 올리면 멈춤, ◀ ▶, 휴대폰은 옆으로 밀기, '동작 줄이기' 설정이면 자동 넘김 안 함)
+function _nxRotShow() {
+  const el = document.getElementById('nx-rot');
+  if (!el || !_nxHot.length) return;
+  const n = _nxHot[_nxRot.i % _nxHot.length];
+  el.innerHTML = `<span class="lb"><span class="nx-dot"></span>실시간</span>` +
+    `<span class="t" onclick="window.open('${_escHtml(n.url)}','_blank')" title="${_escHtml(n.title)}">${_nxIsNew(n) ? '<span class="nx-new">NEW</span>' : ''}${_escHtml(_nxTitle(n))}</span>` +
+    `<span class="m">${_nxSrc(n)} · ${_nxAgo(n.timestamp)}</span>` +
+    `<span class="ctl"><button onclick="_nxRotStep(-1)" title="이전">◀</button><span class="pg">${_nxRot.i % _nxHot.length + 1}/${_nxHot.length}</span><button onclick="_nxRotStep(1)" title="다음">▶</button></span>`;
+  if (!el._swipe) {   // 휴대폰: 옆으로 밀어 넘기기
+    el._swipe = true;
+    let x0 = null;
+    el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+    el.addEventListener('touchend', e => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0; x0 = null;
+      if (Math.abs(dx) > 40) _nxRotStep(dx < 0 ? 1 : -1);
+    });
+  }
+}
+function _nxRotStep(d) {
+  if (!_nxHot.length) return;
+  _nxRot.i = (_nxRot.i + d + _nxHot.length) % _nxHot.length;
+  _nxRotShow();
+  _nxRotStart();   // 손으로 넘기면 6초를 다시 센다
+}
+function _nxRotStart() {
+  clearInterval(_nxRot.timer);
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  _nxRot.timer = setInterval(() => {
+    const el = document.getElementById('nx-rot');
+    if (!el || _currentView !== 'news' || document.hidden || _nxRot.hover || !el.offsetParent) return;   // 숨겨져 있으면(데스크톱 오른쪽 칸 보일 때) 쉼
+    _nxRot.i = (_nxRot.i + 1) % Math.max(1, _nxHot.length);
+    _nxRotShow();
+  }, 6000);
+}
+
+// ⑤ 새 기사 알림: 뉴스 탭을 보는 중 새 기사가 오면 목록을 바로 바꾸지 않고 "새 기사 N건"을 띄운다 (읽던 위치 유지)
+function _nxNewBarHtml() {
+  const have = new Set(_allNews.map(n => n.url));
+  const k = (_nxPending || []).filter(n => !have.has(n.url)).length;
+  return k ? `<button class="nx-newbar" onclick="_nxApplyPending()">↑ 새 기사 ${k}건 — 눌러서 보기</button>` : '';
+}
+function _nxOnNewsUpdate(news) {
+  const have = new Set(_allNews.map(n => n.url));
+  const fresh = news.filter(n => !have.has(n.url)).length;
+  if (!fresh || !_allNews.length) {   // 새 기사 없음(번역만 바뀜) → 바로 반영
+    _allNews = news; _populateSourceFilter(news); renderNews();
+    return;
+  }
+  _nxPending = news;
+  _nxNewBarRender();
+}
+// 알림은 목록 전체를 감싸는 .nx-main 맨 위에 둬야 스크롤해도 화면 위에 붙어 있다(sticky)
+function _nxNewBarRender() {
+  const main = document.querySelector('#nx-grid .nx-main');
+  if (!main) return;
+  main.querySelector('.nx-newbar')?.remove();
+  const h = _nxPending ? _nxNewBarHtml() : '';
+  if (h) main.insertAdjacentHTML('afterbegin', h);
+}
+function _nxApplyPending() {
+  if (!_nxPending) return;
+  _allNews = _nxPending; _nxPending = null;
+  _populateSourceFilter(_allNews); renderNews();
+  document.getElementById('news-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // 오른쪽 칸: 오늘 뉴스 분위기(해외 기사 — 국내는 긍정·부정 분석 없음) · 분야별 기사 · 많이 보도한 출처
@@ -2251,7 +2347,7 @@ function initSocketIO() {
       const news = await api('/api/news');
       buildNewsTape(news);   // 테이프 뉴스 띠는 어느 탭에서나 보임
       if (_currentView === 'home')  renderHomeNews(news);
-      if (_currentView === 'news') { _allNews = news; _populateSourceFilter(news); renderNews(); }
+      if (_currentView === 'news') _nxOnNewsUpdate(news);
       updateTimestamp();
     } catch {}
   });
