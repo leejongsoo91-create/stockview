@@ -8,6 +8,7 @@ import random
 import re
 import time
 import threading
+import requests
 from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
@@ -1679,6 +1680,34 @@ def fear_greed_api():
     return jsonify(data or {})
 
 
+def _us_flow_from_home(days: int) -> dict | None:
+    """api/home-server-url.txt(집 서버 주소, git 제외)가 있는 서버만: 집 서버의 미국 시장 거래 기록을 받아온다(5분 캐시).
+    집 서버 자신에는 이 파일이 없어 자기 기록을 쓴다. 못 받으면 None → 이 서버 기록으로."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "api", "home-server-url.txt"), encoding="utf-8") as f:
+            base = f.readline().strip().rstrip("/")
+    except OSError:
+        return None
+    if not base.startswith("http"):
+        return None
+    key = f"us_flow_home_{days}"
+    hit = cache.get_fresh(key)
+    if hit is not None:
+        return hit or None
+    try:
+        r = requests.get(f"{base}/api/market-flow", params={"market": "US", "days": days}, timeout=6)
+        d = r.json() if r.ok else None
+        if not (d and d.get("rows") is not None):
+            d = None
+    except Exception as e:
+        log.info(f"집 서버 미국 시장 거래 못 받음 — 이 서버 기록 사용: {e}")
+        d = None
+    if d:
+        d["from_home"] = True
+    cache.set(key, d or {}, ttl=300 if d else 120)
+    return d
+
+
 @app.route("/api/market-flow")
 def market_flow_api():
     """시장 전체 일별 거래량·거래대금. ?market=KOSPI|KOSDAQ|US&days=60
@@ -1688,6 +1717,10 @@ def market_flow_api():
     if market not in ("KOSPI", "KOSDAQ", "US"):
         return jsonify({"error": "market은 KOSPI·KOSDAQ·US"}), 400
     days = max(5, min(int(request.args.get("days") or 60), 400))
+    if market == "US":   # 미국 기록은 24시간 켜진 집 서버에만 제대로 쌓인다 → 다른 서버(작업 PC 등)는 집 서버 값을 보여 준다 (11-23)
+        home = _us_flow_from_home(days)
+        if home:
+            return jsonify(home)
     stored = _load_market_flow().get(market) or {}
     if market == "US":
         rows = {d: _us_flow_split(v) for d, v in stored.items()}
