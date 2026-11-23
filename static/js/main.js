@@ -2574,6 +2574,70 @@ async function _preloadGlobalSearchData() {
   } catch (e) { console.warn('global search KR preload failed', e); }
 }
 
+// ── 종목 검색 공용 (11-24) ── 모든 검색창(전체 검색·종목검색·차트·비교·포트폴리오)이 같은 규칙을 쓴다.
+// 티커·코드, 영어 이름, 한글 이름(미국 name_ko · 국내 name)으로 찾고 띄어쓰기·기호는 무시("로켓랩" → 로켓 랩),
+// 초성("ㅇㅍ" → 애플), 흔한 별칭("구글" → GOOGL). 점수: 티커 일치 > 이름 일치 > 앞부분 > 포함 > 초성, 같으면 시가총액 큰 순.
+const _CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+// 한글 이름(네이버)과 다르게 부르는 이름만 — 코카콜라·나이키·버크셔 등은 한글 이름으로 이미 찾아짐 (TSM·BABA는 목록 밖)
+const _US_ALIAS = { '구글': ['GOOGL', 'GOOG'], '페이스북': ['META'], '인스타그램': ['META'], '마소': ['MSFT'] };
+function _srchNorm(t) { return String(t || '').toLowerCase().replace(/[\s.,&'’"()\-·/:+]+/g, ''); }
+function _choseong(t) {
+  let o = '';
+  for (const ch of t) { const c = ch.charCodeAt(0) - 0xAC00; o += c >= 0 && c < 11172 ? _CHO[Math.floor(c / 588)] : ch; }
+  return o;
+}
+function stockMatchScore(s, q) {
+  const qn = _srchNorm(q);
+  if (!qn) return 0;
+  const code = _srchNorm(s.code || s.ticker || '');
+  if (code === qn) return 100;
+  let best = code.startsWith(qn) ? 80 : code.includes(qn) && qn.length >= 2 ? 40 : 0;
+  const isCho = /^[ㄱ-ㅎ]+$/.test(qn);
+  const names = [s.name_ko, s.name].filter(Boolean);
+  for (const nm of names.slice()) if (nm.includes('&')) names.push(nm.replace(/&/g, '앤'), nm.replace(/&/g, 'and'));   // 힘스 & 허즈 ← "힘스앤허즈"
+  for (const name of names) {
+    const n = _srchNorm(name);
+    if (n === qn) best = Math.max(best, 90);
+    else if (n.startsWith(qn)) best = Math.max(best, 70);
+    else if (n.includes(qn)) best = Math.max(best, 50);
+    if (isCho && /[가-힣]/.test(n)) {
+      const c = _choseong(n);
+      if (c.startsWith(qn)) best = Math.max(best, 60);
+      else if (qn.length >= 2 && c.includes(qn)) best = Math.max(best, 35);
+    }
+  }
+  for (const k in _US_ALIAS) {
+    if (_srchNorm(k).startsWith(qn) && qn.length >= 2 && _US_ALIAS[k].includes((s.ticker || '').toUpperCase())) best = Math.max(best, 85);
+  }
+  return best;
+}
+// 목록에서 q와 맞는 종목을 점수·시가총액 순으로 limit개
+function searchStocks(list, q, limit = 8) {
+  const out = [];
+  for (const s of list || []) { const sc = stockMatchScore(s, q); if (sc) out.push([sc, s]); }
+  out.sort((a, b) => (b[0] - a[0]) || ((b[1].market_cap || 0) - (a[1].market_cap || 0)));
+  return out.slice(0, limit).map(x => x[1]);
+}
+// 입력값(티커·한글 이름 등) → 티커. market: 'us' | 'kr' | 없으면 둘 다(미국 먼저 정확 일치 확인)
+function resolveTickerInput(raw, market) {
+  const q = (raw || '').trim();
+  if (!q) return null;
+  const us = window._scStocks || [], kr = window._krStocks || [];
+  const exact = l => l.find(s => _srchNorm(s.ticker) === _srchNorm(q) || (s.code && s.code === q.toUpperCase()));
+  const lists = market === 'us' ? [us] : market === 'kr' ? [kr] : [us, kr];
+  for (const l of lists) { const e = exact(l); if (e) return e.ticker; }
+  const cands = lists.flatMap(l => searchStocks(l, q, 1).map(s => [stockMatchScore(s, q), s]));
+  cands.sort((a, b) => b[0] - a[0]);
+  return cands.length ? cands[0][1].ticker : null;
+}
+// 미국 티커 → 한글 이름 (없으면 fallback) — 브리핑 등 서버가 영어 이름만 주는 곳에서
+let _koNameMap = null, _koNameSrc = null;
+function usNameKo(ticker, fallback = '') {
+  const src = window._scStocks || [];
+  if (_koNameSrc !== src) { _koNameMap = new Map(src.map(s => [s.ticker, s.name_ko])); _koNameSrc = src; }
+  return _koNameMap.get(ticker) || fallback;
+}
+
 // 검색 결과 정렬: 정확 일치 > 시작 일치 > 부분 일치(이름 등) 순 — 짧은 티커가
 // 다른 회사명에 우연히 포함돼(예: "BE" ⊂ "Alphabet") 시총 정렬에 밀려 안 보이는 문제 방지
 function _gsRankOf(q, code) {
@@ -2589,17 +2653,8 @@ function _gsSearch(q) {
   const usStocks = window._scStocks || [];
   const krStocks = window._krStocks || [];
 
-  const matchUs = usStocks.filter(s =>
-    s.ticker.toLowerCase().startsWith(q) ||
-    s.ticker.toLowerCase().includes(q)   ||
-    (s.name || '').toLowerCase().includes(q) ||
-    (s.name_ko || '').includes(q)
-  ).sort(_gsTickerRank(q, s => s.ticker)).slice(0, 4).map(s => ({ ...s, _isKr: false }));
-
-  const matchKr = krStocks.filter(s =>
-    s.code.toLowerCase().includes(q) ||
-    s.name.toLowerCase().includes(q)
-  ).sort(_gsTickerRank(q, s => s.code)).slice(0, 3).map(s => ({ ...s, ticker: s.ticker, name: s.name, _isKr: true }));
+  const matchUs = searchStocks(usStocks, q, 4).map(s => ({ ...s, _isKr: false }));
+  const matchKr = searchStocks(krStocks, q, 3).map(s => ({ ...s, _isKr: true }));
 
   const results = [...matchUs, ...matchKr].slice(0, 6);
 

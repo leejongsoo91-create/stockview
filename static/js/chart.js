@@ -1176,35 +1176,11 @@ function _resolveChartTicker(raw, market = _chartSearchMarket) {
   const qUpper = q.toUpperCase();
   const qLower = q.toLowerCase();
 
-  if (market === 'kr') {
-    const krStocks = window._krStocks || [];
-    const krExact = krStocks.find(s => s.code === q || (s.ticker || '').toUpperCase() === qUpper);
-    if (krExact) return krExact.ticker;
-
-    const krByName = krStocks.filter(s => (s.name || '').includes(q));
-    if (krByName.length) {
-      krByName.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
-      return krByName[0].ticker;
-    }
-    // 매칭 실패 시 입력값 그대로 시도 (6자리 코드 등)
-    return q;
-  }
-
-  const usStocks = window._scStocks || [];
-  const usExact = usStocks.find(s => s.ticker.toUpperCase() === qUpper);
-  if (usExact) return usExact.ticker;
-
-  const usByName = usStocks.filter(s =>
-    (s.name_ko && s.name_ko.includes(q)) ||
-    (s.name || '').toLowerCase().includes(qLower)
-  );
-  if (usByName.length) {
-    usByName.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
-    return usByName[0].ticker;
-  }
-
-  // 매칭 실패 시 입력값을 그대로 티커로 간주 (추적 목록 밖 종목 지원)
-  return qUpper;
+  // 티커·코드 정확 일치 → 이름(한글·영어·띄어쓰기 무시·초성·별칭) 최고 점수 (11-24 main.js resolveTickerInput)
+  const hit = resolveTickerInput(q, market === 'kr' ? 'kr' : 'us');
+  if (hit) return hit;
+  // 매칭 실패 시 입력값 그대로 (국내 6자리 코드, 추적 목록 밖 미국 티커)
+  return market === 'kr' ? q : qUpper;
 }
 
 // ── 이벤트 바인딩 ─────────────────────────────────────────────────────────────
@@ -1256,21 +1232,9 @@ function _chartSearchPreview(q) {
   if (!dropdown) return;
   const qLower = q.toLowerCase();
 
-  let results;
-  if (_chartSearchMarket === 'kr') {
-    const krStocks = window._krStocks || [];
-    results = krStocks.filter(s =>
-      (s.code || '').toLowerCase().includes(qLower) ||
-      (s.name || '').toLowerCase().includes(qLower)
-    ).sort(_gsTickerRank(qLower, s => s.code)).slice(0, 8).map(s => ({ ...s, _isKr: true }));
-  } else {
-    const usStocks = window._scStocks || [];
-    results = usStocks.filter(s =>
-      s.ticker.toLowerCase().includes(qLower) ||
-      (s.name_ko && s.name_ko.includes(q)) ||
-      (s.name || '').toLowerCase().includes(qLower)
-    ).sort(_gsTickerRank(qLower, s => s.ticker)).slice(0, 8).map(s => ({ ...s, _isKr: false }));
-  }
+  const isKr = _chartSearchMarket === 'kr';
+  const results = searchStocks(isKr ? (window._krStocks || []) : (window._scStocks || []), q, 8)
+    .map(s => ({ ...s, _isKr: isKr }));   // 한글 이름·띄어쓰기 무시·초성·별칭 (11-24)
 
   if (!results.length) {
     dropdown.innerHTML = `<div class="gs-empty">결과 없음</div>`;
@@ -3287,7 +3251,9 @@ function _bindCompareEvents() {
   const input     = document.getElementById('chart-cmp-input');
 
   const _run = async () => {
-    const t = input?.value.trim().toUpperCase();
+    const raw = input?.value.trim();
+    // 한글 이름("마이크로소프트")·초성도 받는다 — 지금 종목과 같은 시장에서 찾고, 없으면 입력값 그대로 (11-24)
+    const t = raw ? (resolveTickerInput(raw, _isKrStock(_currentTicker || '') ? 'kr' : 'us') || resolveTickerInput(raw) || raw).toUpperCase() : '';
     if (!t || !_currentTicker) return;
     if (t === _currentTicker) { input.value = ''; return; }
     await _loadCompareChart(t);

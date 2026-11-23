@@ -825,8 +825,19 @@ function _ptSetModalCur(cur) {
 }
 
 // 통화 버튼 상태 + 다른 통화 미리보기. 국내 종목은 원 고정, 미국 종목은 원/달러 선택
+// 종목 칸 입력값 → 티커. 한글 이름("애플", "삼성전자")·초성도 받는다 (11-24)
+function _ptResolveTicker(raw) {
+  const v = (raw || '').trim(), up = v.toUpperCase();
+  if (!v) return '';
+  const known = (window._scStocks || []).some(s => s.ticker === up) || isKrTicker(up) || /^\d[0-9A-Z]{5}$/.test(up);
+  if (known && !/[가-힣ㄱ-ㅎ]/.test(v)) return up;
+  return (resolveTickerInput(v) || up).toUpperCase();
+}
+
 function _ptUpdateModalCur() {
-  const t    = (document.getElementById('pt-modal-ticker').value || '').trim().toUpperCase();
+  const raw  = document.getElementById('pt-modal-ticker').value || '';
+  const t    = _ptResolveTicker(raw);
+  const hint = /[가-힣ㄱ-ㅎ]/.test(raw) && t ? `→ ${t} ${usNameKo(t) || ((window._krStocks || []).find(s => s.ticker === t) || {}).name || ''} · ` : '';
   const inp  = document.getElementById('pt-modal-price');
   const prev = document.getElementById('pt-modal-price-preview');
   const kr   = isKrTicker(t) || /^\d[0-9A-Z]{5}$/.test(t);   // 영문 섞인 신규 코드(0126Z0)도 국내
@@ -839,10 +850,10 @@ function _ptUpdateModalCur() {
   const v = parseFloat(inp.value);
   const { rate, source } = usdKrw();
   const rateTxt = `현재 환율 ${rate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원${source === 'fallback' ? ', 임시값' : ''}`;
-  prev.textContent = kr ? '국내 종목은 원화로 입력합니다'
+  prev.textContent = hint + (kr ? '국내 종목은 원화로 입력합니다'
     : !(v > 0) ? (cur === 'KRW' ? '증권사 앱의 원화 매입가를 그대로 입력하세요' : '')
     : cur === 'KRW' ? `≈ ${fmt$(v / rate)} (${rateTxt})`
-    : `≈ ${fmtKrw(v * rate)} (${rateTxt})`;
+    : `≈ ${fmtKrw(v * rate)} (${rateTxt})`);
 }
 
 function closePtModal() {
@@ -850,7 +861,7 @@ function closePtModal() {
 }
 
 function savePtModal() {
-  const ticker   = document.getElementById('pt-modal-ticker').value.trim().toUpperCase();
+  const ticker   = _ptResolveTicker(document.getElementById('pt-modal-ticker').value);
   const qty      = parseFloat(document.getElementById('pt-modal-qty').value);
   const avgPrice = parseFloat(document.getElementById('pt-modal-price').value);
 

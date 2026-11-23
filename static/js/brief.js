@@ -6,6 +6,9 @@ let _briefPeriod = 'daily';
 let _lastDailySignals = { us: null, kr: null };
 const _hideWeakSell = { us: false, kr: false };
 
+// 미국 종목은 한글 이름 우선 (11-24 — 서버 신호 목록엔 영어 이름만 있음)
+function _briefName(s) { return _isKrStock(s.ticker || '') ? (s.name || '') : usNameKo(s.ticker, s.name || ''); }
+
 function initBrief() {
   document.querySelectorAll('.brief-period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -200,7 +203,7 @@ function _renderPatternList(elId, items, label) {
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-term term-pattern">${label || koPattern(s.pattern)}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');
 }
@@ -234,7 +237,7 @@ function _renderVolumeList(elId, items) {
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-term term-vol">×${s.volume_ratio}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');
 }
@@ -261,7 +264,7 @@ function renderEarningsSignals(items) {
       <span class="brief-signal-date">${s.date} ${koEarnTime(s.time)}</span>
       <span class="brief-signal-term term-${s.term}">${s.term}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       <span class="brief-signal-dir ${dirCls}">${dirLabel}</span>
       ${_fmtSignalPct(s.change_pct)}
     </div>`;
@@ -287,7 +290,7 @@ function _render52wList(elId, items) {
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-term term-52w">${s.pos}%</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');
 }
@@ -330,7 +333,7 @@ function _renderInvestorList(elId, items, limit = 15) {
   el.innerHTML = items.slice(0, limit).map(s => `
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-ticker">${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       <span class="brief-signal-pct ${s.foreign_net >= 0 ? 'up' : 'down'}">${_fmtForeignNet(s.foreign_net)}</span>
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');
@@ -356,7 +359,7 @@ function _renderHeldTop() {
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-term term-${s.term}">${s.term}</span>
       <span class="brief-signal-ticker">${s._flag} ${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       <span class="brief-signal-dir ${s._dir}">${s._dir === 'buy' ? '▲매수' : '▼매도'}</span>
       <span class="brief-held-badge">${s.held_days}일째</span>
     </div>`).join('');
@@ -379,7 +382,7 @@ function _renderSignalList(elId, items, limit = 10) {
     <div class="brief-signal-item" onclick="navigateToChart('${s.ticker}')">
       <span class="brief-signal-term term-${s.term}">${s.term}</span>
       <span class="brief-signal-ticker">${s.ticker}</span>
-      <span class="brief-signal-name">${s.name || ''}</span>
+      <span class="brief-signal-name">${_briefName(s)}</span>
       ${_heldBadgeHtml(s)}
       ${_fmtSignalPct(s.change_pct)}
     </div>`).join('');

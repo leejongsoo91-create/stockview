@@ -433,7 +433,7 @@ function _getFilteredStocks() {
     if (sector   !== 'all' && s.sector   !== sector)   return false;
     if (industry !== 'all' && s.industry !== industry) return false;
     if (country  !== 'all' && s.country  !== country)  return false;
-    if (search && !s.ticker.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
+    if (search && !stockMatchScore(s, search)) return false;   // 티커·영어·한글 이름·초성 (11-24)
     if (normalOnly && _isAbnormalListing(s)) return false;
     if (signalOnly && !_scSignalMap[s.ticker]) return false;
     if (watchlistOnly && typeof WL !== 'undefined' && !WL.has(s.ticker)) return false;
@@ -1035,8 +1035,7 @@ function _getKrFiltered() {
   }
   // 검색
   const q = (document.getElementById('filter-search')?.value || '').trim().toLowerCase();
-  if (q) list = list.filter(s =>
-    s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
+  if (q) list = list.filter(s => stockMatchScore(s, q));   // 코드·이름·초성 (11-24)
   // 신호 있는 종목만
   if (document.getElementById('filter-signal-only')?.checked) {
     list = list.filter(s => _scSignalMap[s.ticker]);
