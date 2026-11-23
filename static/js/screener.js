@@ -872,7 +872,7 @@ function openStockModal(ticker) {
     }
     document.getElementById('sm-news').innerHTML = news.map(n => {
       const dot = n.sentiment === 'positive' ? '🟢' : n.sentiment === 'negative' ? '🔴' : '⚪';
-      return `<div class="sm-news-item" onclick="window.open('${n.url}','_blank')">
+      return `<div class="sm-news-item${n.rel === 0 ? ' low-rel' : ''}" onclick="window.open('${n.url}','_blank')">
         <span class="sm-news-dot">${dot}</span>
         <div class="sm-news-body">
           <div class="sm-news-title"${n.title_ko ? ` title="${_escHtml(n.title)}"` : ''}>${_escHtml(n.title_ko || n.title || '')}${n.title_ko ? '<span class="nx-tr">번역</span>' : ''}</div>

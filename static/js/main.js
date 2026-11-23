@@ -1800,6 +1800,41 @@ const _NX_HOT_SKIP = new Set(['sports', 'general']);
 let _nxHot = [];                                   // 실시간 주요 뉴스 (오른쪽 칸 ④ · 한 줄 넘김 ②가 같이 씀)
 let _nxRot = { i: 0, timer: null, hover: false };  // ② 한 줄 자동 넘김 상태
 let _nxPending = null;                             // ⑤ 아직 화면에 안 넣은 새 뉴스 목록
+let _nxArchive = null;                             // 지난 날짜 보기 'YYYY-MM-DD' (11-24 뉴스 쌓기), null = 오늘(실시간)
+function _kstToday() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }); }
+
+// 📅 날짜 고르기: 쌓아 둔 그날 뉴스를 같은 화면(분야 탭·필터·검색)으로 본다. 빈 값·오늘 = 실시간으로 돌아감
+async function _setNewsDate(day) {
+  const inp = document.getElementById('nx-date'), todayBtn = document.getElementById('nx-date-today');
+  if (!day || day >= _kstToday()) {
+    _nxArchive = null;
+    if (inp) inp.value = _kstToday();
+    if (todayBtn) todayBtn.hidden = true;
+    try { _allNews = await api('/api/news'); } catch {}
+  } else {
+    _nxArchive = day;
+    if (inp) inp.value = day;
+    if (todayBtn) todayBtn.hidden = false;
+    document.getElementById('news-list').innerHTML = '<div style="color:var(--muted);padding:20px 0;text-align:center">불러오는 중…</div>';
+    let rows = [];
+    try { rows = await api(`/api/news-archive?date=${day}`); } catch {}
+    if (_nxArchive !== day) return;
+    _allNews = (rows || []).map(n => ({ ...n,
+      time: new Date((n.timestamp || 0) * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }) }));
+  }
+  _nxPending = null; _nxLimit = 150;
+  _populateSourceFilter(_allNews);
+  renderNews();
+}
+async function _initNewsDate() {
+  const inp = document.getElementById('nx-date');
+  if (!inp || inp._bound) return;
+  inp._bound = true;
+  inp.value = inp.max = _kstToday();
+  try { const days = await api('/api/news-archive/days'); if (days && days.length) inp.min = days[days.length - 1].day; } catch {}
+  inp.addEventListener('change', () => _setNewsDate(inp.value));
+  document.getElementById('nx-date-today')?.addEventListener('click', () => _setNewsDate(''));
+}
 function _nxSave() { try { localStorage.setItem('NXV', JSON.stringify(_nxView)); } catch {} }
 function _nxTitle(n) { return (_nxView.lang === 'ko' && n.title_ko) ? n.title_ko : n.title; }
 function _newsTitleKo(n) { return n.title_ko || n.title; }   // 홈·테이프용
@@ -1860,6 +1895,7 @@ function initNews() {
   });
 
   // News 필터 (감성 + 소스)
+  _initNewsDate();
   api('/api/news').then(news => {
     _allNews = news;
     _populateSourceFilter(news);
@@ -2106,7 +2142,7 @@ function renderNews() {
   // 실시간 주요 뉴스: 통신사·주요 언론의 12시간 이내 최신 15건 (지금 분야 탭을 따름, 스포츠·종합 제외, 북마크·검색 중엔 숨김)
   //   데스크톱은 오른쪽 칸 맨 위(④), 오른쪽 칸을 접었거나 휴대폰이면 목록 위 한 줄 넘김(②) — 11-23
   const now = Date.now() / 1000;
-  _nxHot = (_showBookmarkedOnly || kw) ? [] :
+  _nxHot = (_showBookmarkedOnly || kw || _nxArchive) ? [] :
     (() => {   // 같은 제목이 두 출처에서 오면 하나만
       const seen = new Set(), out = [];
       for (const n of list) {
@@ -2119,7 +2155,8 @@ function renderNews() {
     })();
   if (heroEl) {
     _nxNewBarRender();
-    heroEl.innerHTML = (_nxHot.length ? `<div class="nx-rot" id="nx-rot" onmouseenter="_nxRot.hover=true" onmouseleave="_nxRot.hover=false"></div>` : '');
+    heroEl.innerHTML = (_nxArchive ? `<div class="nx-archive-bar">📅 <b>${_nxArchive.slice(5).replace('-', '/')}</b> 뉴스 보는 중 · ${_allNews.length.toLocaleString()}건 <button type="button" onclick="_setNewsDate('')">오늘 뉴스로</button></div>` : '') +
+      (_nxHot.length ? `<div class="nx-rot" id="nx-rot" onmouseenter="_nxRot.hover=true" onmouseleave="_nxRot.hover=false"></div>` : '');
     if (_nxRot.i >= _nxHot.length) _nxRot.i = 0;
     _nxRotShow();
     _nxRotStart();
@@ -2129,7 +2166,10 @@ function renderNews() {
   // 시간대별 묶음 한 줄 목록
   const rest = list;
   const shown = rest.slice(0, _nxLimit);
-  const grp = n => { const h = (now - (n.timestamp || 0)) / 3600; return h < 1 ? '최근 1시간' : h < 6 ? '6시간 이내' : h < 24 ? '오늘' : '그 이전'; };
+  const grp = n => {
+    if (_nxArchive) return new Date((n.timestamp || 0) * 1000).toLocaleTimeString('ko-KR', { hour: 'numeric', timeZone: 'Asia/Seoul' }) + '대';   // 지난 날짜는 시간대별
+    const h = (now - (n.timestamp || 0)) / 3600; return h < 1 ? '최근 1시간' : h < 6 ? '6시간 이내' : h < 24 ? '오늘' : '그 이전';
+  };
   let html = '', g = null;
   shown.forEach(n => {
     const k = _showBookmarkedOnly ? '북마크' : grp(n);
@@ -2212,6 +2252,7 @@ function _nxNewBarHtml() {
   return k ? `<button class="nx-newbar" onclick="_nxApplyPending()">↑ 새 기사 ${k}건 — 눌러서 보기</button>` : '';
 }
 function _nxOnNewsUpdate(news) {
+  if (_nxArchive) return;   // 지난 날짜를 보는 중엔 새 기사로 바꾸지 않음
   const have = new Set(_allNews.map(n => n.url));
   const fresh = news.filter(n => !have.has(n.url)).length;
   if (!fresh || !_allNews.length) {   // 새 기사 없음(번역만 바뀜) → 바로 반영

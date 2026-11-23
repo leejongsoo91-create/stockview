@@ -554,12 +554,88 @@ def refresh_market_caps():
             cache.set("stocks", _apply_market_caps(stocks), ttl=300)
 
 
+# ── 뉴스 기록 쌓기 (11-24) ──────────────────────────────────────────────────
+# 뉴스는 10분마다 메모리에서 통째로 바뀌어 지난 기사가 사라졌다 → 받은 기사를 SQLite 한 파일에 계속 쌓는다.
+# 제목·한글 제목·출처·시장·분야·시각·감성·링크만(본문은 저작권 문제로 저장 안 함). 종목 뉴스는 news_tk로 종목과 묶는다.
+# 날짜별 지난 뉴스(뉴스 탭 날짜 고르기)·종목별 30일 뉴스가 읽는다. 작업 PC는 집 서버 기록을 받아 보여 준다.
+NEWS_ARCHIVE_DB = os.path.join(os.path.dirname(__file__), "data", "news_archive.sqlite")
+_na_lock = threading.Lock()
+
+
+def _na_db():
+    con = sqlite3.connect(NEWS_ARCHIVE_DB, timeout=10)
+    con.execute("CREATE TABLE IF NOT EXISTS news (url TEXT PRIMARY KEY, title TEXT, title_ko TEXT, source TEXT, market TEXT,"
+                " category TEXT, ts INTEGER, day TEXT, sentiment TEXT)")
+    con.execute("CREATE INDEX IF NOT EXISTS news_day ON news(day, ts)")
+    con.execute("CREATE TABLE IF NOT EXISTS news_tk (tk TEXT, url TEXT, PRIMARY KEY (tk, url)) WITHOUT ROWID")
+    return con
+
+
+def _archive_news(items: list, tk: str | None = None):
+    """기사 목록을 기록에 더한다(이미 있는 링크는 그대로). tk를 주면 그 종목에 묶고, 기사 자체 ticker도 묶는다."""
+    from zoneinfo import ZoneInfo
+    kst = ZoneInfo("Asia/Seoul")
+    rows, tks = [], []
+    for n in items or []:
+        url, title = n.get("url"), (n.get("title") or "").strip()
+        if not url or not title or url.startswith("#"):
+            continue
+        ts = int(n.get("timestamp") or time.time())
+        ko = n.get("title_ko") or (df.news_title_ko(title) if df.news_needs_tr(title) else None)
+        rows.append((url, title, ko, n.get("source") or "", n.get("market") or ("KR" if tk and isinstance(tk, str) and tk.endswith((".KS", ".KQ")) else "US"),
+                     n.get("category") or "", ts, datetime.fromtimestamp(ts, kst).strftime("%Y-%m-%d"), n.get("sentiment") or ""))
+        for t in {tk, n.get("ticker")} - {None, ""}:
+            if not (tk and t == tk and n.get("rel") == 0):   # 관련도 낮은 종목 기사는 종목에 묶지 않음
+                tks.append((t, url))
+    if not rows:
+        return
+    try:
+        with _na_lock, closing(_na_db()) as con:
+            con.executemany("INSERT OR IGNORE INTO news VALUES (?,?,?,?,?,?,?,?,?)", rows)
+            con.executemany("INSERT OR IGNORE INTO news_tk VALUES (?,?)", tks)
+            con.commit()
+    except sqlite3.Error as e:
+        log.warning(f"뉴스 기록 저장 실패: {e}")
+
+
+def _archive_fill_ko(titles: list[str]):
+    """번역이 끝난 제목의 한글 제목을 기록에도 채운다 (번역 파일은 14일 뒤 지워지므로)."""
+    pairs = [(ko, t) for t in dict.fromkeys(titles) if df.news_needs_tr(t) and (ko := df.news_title_ko(t))]
+    if not pairs or not os.path.exists(NEWS_ARCHIVE_DB):
+        return
+    try:
+        with _na_lock, closing(_na_db()) as con:
+            con.executemany("UPDATE news SET title_ko=? WHERE title=? AND title_ko IS NULL", pairs)
+            con.commit()
+    except sqlite3.Error as e:
+        log.warning(f"뉴스 기록 한글 제목 채우기 실패: {e}")
+
+
+def _archive_rows(sql: str, args: tuple) -> list[dict]:
+    if not os.path.exists(NEWS_ARCHIVE_DB):
+        return []
+    with _na_lock, closing(_na_db()) as con:
+        cur = con.execute(sql, args)
+        cols = [c[0] for c in cur.description]
+        out = [dict(zip(cols, r)) for r in cur.fetchall()]
+    for n in out:
+        n["timestamp"] = n.pop("ts")
+        if not n.get("title_ko"):
+            ko = df.news_title_ko(n["title"]) if df.news_needs_tr(n.get("title", "")) else None   # 기록 뒤에 번역된 제목
+            if ko:
+                n["title_ko"] = ko
+            else:
+                n.pop("title_ko", None)
+    return out
+
+
 def refresh_news():
     log.info("뉴스 갱신 시작...")
     try:
         news_data = df.fetch_news()
         if news_data:
             cache.set("news", news_data, ttl=600)
+            _archive_news(news_data)
             log.info(f"뉴스 갱신 완료: {len(news_data)}건")
             _emit_queue.put(("news_update", {"count": len(news_data)}))
     except Exception as e:
@@ -574,6 +650,7 @@ def refresh_kr_market_news():
         kr_news_data = df.fetch_kr_market_news()
         if kr_news_data:
             cache.set("kr_market_news", kr_news_data, ttl=600)
+            _archive_news(kr_news_data)
             log.info(f"국내 뉴스 갱신 완료: {len(kr_news_data)}건")
     except Exception as e:
         log.warning(f"국내 뉴스 갱신 실패: {e}")
@@ -591,6 +668,7 @@ def refresh_finnhub_company_news():
         data = df.fetch_finnhub_top_company_news(top)
         if data:
             cache.set("finnhub_company_news", data, ttl=3600)
+            _archive_news(data)
     except Exception as e:
         log.warning(f"Finnhub 종목 뉴스 갱신 실패: {e}")
     refresh_news_translations()
@@ -603,6 +681,7 @@ def refresh_news_translations():
                   for n in (cache.get(key) or [])]
         if df.translate_news_titles(titles):
             _emit_queue.put(("news_update", {"translated": True}))
+            _archive_fill_ko(titles)
     except Exception as e:
         log.warning(f"뉴스 번역 실패: {e}")
 
@@ -614,6 +693,7 @@ def refresh_finnhub_news():
         fh_data = df.fetch_finnhub_news()
         if fh_data:
             cache.set("finnhub_news", fh_data, ttl=600)
+            _archive_news(fh_data)
             log.info(f"Finnhub 뉴스 갱신 완료: {len(fh_data)}건")
     except Exception as e:
         log.warning(f"Finnhub 뉴스 갱신 실패: {e}")
@@ -1328,6 +1408,8 @@ def kr_news(code: str):
         if result:
             log.info(f"KR 뉴스: Google News 대체 {len(result)}건 ({name})")
     cache.set(key, result, ttl=1800 if result else 120)   # 빈 결과는 짧게만 캐시
+    tk = next((s.get("ticker") for s in (cache.get("kr_stocks") or []) if s.get("code") == code), None)
+    _archive_news([dict(n, market="KR") for n in result], tk)
     return jsonify(result)
 
 
@@ -1339,11 +1421,15 @@ def stock_news(ticker: str):
     key    = f"stock_news_{ticker}"
     data = cache.get(key)
     if data is None:
-        data = df.fetch_finnhub_company_news(ticker)
+        # 11-24: 회사 이름을 넘겨 관련도 순으로 고른다(제목에 티커·이름 → 요약에만 → 없으면 뺌) — scripts/news_relevance_check.py
+        name = next((s.get("name") for s in (cache.get("stocks") or []) if s.get("ticker") == ticker), "") or ticker
+        data = df.fetch_finnhub_company_news(ticker, name)
         cache.set(key, data, ttl=1800)
+        _archive_news(data, ticker)
         if df.NEWS_TR_ENABLED and data:
             try:
-                df.translate_news_titles([n["title"] for n in data[:20] if n.get("title")])
+                if df.translate_news_titles([n["title"] for n in data[:10] if n.get("title")]):
+                    _archive_fill_ko([n["title"] for n in data[:10]])
             except Exception as e:
                 log.warning(f"종목 뉴스 번역 실패 ({ticker}): {e}")
     out = []
@@ -1356,6 +1442,48 @@ def stock_news(ticker: str):
         home_ko = {h.get("title"): h.get("title_ko") for h in home if h.get("title_ko")}
         out = [dict(n, title_ko=home_ko[n["title"]]) if not n.get("title_ko") and n.get("title") in home_ko else n for n in out]
     return jsonify(out)
+
+
+@app.route("/api/news-archive")
+def news_archive_api():
+    """쌓아 둔 지난 뉴스 (11-24). ?date=YYYY-MM-DD(한국 날짜) → 그날 기사, 최신순 최대 1,000건. 작업 PC는 집 서버 기록."""
+    day = (request.args.get("date") or "")[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        return jsonify({"error": "date=YYYY-MM-DD"}), 400
+    home = _home_json("/api/news-archive", {"date": day}, f"na_home_{day}", None)
+    if home is not None:
+        return jsonify(home)
+    return jsonify(_archive_rows("SELECT n.url, title, title_ko, source, market, category, ts, sentiment,"
+                                 " (SELECT tk FROM news_tk t WHERE t.url = n.url LIMIT 1) AS ticker"
+                                 " FROM news n WHERE day = ? ORDER BY ts DESC LIMIT 1000", (day,)))
+
+
+@app.route("/api/news-archive/days")
+def news_archive_days_api():
+    """기록이 있는 날짜와 기사 수 (최근 90일) [{day, count}]."""
+    home = _home_json("/api/news-archive/days", {}, "na_home_days", None)
+    if home is not None:
+        return jsonify(home)
+    if not os.path.exists(NEWS_ARCHIVE_DB):
+        return jsonify([])
+    with _na_lock, closing(_na_db()) as con:
+        rows = con.execute("SELECT day, COUNT(*) FROM news GROUP BY day ORDER BY day DESC LIMIT 90").fetchall()
+    return jsonify([{"day": d, "count": c} for d, c in rows])
+
+
+@app.route("/api/stock-news-archive/<ticker>")
+def stock_news_archive_api(ticker):
+    """종목에 묶어 쌓아 둔 뉴스 (최근 days일, 기본 30) — 차트 오른쪽 칸 '지난 30일 뉴스'."""
+    raw = ticker.strip()
+    t = raw.upper() if raw.upper().endswith((".KS", ".KQ")) else _canon_us_ticker(raw)
+    days = max(1, min(int(request.args.get("days") or 30), 365))
+    home = _home_json(f"/api/stock-news-archive/{t}", {"days": days}, f"sna_home_{t}_{days}", None)
+    if home is not None:
+        return jsonify(home)
+    since = int(time.time()) - days * 86400
+    return jsonify(_archive_rows("SELECT n.url, title, title_ko, source, market, category, ts, sentiment FROM news n"
+                                 " JOIN news_tk t ON t.url = n.url WHERE t.tk = ? AND n.ts >= ? ORDER BY n.ts DESC LIMIT 200",
+                                 (t, since)))
 
 
 @app.route("/api/reports")

@@ -3197,8 +3197,60 @@ def fetch_finnhub_news() -> list[dict]:
         return []
 
 
-def fetch_finnhub_company_news(ticker: str) -> list[dict]:
-    """Finnhub 종목별 뉴스 (최근 7일)"""
+_NEWS_NAME_SUFFIX = re.compile(r",?\s+(Class [A-Z]|Common Stock|Ordinary Shares|American Depositary Shares|Inc\.?|Incorporated|"
+                               r"Corporation|Corp\.?|Ltd\.?|Limited|plc|N\.V\.|S\.A\.|L\.P\.|LP|Holdings?|Group|Company|Co\.)$", re.I)
+_NEWS_GENERIC_WORDS = {"american", "united", "first", "general", "international", "global", "national", "new", "the", "bank",
+                       "energy", "capital", "financial", "technologies", "technology", "health", "pacific", "southern", "western",
+                       "advanced", "applied", "digital", "data", "power", "realty", "royal", "standard", "super", "smart"}
+_NEWS_ALIAS = {"GOOGL": ["google"], "GOOG": ["google"], "META": ["facebook", "instagram"], "BRK/B": ["berkshire"], "BRK/A": ["berkshire"]}
+
+
+def _news_keys(ticker: str, name: str) -> tuple[re.Pattern, list[str]]:
+    """종목 뉴스 관련도 판단용 — 티커(대소문자 구분, 단어 경계)와 회사 이름 키워드(소문자)."""
+    tk = re.escape(ticker.split("/")[0].split(".")[0])
+    # 1~2글자 티커(F·ON·IT 등)는 우연히 맞기 쉬워 "(F)"·"$F"·"NYSE: F" 꼴만 인정
+    tk_re = (re.compile(rf"\(\s*(?:NYSE|NASDAQ|Nasdaq)?:?\s*{tk}\s*\)|\${tk}(?![A-Za-z])|(?:NYSE|NASDAQ|Nasdaq):\s*{tk}(?![A-Za-z])")
+             if len(tk) <= 2 else re.compile(rf"(?<![A-Za-z]){tk}(?![A-Za-z])"))
+    n = (name or "").strip()
+    for _ in range(3):
+        n = _NEWS_NAME_SUFFIX.sub("", n).strip()
+    n = re.sub(r"\.com$", "", n, flags=re.I).strip()   # Amazon.com → Amazon
+    words = []
+    if n:
+        words.append(n.lower())                         # "advanced micro devices", "nvidia"
+        first = n.split()[0].lower().strip(",.")
+        if len(first) >= 4 and first not in _NEWS_GENERIC_WORDS:
+            words.append(first)                         # "meta platforms" → "meta"
+    words += _NEWS_ALIAS.get(ticker.upper(), [])
+    return tk_re, list(dict.fromkeys(words))
+
+
+def rank_company_news(items: list[dict], ticker: str, name: str, limit: int = 20) -> list[dict]:
+    """Finnhub 종목 뉴스는 그 종목 태그만 붙은 여러 종목 시황 기사가 절반쯤(11-24 AAPL 247건 중 Apple 언급 118건) →
+    제목에 티커·회사 이름이 있으면 rel 2, 요약에만 있으면 rel 1, 없으면 뺀다. rel 높은 것 → 최신순, 비슷한 제목은 하나만.
+    관련 기사가 3건 미만이면 최신 기사로 채우고 rel 0(화면에 '관련도 낮음')."""
+    tk_re, words = _news_keys(ticker, name)
+    # 이름은 단어 단위로만 (11-24 본문 대조: "affordable"의 ford, "metal·metaverse"의 meta가 잘못 걸렸음)
+    name_re = re.compile(r"(?<![a-z0-9])(?:" + "|".join(re.escape(w) for w in words) + r")(?![a-z0-9])") if words else None
+    def hit(text: str) -> bool:
+        return bool(tk_re.search(text or "")) or bool(name_re and name_re.search((text or "").lower()))
+    seen, rel, rest = set(), [], []
+    for n in sorted(items, key=lambda x: -(x.get("timestamp") or 0)):
+        key = re.sub(r"[^a-z0-9가-힣]", "", (n.get("title") or "").lower())[:60]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        r = 2 if hit(n.get("title")) else 1 if hit(n.get("summary")) else 0
+        (rel if r else rest).append(dict(n, rel=r))
+    rel.sort(key=lambda x: (-x["rel"], -(x.get("timestamp") or 0)))
+    out = rel[:limit]
+    if len(out) < 3:
+        out += rest[:3 - len(out)]
+    return out
+
+
+def fetch_finnhub_company_news(ticker: str, name: str = "") -> list[dict]:
+    """Finnhub 종목별 뉴스 (최근 7일) — name을 주면 관련도 순으로 골라 20건(rank_company_news)"""
     import datetime
     today = datetime.date.today()
     frm   = (today - datetime.timedelta(days=7)).isoformat()
@@ -3211,6 +3263,11 @@ def fetch_finnhub_company_news(ticker: str) -> list[dict]:
         resp = requests.get(url, timeout=8)
         resp.raise_for_status()
         items = resp.json()
+        if name:
+            results = [dict(_finnhub_item_to_dict(i), summary=(i.get("summary") or "")[:300]) for i in items if i.get("headline")]
+            results = rank_company_news(results, ticker, name)
+            log.info(f"Finnhub {ticker} 종목 뉴스: {len(items)}건 중 관련 {sum(1 for r in results if r['rel'])}건")
+            return results
         results = [_finnhub_item_to_dict(i) for i in items[:20] if i.get("headline")]
         results.sort(key=lambda x: x["timestamp"], reverse=True)
         log.info(f"Finnhub {ticker} 종목 뉴스: {len(results)}건")

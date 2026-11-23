@@ -1615,6 +1615,7 @@ async function loadChart(ticker) {
     document.getElementById('chart-alert-panel').style.display = 'none';
 
     if (!_isIndex(ticker)) _loadStockNews(ticker);
+    else { const ns = document.getElementById('stock-news-section'); if (ns) ns.innerHTML = ''; }
     if (!_isIndex(ticker) && stockKind(stockData) === 'stock') {
       renderStockAnalysis(ticker);
       renderFinancials(ticker);
@@ -3582,7 +3583,6 @@ function renderStockInfo(s) {
         ${hiPct}
       </span>
     </div>
-    <div id="stock-news-section"></div>
     ${isKr ? '<div id="kr-investor-section"></div>' : ''}
   `;
   if (isKr) _loadKrInvestor(s.ticker);
@@ -3623,6 +3623,34 @@ async function _loadKrInvestor(ticker) {
   }
 }
 
+// 관련 뉴스 한 줄씩 — 한글 제목 우선(마우스를 올리면 원문), 미국 기사 중 종목 이름이 제목·요약에 없는 것(rel 0)은 흐리게 (11-24)
+function _stockNewsItems(list) {
+  return list.map(n => {
+    const cls = n.sentiment === 'positive' ? 'up' : n.sentiment === 'negative' ? 'down' : '';
+    const when = n.time || (n.timestamp ? new Date(n.timestamp * 1000).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+    return `<div class="stock-news-item${n.rel === 0 ? ' low-rel' : ''}" onclick="window.open('${_escHtml(n.url)}','_blank')">
+      <span class="stock-news-dot ${cls}"></span>
+      <span class="stock-news-title"${n.title_ko ? ` title="${_escHtml(n.title)}"` : ''}>${_escHtml(n.title_ko || n.title || '')}${n.title_ko ? '<span class="nx-tr">번역</span>' : ''}</span>
+      <div class="stock-news-meta">${_escHtml(n.source || '')} · ${_escHtml(when)}${n.rel === 0 ? ' · <span class="low-rel-tag">관련도 낮음</span>' : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+// 쌓아 둔 이 종목 뉴스 30일치 (11-24 — 뉴스 기록은 11-24부터)
+async function _loadStockNewsArchive(ticker) {
+  const section = document.getElementById('stock-news-section');
+  if (!section) return;
+  const btn = section.querySelector('.stock-news-more');
+  if (btn) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
+  let list = [];
+  try { list = await api(`/api/stock-news-archive/${encTk(ticker)}?days=30`); } catch {}
+  if (_currentTicker && _currentTicker !== ticker) return;
+  section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스 · 지난 30일 <small class="stock-news-cnt">${list.length}건</small></div>` +
+    (list.length ? `<div class="stock-news-scroll">${_stockNewsItems(list)}</div>`
+      : '<div style="color:var(--muted);font-size:11px;padding:4px 0">아직 쌓인 뉴스가 없어요 (11/24부터 기록)</div>') +
+    `<button type="button" class="stock-news-more" onclick="_loadStockNews('${_escHtml(ticker)}')">최신 뉴스로 돌아가기</button>`;
+}
+
 async function _loadStockNews(ticker) {
   const section = document.getElementById('stock-news-section');
   if (!section) return;
@@ -3638,15 +3666,9 @@ async function _loadStockNews(ticker) {
         <div style="color:var(--muted);font-size:11px;padding:4px 0">최근 뉴스가 없습니다</div>`;
       return;
     }
-    const items = news.slice(0, 8).map(n => {
-      const cls = n.sentiment === 'positive' ? 'up' : n.sentiment === 'negative' ? 'down' : '';
-      return `<div class="stock-news-item" onclick="window.open('${n.url}','_blank')">
-        <span class="stock-news-dot ${cls}"></span>
-        <span class="stock-news-title"${n.title_ko ? ` title="${_escHtml(n.title)}"` : ''}>${_escHtml(n.title_ko || n.title || '')}${n.title_ko ? '<span class="nx-tr">번역</span>' : ''}</span>
-        <div class="stock-news-meta">${_escHtml(n.source || '')} · ${_escHtml(n.time || '')}</div>
-      </div>`;
-    }).join('');
-    section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>${items}`;
+    if (_currentTicker && _currentTicker !== ticker) return;
+    section.innerHTML = `<div class="info-section-title" style="margin-top:10px">관련 뉴스</div>${_stockNewsItems(news.slice(0, 8))}` +
+      `<button type="button" class="stock-news-more" onclick="_loadStockNewsArchive('${_escHtml(ticker)}')">지난 30일 뉴스 보기</button>`;
   } catch {
     section.innerHTML = '';
   }

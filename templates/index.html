@@ -548,6 +548,8 @@
             <div id="chart-draw-list"></div>
           </div>
           <div id="signal-card" style="display:none"></div>
+          <!-- 관련 뉴스: 종합 신호 바로 아래 (11-24, 예전엔 오른쪽 칸 맨 아래) -->
+          <div id="stock-news-section"></div>
           <div id="financials-card" style="display:none"></div>
           <div id="stock-info-panel">
             <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>
@@ -591,6 +593,10 @@
             <button id="nx-lang-toggle" onclick="_toggleNewsLang()" title="영어 기사 제목을 한글 번역으로 볼지 원문으로 볼지">가 한글</button>
             <button id="nx-side-toggle" onclick="_toggleNewsSide()" title="오른쪽 요약 칸 접기·펴기">▤</button>
           </div>
+          <span class="nx-date" title="지난 뉴스 보기 — 11/24부터 쌓임">
+            <input id="nx-date" type="date" aria-label="뉴스 날짜">
+            <button type="button" id="nx-date-today" hidden>오늘로</button>
+          </span>
           <div class="nx-search">
             <input id="news-kw-search" type="text" class="news-kw-input" placeholder="🔍 뉴스 검색…">
             <span id="news-kw-count" class="news-kw-count" style="display:none"></span>

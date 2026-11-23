@@ -61,5 +61,6 @@ data/market_flow.json
 data/market_flow.json.tmp
 data/market_breadth.json
 data/us_stock_flow.sqlite
+data/news_archive.sqlite
 data/news_translations.json
 data/news_translations.json.tmp
