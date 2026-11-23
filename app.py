@@ -1333,15 +1333,29 @@ def kr_news(code: str):
 
 @app.route("/api/stock-news/<ticker>")
 def stock_news(ticker: str):
-    """종목별 뉴스 (Finnhub company-news, 30분 lazy 캐시)"""
+    """종목별 뉴스 (Finnhub company-news, 30분 lazy 캐시) + 영어 제목 한글 번역(title_ko, 11-24).
+    번역하는 서버(집 서버)는 처음 받을 때 바로 번역하고, 번역 안 하는 서버(작업 PC)는 집 서버의 한글 제목을 붙인다."""
     ticker = _canon_us_ticker(ticker)
     key    = f"stock_news_{ticker}"
-    cached = cache.get(key)
-    if cached is not None:
-        return jsonify(cached)
-    data = df.fetch_finnhub_company_news(ticker)
-    cache.set(key, data, ttl=1800)
-    return jsonify(data)
+    data = cache.get(key)
+    if data is None:
+        data = df.fetch_finnhub_company_news(ticker)
+        cache.set(key, data, ttl=1800)
+        if df.NEWS_TR_ENABLED and data:
+            try:
+                df.translate_news_titles([n["title"] for n in data[:20] if n.get("title")])
+            except Exception as e:
+                log.warning(f"종목 뉴스 번역 실패 ({ticker}): {e}")
+    out = []
+    home_ko = None
+    for n in data:
+        ko = df.news_title_ko(n.get("title", "")) if df.news_needs_tr(n.get("title", "")) else None
+        out.append(dict(n, title_ko=ko) if ko else n)
+    if not df.NEWS_TR_ENABLED and any(df.news_needs_tr(n.get("title", "")) and not n.get("title_ko") for n in out):
+        home = _home_json(f"/api/stock-news/{ticker}", {}, f"stock_news_home_{ticker}", None) or []
+        home_ko = {h.get("title"): h.get("title_ko") for h in home if h.get("title_ko")}
+        out = [dict(n, title_ko=home_ko[n["title"]]) if not n.get("title_ko") and n.get("title") in home_ko else n for n in out]
+    return jsonify(out)
 
 
 @app.route("/api/reports")
@@ -1739,12 +1753,14 @@ def _home_json(path: str, params: dict, key: str, need: str) -> dict | None:
     try:
         r = requests.get(f"{base}{path}", params=params, timeout=6)
         d = r.json() if r.ok else None
-        if not (isinstance(d, dict) and d.get(need) is not None):
+        if need is None:      # 목록 응답 그대로 (종목 뉴스 등)
+            d = d if isinstance(d, list) else None
+        elif not (isinstance(d, dict) and d.get(need) is not None):
             d = None
     except Exception as e:
         log.info(f"집 서버 {path} 못 받음 — 이 서버 기록 사용: {e}")
         d = None
-    if d:
+    if isinstance(d, dict):
         d["from_home"] = True
     cache.set(key, d or {}, ttl=300 if d else 120)
     return d

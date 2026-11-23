@@ -2642,6 +2642,7 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .nx-chip.policy { color: var(--nc-policy); } .nx-chip.general { color: var(--nc-general); } .nx-chip.sports { color: var(--nc-sports); }
 .nx-src { font-weight: 600; }
 .nx-tr { font-size: 10px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.sm-news-title .nx-tr, .stock-news-title .nx-tr { margin-left: 5px; color: var(--muted); font-weight: 400; vertical-align: 1px; }   /* 종목 뉴스 번역 표시 (11-24) */
 .nx-more { display: block; margin: 12px auto 0; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 18px; font-size: 12.5px; cursor: pointer; }
 .nx-more:hover { border-color: var(--accent); }
 .nx-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: calc(var(--header-h) + 12px); }
