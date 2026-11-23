@@ -1246,7 +1246,7 @@ function _chartSearchPreview(q) {
     const pct  = s.change_pct ?? 0;
     const cls  = pct >= 0 ? 'up' : 'down';
     const disp = s._isKr ? s.code : s.ticker;
-    const name = s._isKr ? s.name : (s.name_ko || s.name || '');
+    const name = s._isKr ? s.name : usKoName(s);
     return `<div class="gs-item" onclick="_chartSearchSelect('${s.ticker}')">
       <span class="gs-ticker">${disp}</span>
       <span class="gs-name">${name}</span>
@@ -3277,11 +3277,12 @@ function _bindCompareEvents() {
 function _renderHeader(stock) {
   const isIdx = _isIndex(stock.ticker || '');
   // 지수·환율 등은 Yahoo 심볼(^KS11·KRW=X)이 낯설어 큰 제목을 한글 이름으로, 심볼은 옆에 작게
-  document.getElementById('chart-ticker-label').textContent  = isIdx ? stock.name : stock.ticker;
+  // 11-24: 미국 종목은 큰 제목을 한글이름(티커), 옆에 영어 이름 — 한글 이름이 없으면 지금처럼 티커 + 영어
+  const usKo = !isIdx && !_isKrStock(stock.ticker || '') && stock.name_ko;
+  document.getElementById('chart-ticker-label').textContent  = isIdx ? stock.name : usKo ? stockLabel(stock) : stock.ticker;
   const companyEl = document.getElementById('chart-company-label');
   companyEl.textContent =
-    isIdx ? (_INDEX_DISPLAY_SYMBOL[stock.ticker] || stock.ticker)
-          : (stock.name_ko ? `${stock.name} (${stock.name_ko})` : stock.name);
+    isIdx ? (_INDEX_DISPLAY_SYMBOL[stock.ticker] || stock.ticker) : stock.name;
   if (isIdx) companyEl.title = `야후 심볼: ${stock.ticker}`;
   else companyEl.removeAttribute('title');
   if (!isIdx && stockKind(stock) !== 'stock')

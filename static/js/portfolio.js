@@ -671,9 +671,7 @@ async function renderPortfolio(opts = {}) {
               <tr onclick="navigateToChart('${r.ticker}')">
                 <td onclick="event.stopPropagation()" class="sc-check-cell">${_cmpCheckboxHtml('pt', r.ticker)}${starBtn(r.ticker)}</td>
                 <td class="td-ticker">${r.ticker}</td>
-                <td class="td-name">${name}
-                  ${nameKo ? `<span class="td-name-ko">(${nameKo})</span>` : ''}
-                </td>
+                <td class="td-name">${r.stock.name ? stockNameCell({ ...r.stock, ticker: r.ticker }) : _escHtml(name)}</td>
                 <td onclick="event.stopPropagation()">
                   <select class="wl-group-select" onchange="_ptOnGroupChange('${r.ticker}', this)">
                     ${groupOptionsHtml(PTG.get(r.ticker))}

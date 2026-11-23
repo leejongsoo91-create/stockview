@@ -12,6 +12,26 @@ function colorCls(n){ return n >= 0 ? 'up' : 'down'; }
 // 국내 종목(005930.KS 등)은 가격이 원, 시가총액이 원 단위 — 달러 함수(fmt$/fmtCap)를 쓰면
 // "$201,500.00", "$1838654600000.00T"처럼 나온다. 관심종목처럼 미국·국내가 섞이는 표에서 사용.
 function isKrTicker(t) { return /\.(KS|KQ)$/.test(t || ''); }
+// ── 종목 표시 이름 (11-24) ── 미국: 한글이름(티커) — 한글 이름이 없으면 짧은 영어 이름. 국내: 이름(코드)
+function shortEnName(n) {
+  let x = String(n || '').trim();
+  for (let i = 0; i < 3; i++)
+    x = x.replace(/,?\s+(Class [A-Z]|Common Stock|Ordinary Shares|American Depositary Shares|Inc\.?|Incorporated|Corporation|Corp\.?|Ltd\.?|Limited|plc|N\.V\.|S\.A\.|L\.P\.|LP)$/i, '').trim();
+  return x || String(n || '');
+}
+function usKoName(s) { return (s && (s.name_ko || shortEnName(s.name) || s.ticker)) || ''; }
+function stockLabel(s) {
+  if (!s) return '';
+  if (s.code || isKrTicker(s.ticker)) return `${s.name || ''}(${s.code || (s.ticker || '').split('.')[0]})`;
+  return `${usKoName(s)}(${s.ticker})`;
+}
+// 표의 이름 칸: 미국은 한글 이름 + 작은 영어 이름 둘째 줄, 국내는 이름 그대로. extra = 이름 뒤 배지
+function stockNameCell(s, extra = '') {
+  if (!s) return '';
+  if (s.code || isKrTicker(s.ticker)) return `${_escHtml(s.name || '')}${extra}`;
+  return `<span class="sn-main">${_escHtml(usKoName(s))}</span>${extra}` +
+    (s.name_ko && s.name ? `<span class="sn-sub">${_escHtml(s.name)}</span>` : '');
+}
 function fmtKrw(v)     { return '₩' + Math.round(v).toLocaleString('ko-KR'); }
 function fmtKrCap(v)   { return v >= 1e12 ? (v / 1e12).toFixed(1) + '조' : v >= 1e8 ? Math.round(v / 1e8) + '억' : '—'; }
 // 종류: 국내는 서버 kind(네이버 주식·ETF·ETN 구분), 미국 섹터 ETF는 sector 'ETF'. 서버 시작 직후 kind가
@@ -737,13 +757,13 @@ function _renderTop() {
     const mv = !anim ? '' : pr == null ? '<span class="top-mv top-mv-new">NEW</span>'
       : d > 0 ? `<span class="top-mv up">▲${d}</span>` : d < 0 ? `<span class="top-mv down">▼${-d}</span>` : '';
     const code = market === 'kr' ? (s.code || t.split('.')[0]) : t;
-    const name = market === 'kr' ? s.name : s.name + (s.name_ko ? ` (${s.name_ko})` : '');
+    const name = market === 'kr' ? s.name : usKoName(s);   // 티커는 왼쪽 칸 (11-24: 한글 이름 먼저)
     const price = market === 'kr' ? fmtKrw(s.price || 0)
       : '$' + (s.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     tr.innerHTML = `
       <td class="top-rank">${rank}${mv}</td>
       <td class="m-ticker">${code}</td>
-      <td class="m-name">${_escHtml(name || '')}<br><span class="top-sub">${_topLabel(s, market, by)}</span></td>
+      <td class="m-name"${market === 'us' && s.name_ko ? ` title="${_escHtml(s.name || '')}"` : ''}>${_escHtml(name || '')}<br><span class="top-sub">${_topLabel(s, market, by)}</span></td>
       <td class="top-price">${price}${sessTagHtml(s)}</td>
       <td class="m-pct ${colorCls(s.change_pct || 0)}">${fmtPct(s.change_pct || 0)}</td>`;
     tr.classList.toggle('top-moved', anim && d !== 0);
@@ -1607,7 +1627,7 @@ function renderMovers(stocks) {
       <tr onclick="navigateToChart('${s.ticker}')">
         <td onclick="event.stopPropagation()" style="width:28px">${starBtn(s.ticker)}</td>
         <td class="m-ticker">${s.ticker}</td>
-        <td class="m-name">${s.name}<br><span style="font-size:11px;color:#6e7681">${s.name_ko || ''}</span></td>
+        <td class="m-name">${stockNameCell(s)}</td>
         <td class="m-price">$${s.price != null ? Number(s.price).toFixed(2) : '—'}</td>
         <td class="m-pct ${colorCls(s.change_pct)}">${fmtPct(s.change_pct)}</td>
       </tr>`).join('');
@@ -1674,7 +1694,7 @@ function renderHomeWatchlistSummary() {
     <table class="movers-table"><tbody>
       ${top.map(s => {
         const disp = s.code || s.ticker;
-        const name = s.name_ko || s.name || '';
+        const name = s.code ? (s.name || '') : usKoName(s);
         const pct  = s.change_pct || 0;
         const tg   = typeof WLN !== 'undefined' ? WLN.get(s.ticker).target : null;
         const mark = (tg && s.price != null && s.price >= tg) ? ' <span class="home-my-hit">✓</span>' : '';
@@ -2075,7 +2095,7 @@ function renderNews() {
   }
 
   const meta = n => {
-    const tk = n.ticker ? `<span class="news-ticker-badge" onclick="event.stopPropagation();navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>` : '';
+    const tk = n.ticker ? `<span class="news-ticker-badge" title="${_escHtml(usNameKo(n.ticker, ''))}" onclick="event.stopPropagation();navigateToChart('${_escHtml(n.ticker)}')">${_escHtml(n.ticker)}</span>` : '';
     const tr = (_nxView.lang === 'ko' && n.title_ko) ? '<span class="nx-tr" title="영어 제목을 자동 번역했어요">번역</span>' : '';
     return `<div class="nx-meta"><span class="nx-chip ${catOf(n)}">${NX_CATS[catOf(n)] || ''}</span>` +
       `<span class="news-market-flag">${n.market === 'KR' ? '🇰🇷' : '🌐'}</span>` +
@@ -2674,7 +2694,7 @@ function _gsSearch(q) {
       : '';
     return `<div class="gs-item" onclick="_gsSelect('${s.ticker}')">
       ${badge}<span class="gs-ticker">${disp}</span>
-      <span class="gs-name">${(s._isKr ? s.name : (s.name_ko || s.name)) || ''}${kindBadgeHtml(s)}</span>
+      <span class="gs-name">${(s._isKr ? s.name : usKoName(s)) || ''}${kindBadgeHtml(s)}</span>
       <span class="gs-pct ${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>
     </div>`;
   }).join('');

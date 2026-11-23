@@ -611,7 +611,7 @@ function _rowOverview(s, no) {
     <td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
-    <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
+    <td class="td-name">${stockNameCell(s)}</td>
     ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
     ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector ? koSector(s.sector) : '—'}</span></td>`)}
     ${_hd('price',      `<td class="num">${priceCell}</td>`)}
@@ -636,7 +636,7 @@ function _rowFundamental(s, no) {
     <td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
-    <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
+    <td class="td-name">${stockNameCell(s)}</td>
     ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
     ${_hd('sector',     `<td class="td-sector"><span class="sc-sector-badge sc-sec-${_secKey(s.sector)}">${s.sector ? koSector(s.sector) : '—'}</span></td>`)}
     ${_hd('industry',   `<td class="td-industry">${s.industry ? koIndustry(s.industry) : '—'}</td>`)}
@@ -663,7 +663,7 @@ function _rowPerformance(s, no) {
     <td onclick="event.stopPropagation()" class="sc-check-cell">${_scCheckboxHtml(s.ticker)}${starBtn(s.ticker)}</td>
     <td class="sc-no">${no}</td>
     <td class="td-ticker">${s.ticker}</td>
-    <td class="td-name">${s.name}${s.name_ko ? `<span class="td-name-ko">(${s.name_ko})</span>` : ''}</td>
+    <td class="td-name">${stockNameCell(s)}</td>
     ${_hd('signal',     `<td>${signalBadgeHtml(s.ticker, _scSignalMap)}</td>`)}
     ${_hd('price',      `<td class="num">${s.price ? fmt$(s.price) + sessTagHtml(s) : '—'}</td>`)}
     ${_hd('change_pct', `<td class="num">${s.price ? `<span class="chg-cell ${bgCls} ${cls}">${fmtPct(pct)}</span>` : '—'}</td>`)}
@@ -807,8 +807,8 @@ function openStockModal(ticker) {
   // 헤더
   const pct = s.change_pct ?? 0;
   const cls = pct >= 0 ? 'up' : 'down';
-  document.getElementById('sm-ticker').textContent = s.ticker;
-  document.getElementById('sm-name').textContent   = s.name + (s.name_ko ? ` (${s.name_ko})` : '');
+  document.getElementById('sm-ticker').textContent = stockLabel(s);          // 엔비디아(NVDA) (11-24)
+  document.getElementById('sm-name').textContent   = s.name_ko ? s.name : '';
   document.getElementById('sm-price').innerHTML  = s.price ? fmt$(s.price) + sessTagHtml(s) : '—';
   const chgEl = document.getElementById('sm-change');
   chgEl.textContent = s.price ? `${pct >= 0 ? '+' : ''}${fmtPct(pct)}` : '—';

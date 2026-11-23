@@ -475,9 +475,8 @@ function renderHeatmap() {
            </span>` : '';
       tooltip.style.display = 'block';
       tooltip.innerHTML = `
-        <strong style="font-size:14px">${d.data.ticker}</strong>
-        <span style="color:#8b949e;margin-left:6px;font-size:12px">${d.data.name}</span><br>
-        ${d.data.name_ko ? `<span style="color:#6e7681;font-size:11px">${d.data.name_ko}</span><br>` : ''}
+        <strong style="font-size:14px">${stockLabel(d.data)}</strong><br>
+        ${d.data.name_ko ? `<span style="color:#8b949e;font-size:11.5px">${d.data.name}</span><br>` : ''}
         Price: <strong>${fmt$(d.data.price)}</strong>&nbsp;
         <strong class="${pct >= 0 ? 'up' : 'down'}">${fmtPct(pct)}</strong>
         <span style="color:#6e7681;font-size:10px;margin-left:4px">(${periodLabel})</span><br>

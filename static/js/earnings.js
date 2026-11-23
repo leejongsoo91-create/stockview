@@ -154,7 +154,7 @@ function _earnRow(r) {
   return `
     <tr>
       <td><span class="earn-ticker" data-ticker="${r.symbol}">${r.symbol}</span></td>
-      <td class="earn-name">${r.name}${ko ? `<span class="td-name-ko">(${ko})</span>` : ''}</td>
+      <td class="earn-name">${stockNameCell({ ticker: r.symbol, name: r.name, name_ko: ko })}</td>
       <td><span class="earn-time-badge ${timeClass}">${koEarnTime(r.time)}</span></td>
       <td class="num">${r.eps_forecast}</td>
       <td class="num">${r.last_year_eps}</td>

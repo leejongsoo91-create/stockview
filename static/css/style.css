@@ -1191,6 +1191,8 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .td-ticker   { font-weight: 700; color: var(--accent); }
 .td-name     { max-width: 240px; line-height: 1.3; white-space: normal; }
 .td-name-ko  { font-size: 11px; color: var(--muted); margin-left: 3px; }
+.sn-main { font-weight: 600; }   /* 미국 종목 이름 칸: 한글 이름 + 둘째 줄 작은 영어 이름 (11-24) */
+.sn-sub  { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 종류 배지 (국내 ETF·ETN, 미국 섹터 ETF) — 주식과 구분 */
 .kind-badge  { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 3px; font-size: 9.5px;
                font-weight: 700; line-height: 15px; vertical-align: 1px; border: 1px solid; }

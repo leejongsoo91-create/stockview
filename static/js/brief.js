@@ -7,7 +7,7 @@ let _lastDailySignals = { us: null, kr: null };
 const _hideWeakSell = { us: false, kr: false };
 
 // 미국 종목은 한글 이름 우선 (11-24 — 서버 신호 목록엔 영어 이름만 있음)
-function _briefName(s) { return _isKrStock(s.ticker || '') ? (s.name || '') : usNameKo(s.ticker, s.name || ''); }
+function _briefName(s) { return _isKrStock(s.ticker || '') ? (s.name || '') : usNameKo(s.ticker, shortEnName(s.name || '')); }
 
 function initBrief() {
   document.querySelectorAll('.brief-period-btn').forEach(btn => {
