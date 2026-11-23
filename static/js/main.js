@@ -983,8 +983,8 @@ function _renderMarketFlow() {
   const base5 = rows.length >= 6 ? rows[rows.length - 5].avg : null;
 
   const W = 700, H = 150, padB = 18, n = rows.length, bw = W / n;
-  // 미국: 정규장 막대 위에 프리(아래쪽)·애프터를 옅게 쌓는다 (11-21 — 평균·1.5배 강조는 정규장 기준)
-  const ext = x => isKr ? [0, 0] : [x.r['pre_' + by] || 0, x.r['after_' + by] || 0];
+  // 미국: 정규장 막대 위에 애프터를 옅게 쌓는다 (11-21 — 평균·1.5배 강조는 정규장 기준). 프리마켓은 네이버 누적에 없어 표시 안 함(11-23)
+  const ext = x => isKr ? [0, 0] : [0, x.r['after_' + by] || 0];
   const max = Math.max(...rows.map(x => x.v + ext(x)[0] + ext(x)[1]), ...rows.map(x => x.avg || 0)) * 1.08 || 1;
   const y = v => (H - padB) * (1 - v / max);
   const bars = rows.map((x, k) => {
@@ -1008,7 +1008,7 @@ function _renderMarketFlow() {
       <td>${x.r.amount ? _fmtAmt(x.r.amount, isKr) : '—'}</td>
       <td>${pct(x.prev ? (x.v / x.prev - 1) * 100 : null)}</td>
       <td>${x.avg ? `<b>${(x.v / x.avg).toFixed(1)}배</b>` : '—'}</td>${invBy ? invTd(x.r.date) : ''}${isKr ? '' :
-        `<td>${x.r['pre_' + by] != null ? fmtV(x.r['pre_' + by]) : '—'}</td><td>${x.r['after_' + by] != null ? fmtV(x.r['after_' + by]) : '—'}</td>`}
+        `<td>${x.r['after_' + by] != null ? fmtV(x.r['after_' + by]) : '—'}</td>`}
     </tr>`).join('');
   const mixed = !isKr && rows.some(x => x.r.mixed);
   const wrapOld = body.querySelector('.vt-table-wrap'), keepY = wrapOld ? wrapOld.scrollTop : 0;
@@ -1023,15 +1023,15 @@ function _renderMarketFlow() {
       ${bars}${avgPts ? `<polyline points="${avgPts}" class="vt-avg"/>` : ''}${labels}
     </svg>
     <div class="vt-legend"><span><i class="vt-lg-avg"></i>20일 평균</span><span><i class="vt-lg-hot"></i>평소의 1.5배 이상</span>${isKr ? '' :
-      '<span><i class="mf-lg-reg"></i>정규장</span><span><i class="mf-lg-pre"></i>프리</span><span><i class="mf-lg-after"></i>애프터</span>'}</div>
+      '<span><i class="mf-lg-reg"></i>정규장</span><span><i class="mf-lg-after"></i>애프터</span>'}</div>
     ${isKr ? _mfInvChart() : ''}
     <div class="vt-table-wrap">
       <table class="vt-table">
-        <thead><tr><th>날짜</th><th>${isKr ? '' : '정규장 '}거래량</th><th>${isKr ? '' : '정규장 '}거래대금</th><th>${byName}<br>전일 대비</th><th>${byName}<br>20일 평균 대비</th>${invBy ? '<th>개인<br>순매수</th><th>외국인<br>순매수</th><th>기관<br>순매수</th>' : ''}${isKr ? '' : `<th>프리<br>${byName}</th><th>애프터<br>${byName}</th>`}</tr></thead>
+        <thead><tr><th>날짜</th><th>${isKr ? '' : '정규장 '}거래량</th><th>${isKr ? '' : '정규장 '}거래대금</th><th>${byName}<br>전일 대비</th><th>${byName}<br>20일 평균 대비</th>${invBy ? '<th>개인<br>순매수</th><th>외국인<br>순매수</th><th>기관<br>순매수</th>' : ''}${isKr ? '' : `<th>애프터<br>${byName}</th>`}</tr></thead>
         <tbody>${trs}</tbody>
       </table>
     </div>
-    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금·투자자별 순매수는 다음 금융 값입니다(장 마감 뒤 확정값, 장중엔 전날까지).' : '미국은 보통주 약 4,000종목의 거래량·실제 체결 금액 합계입니다(ETF·우선주 제외). 뉴욕 09:29·16:01·20:05에 누적값을 기록해 프리·정규장·애프터로 나누고, 거래량·거래대금·20일 평균은 정규장 기준입니다.' + (mixed ? ' * 11-19·20은 정규장·시간외 구분 전(현재가×거래량 추정, 일부 시간외 포함) 값입니다.' : '')} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
+    <p class="vt-note">${isKr ? '코스피·코스닥 거래량·거래대금·투자자별 순매수는 다음 금융 값입니다(장 마감 뒤 확정값, 장중엔 전날까지).' : '미국은 보통주 약 4,000종목의 거래량·실제 체결 금액 합계입니다(ETF·우선주 제외). 뉴욕 16:01(정규장 끝)·20:05(애프터 끝)에 누적값을 기록해 정규장·애프터로 나누고, 거래량·거래대금·20일 평균은 정규장 기준입니다(네이버 누적값엔 프리마켓이 들어가지 않아 프리는 따로 없음).' + (mixed ? ' * 11-19·20은 정규장·시간외 구분 전(현재가×거래량 추정, 일부 시간외 포함) 값입니다.' : '')} "20일 평균 대비"는 그날 값 ÷ 그 전 20거래일 평균입니다.</p>`;
   _bindMfCtrls(body);
   if (isKr) _renderMfInvestors();
   const wrapNew = body.querySelector('.vt-table-wrap'); if (wrapNew && keepY) wrapNew.scrollTop = keepY;

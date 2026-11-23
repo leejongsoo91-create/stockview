@@ -200,13 +200,10 @@ def check_us(mode: str, base: str) -> tuple[str, Check]:
         last = (f.get("rows") or [{}])[-1]
         ch.add("오늘 미국 정규장 거래 기록(16:01)", last.get("date") == today and (last.get("amount") or 0) > 1e10,
                f"{last.get('date')} 정규장 ${(last.get('amount') or 0) / 1e9:,.1f}B · {(last.get('volume') or 0) / 1e9:.2f}B주")
-        pre = last.get("pre_amount") if last.get("date") == today else None
-        if last.get("mixed"):
-            ch.add("오늘 미국 프리 기록(09:29)", True, "구분 전 예전 기록 — 건너뜀")
-        else:
-            ch.add("오늘 미국 프리 기록(09:29)", pre is not None,   # 0이면 네이버 누적값에 프리 거래가 안 들어가는 것 — 실패는 아님
-                   "기록 없음 (09:29에 서버가 꺼져 있었거나 휴장 판정)" if pre is None else
-                   f"${pre / 1e9:,.2f}B" + (" — 0: 네이버 누적값에 프리 미포함으로 보임" if not pre else ""))
+        # 11-23: 네이버 누적값엔 프리마켓이 없어 09:29 기록을 없앰 → 대신 정규장 값이 말이 되는지(음수·0 아님) 확인
+        if last.get("date") == today:
+            ch.add("미국 정규장 거래 값 정상(0보다 큼)", (last.get("volume") or 0) > 0 and (last.get("amount") or 0) > 0,
+                   f"거래량 {(last.get('volume') or 0) / 1e9:.2f}B주")
     return "ok", ch
 
 

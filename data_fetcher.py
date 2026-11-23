@@ -2646,10 +2646,11 @@ def fetch_kr_market_volume_history(index: str, count: int = 300) -> dict[str, in
     return out
 
 
-def us_market_flow(stocks: list[dict], quotes: dict | None = None) -> dict:
+def us_market_flow(stocks: list[dict], quotes: dict | None = None, day: str | None = None) -> dict:
     """미국 시장 전체 거래량·거래대금 누적 — 보통주(우선주·워런트 등 제외)만.
     quotes(fetch_us_quotes_naver 결과)가 있으면 네이버 종목별 누적 거래량·실제 체결 금액 합계(11-21~),
-    없으면 예전 방식(현재가 × 거래량 추정). 네이버 누적값은 시간외 거래도 계속 더해지므로, 시각별로 찍어 차이로 나눈다."""
+    없으면 예전 방식(현재가 × 거래량 추정). 네이버 누적값은 정규장 시작 때 0부터 다시 세고 애프터까지 더해진다
+    (프리마켓은 안 들어감 — 11-23 확인). day를 주면 그날 체결이 없는 종목(전날 누적이 남아 있음)은 뺀다."""
     vol = amt = 0.0
     n = 0
     for s in stocks or []:
@@ -2657,6 +2658,8 @@ def us_market_flow(stocks: list[dict], quotes: dict | None = None) -> dict:
             continue
         if quotes is not None:
             q = quotes.get(_norm_us_ticker(s.get("ticker", ""))) or {}
+            if day and str(q.get("traded_at") or "")[:10] != day:
+                continue
             v, a = q.get("volume") or 0, q.get("value") or 0
         else:
             v = s.get("volume") or 0

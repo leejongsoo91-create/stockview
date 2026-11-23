@@ -1500,8 +1500,8 @@ function _renderVolTrend() {
   const price = v => v == null ? '—' : isKr ? Math.round(v).toLocaleString() : v.toFixed(2);
   const amtCell = b => {
     if (!b.amount) return '<span class="dq-na">—</span>';
-    const ext = [b.pre_amount ? `프리 ${_fmtAmt(b.pre_amount, false)}` : '', b.after_amount ? `애프터 ${_fmtAmt(b.after_amount, false)}` : ''].filter(Boolean).join(' · ');
-    return `<span${ext ? ` title="정규장 기준 · ${ext}"` : ''}>${_fmtAmt(b.amount, isKr)}${b.partial ? '<sup title="09:29 기록이 없어 프리마켓이 섞였을 수 있음">*</sup>' : ''}</span>`;
+    const ext = b.after_amount ? `애프터 ${_fmtAmt(b.after_amount, false)}` : '';
+    return `<span${ext ? ` title="정규장 기준 · ${ext}"` : ''}>${_fmtAmt(b.amount, isKr)}</span>`;
   };
   const trs = rows.slice().reverse().map(r => {
     const c = r.chg > 0 ? 'vt-pos' : r.chg < 0 ? 'vt-neg' : '';
@@ -1520,7 +1520,7 @@ function _renderVolTrend() {
   const note = isKr
     ? '시가·고가·저가·종가·거래량·거래대금은 다음 금융 일별 시세(KRX 정규장, 실제 값)입니다.'
     : `거래량·시가·고가·저가·종가는 정규장 일봉입니다. 거래대금은 네이버 실제 체결 금액을 <b>11/23부터 날마다 쌓아</b> 보여 줍니다(추정치 없음` +
-      `${since ? `, ${since.slice(5).replace('-', '/')}부터 ${_vt.amtDays}일` : ''}) — 쌓이기 전 날짜는 "—", 마우스를 올리면 프리·애프터.`;
+      `${since ? `, ${since.slice(5).replace('-', '/')}부터 ${_vt.amtDays}일` : ''}) — 쌓이기 전 날짜는 "—", 마우스를 올리면 애프터.`;
   body.innerHTML = `
     ${_dqStatsHtml(all, isKr)}
     <div class="vt-ctrls">

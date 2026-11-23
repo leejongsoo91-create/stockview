@@ -705,10 +705,11 @@ def _save_market_flow_row(market: str, day: str, row: dict) -> None:
         os.replace(tmp, MARKET_FLOW_FILE)
 
 
-# 미국: 네이버 누적 거래량·거래대금엔 시간외 거래가 계속 더해진다(11-20: 16:20 110.6억주 → 19:30 123.8억주) →
-# 뉴욕 09:29(프리 끝)·16:01(정규장 끝)·20:05(애프터 끝)에 누적값을 찍어 두고 차이로 프리·정규장·애프터를 나눈다(11-21).
-# 행 = {"s0929": {volume, amount, count}, "s1601": {...}, "s2005": {...}} — 11-19·20은 예전 한 번 저장(volume·amount, 구분 전).
-_US_SNAPS = (("s0929", 9 * 60 + 29), ("s1601", 16 * 60 + 1), ("s2005", 20 * 60 + 5))
+# 미국: 네이버 누적 거래량·거래대금은 정규장 시작(09:30) 때 0부터 다시 세고 애프터마켓까지 계속 더해진다
+# (11-20: 16:20 110.6억주 → 19:30 123.8억주). 프리마켓은 들어가지 않는다 — 11-23 09:29 기록이 전 거래일 하루 전체 값
+# (125.8억주)이라 정규장(16:01 − 09:29)이 마이너스가 됐음. → 뉴욕 16:01(정규장 = 그 시각 누적)·20:05(애프터 = 차이)만 기록.
+# 행 = {"s1601": {volume, amount, count}, "s2005": {...}} (11-23엔 쓰지 않는 s0929도 있음) — 11-19·20은 예전 한 번 저장(구분 전).
+_US_SNAPS = (("s1601", 16 * 60 + 1), ("s2005", 20 * 60 + 5))
 
 
 def record_us_market_flow(slot: str | None = None):
@@ -732,11 +733,10 @@ def record_us_market_flow(slot: str | None = None):
         return
     quotes = df.fetch_us_quotes_naver()   # 기록 시각의 값이 필요해 새로 받는다(약 70요청·20초, 하루 세 번)
     a = quotes.get("AAPL") or {}
-    traded = a.get("session_at") if slot == "s0929" else a.get("traded_at")
-    if str(traded or "")[:10] != day:      # 오늘 체결이 없으면 휴장
+    if str(a.get("traded_at") or "")[:10] != day:      # 오늘 체결이 없으면 휴장
         log.info(f"시장 거래 기록 US {day} {slot}: 오늘 체결 없음(휴장) — 건너뜀")
         return
-    r = df.us_market_flow(stocks, quotes)
+    r = df.us_market_flow(stocks, quotes, day)   # 오늘 체결 없는 종목(전날 누적이 남음)은 뺌
     if not r["volume"]:
         return
     row[slot] = r
@@ -762,7 +762,7 @@ def _save_us_stock_snaps(day: str, slot: str, stocks: list, quotes: dict):
     rows = []
     for s in stocks:
         q = quotes.get(df._norm_us_ticker(s.get("ticker", "")))
-        if q and q.get("volume"):
+        if q and q.get("volume") and str(q.get("traded_at") or "")[:10] == day:   # 오늘 체결이 있는 종목만
             rows.append((s["ticker"], day, slot, int(q["volume"]), float(q.get("value") or 0)))
     try:
         with _usf_lock, closing(_usf_db()) as con:
@@ -790,18 +790,14 @@ def _us_stock_flow_local(ticker: str, since: str) -> dict:
 
 
 def _us_flow_split(row: dict) -> dict:
-    """US 하루 기록 → 정규장(volume·amount)·프리·애프터. 예전 한 번 저장 행은 mixed(구분 전)."""
+    """US 하루 기록 → 정규장(volume·amount)·애프터. 예전 한 번 저장 행은 mixed(구분 전).
+    정규장 = 16:01 누적 그대로 (네이버 누적엔 프리마켓이 안 들어감 — 11-23 확인, s0929는 전 거래일 값이라 쓰지 않음)."""
     if "volume" in row and "s1601" not in row:
         return {"volume": row.get("volume"), "amount": row.get("amount"), "mixed": True}
-    s0, s1, s2 = row.get("s0929") or {}, row.get("s1601") or {}, row.get("s2005") or {}
+    s1, s2 = row.get("s1601") or {}, row.get("s2005") or {}
     out = {"volume": None, "amount": None}
     if s1:
-        out["volume"] = s1["volume"] - s0.get("volume", 0)
-        out["amount"] = s1["amount"] - s0.get("amount", 0)
-        if not s0:
-            out["pre_unknown"] = True   # 09:29 기록이 없으면 정규장에 프리가 섞였을 수 있음
-    if s0:
-        out["pre_volume"], out["pre_amount"] = s0["volume"], s0["amount"]
+        out["volume"], out["amount"] = s1["volume"], s1["amount"]
     if s1 and s2:
         out["after_volume"] = max(0, s2["volume"] - s1["volume"])
         out["after_amount"] = max(0, s2["amount"] - s1["amount"])
@@ -1792,8 +1788,7 @@ def stock_daily_api(ticker):
         f = flow.get(d) or {}
         rows.append({"date": d, "open": c.get("open"), "high": c.get("high"), "low": c.get("low"), "close": c.get("close"),
                      "volume": c.get("volume"), "amount": f.get("amount"),
-                     "pre_amount": f.get("pre_amount"), "after_amount": f.get("after_amount"),
-                     "partial": bool(f.get("pre_unknown")) or None})
+                     "after_amount": f.get("after_amount")})
     amt = [r["date"] for r in rows if r.get("amount")]
     return jsonify({"ticker": t, "market": "US", "rows": rows, "amount_source": "naver",
                     "amount_since": min(amt) if amt else None})
