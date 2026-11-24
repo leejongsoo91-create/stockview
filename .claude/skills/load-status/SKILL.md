@@ -13,12 +13,17 @@ description: StockView 작업 현황 보고서 출력 — 사용자가 "불러�
 3. `git log --oneline -8`과 `git status --short` — CHANGELOG에 아직 안 적힌 커밋이나 미커밋 변경이 있는지 대조한다.
 4. **자동 점검 결과**: `python3 scripts/server_check.py --report` — 감시 CT `monitor`가 평일 정해진 시각에 돌린 점검(국내 프리 08:25·국내 마감 16:40·미국 프리/마감 뉴욕 04:40/16:40) 중 **지난 불러오기 이후** 결과를 표로 출력한다(SSH 주소는 git 제외 `api/monitor-ssh.txt`, 본 위치는 `logs/server_check_seen.txt`에 기록돼 다음엔 새 결과만). 연결 실패 시 그 문구를 그대로 "확인 필요"에 적는다. 다시 전부 보려면 `--report --all`.
 
+5. **인수인계 노트**: `logs/session-handoff.md`가 있으면 읽는다(wrap-up 스킬이 리셋 전에 씀). 그리고 `bash scripts/session_snapshot.sh --inject`로 지금 상태(푸시 대기·커밋 안 한 변경·5001·집 서버 버전)를 본다.
+
 **읽지 말 것:** `docs/specs/plan-legacy.md`, `docs/specs/work-history-detail.md`, 메모리 상세 파일. 사용자가 과거 경위를 구체적으로 물을 때만 해당 부분을 검색해서 읽는다.
 
 ## 2. 출력 형식
 
 ```
 ## StockView 작업 현황 보고
+
+### 📝 지난번에서 이어갈 것
+(인수인계 노트의 "이어서 할 일"·"확인 대기"를 그대로. 스냅숏에 ⚠️ 푸시 안 한 커밋·집 서버 ≠ main이 있으면 여기에 먼저. 노트가 없으면 이 칸 생략)
 
 ### 🔎 자동 점검 결과 (먼저 확인)
 (`server_check.py --report` 출력 표 그대로. ❌가 있으면 항목별 내용과 함께 "원인 확인부터 할까요?"를 묻는다.
