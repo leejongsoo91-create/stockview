@@ -1054,6 +1054,8 @@ def _usf_db():
     con = sqlite3.connect(US_STOCK_FLOW_DB, timeout=10)
     con.execute("CREATE TABLE IF NOT EXISTS snap (tk TEXT, day TEXT, slot TEXT, volume INTEGER, amount REAL,"
                 " PRIMARY KEY (tk, day, slot)) WITHOUT ROWID")
+    # FINRA 일별 공매도 거래량 (11-25) — 종목별 공매도 비율의 20일 평균 대비를 보려고 매일 쌓는다
+    con.execute("CREATE TABLE IF NOT EXISTS short_daily (tk TEXT, day TEXT, short INTEGER, total INTEGER, PRIMARY KEY (tk, day)) WITHOUT ROWID")
     return con
 
 
@@ -1309,6 +1311,7 @@ def initial_load():
     _start_after(90, lambda: refresh_broker_research(force=True))   # 종목 목록이 들어온 뒤
     _start_after(120, lambda: refresh_report_lists(force=True))
     _start_after(150, lambda: refresh_dart(force=True))
+    _start_after(180, lambda: refresh_finra_short())
     _start_after(6,  refresh_fear_greed)
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
@@ -1469,7 +1472,8 @@ _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
 _scheduler.add_job(refresh_broker_research, "interval", minutes=15, id="broker_research")   # 평일 07~22시 15분, 그 밖 1시간 (11-24)
 _scheduler.add_job(refresh_report_lists,    "interval", minutes=30, id="report_lists")      # 네이버 리서치·한경, 평일 30분·그 밖 3시간 (11-24)
-_scheduler.add_job(lambda: refresh_dart(),  "interval", minutes=30, id="dart")              # DART 국내 공시·잠정실적, 평일 30분·그 밖 3시간 (11-25)
+_scheduler.add_job(lambda: refresh_dart(),  "interval", minutes=30, id="dart")
+_scheduler.add_job(lambda: refresh_finra_short(), "interval", hours=3, id="finra_short")   # FINRA 일별 공매도, 새 파일만 (11-25)              # DART 국내 공시·잠정실적, 평일 30분·그 밖 3시간 (11-25)
 _scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")
 _scheduler.add_job(refresh_reports,         "interval", minutes=15, id="reports")
 _scheduler.add_job(refresh_earnings,        "interval", hours=1,    id="earnings")
@@ -1848,6 +1852,130 @@ def dart_feed_api():
     for r in rows:
         r["name"] = names.get(r["tk"]) or r["corp"]
     return jsonify(rows)
+
+
+# ── 수급·공매도·내부자·매크로 (11-25, A4-③④⑤) ────────────────────────────────────
+def refresh_finra_short():
+    """FINRA 일별 공매도 파일(미국 동부 18시쯤)을 아직 안 받은 최근 거래일만 받아 우리 종목 목록 것만 쌓는다(3시간마다)."""
+    stocks = {s["ticker"] for s in (cache.get("stocks") or []) if s.get("ticker")}
+    if len(stocks) < 1000:
+        return
+    try:
+        with _usf_lock, closing(_usf_db()) as con:
+            have = {r[0] for r in con.execute("SELECT DISTINCT day FROM short_daily WHERE day >= ?", ((date.today() - timedelta(days=45)).isoformat(),))}
+    except sqlite3.Error:
+        have = set()
+    back = 42 if len(have) < 20 else 8   # 기록이 20거래일 미만이면 6주 전까지 채워 20일 평균을 바로 쓸 수 있게
+    for i in range(back, -1, -1):
+        d = (date.today() - timedelta(days=i))
+        if d.weekday() >= 5 or d.isoformat() in have:
+            continue
+        data = df.fetch_finra_short(d.isoformat())
+        if not data:
+            continue
+        rows = [(t, d.isoformat(), v[0], v[1]) for t, v in data.items() if t in stocks and v[1] > 0]
+        try:
+            with _usf_lock, closing(_usf_db()) as con:
+                con.executemany("INSERT OR REPLACE INTO short_daily VALUES (?,?,?,?)", rows)
+                con.commit()
+            log.info(f"FINRA 공매도 {d}: {len(rows):,}종목")
+        except sqlite3.Error as e:
+            log.warning(f"FINRA 저장 실패: {e}")
+
+
+def _short_ratio(t: str) -> dict:
+    """오늘(가장 최근) 공매도 비율과 그 전 20거래일 평균 → {day, ratio, avg20, x(배수), hist:[[day, ratio]]}."""
+    if not os.path.exists(US_STOCK_FLOW_DB):
+        return {}
+    try:
+        with _usf_lock, closing(_usf_db()) as con:
+            rows = con.execute("SELECT day, short, total FROM short_daily WHERE tk=? ORDER BY day DESC LIMIT 60", (t,)).fetchall()
+    except sqlite3.Error:
+        return {}
+    if not rows:
+        return {}
+    r = [(d, s / tot * 100) for d, s, tot in rows if tot]
+    if not r:
+        return {}
+    prev = [x[1] for x in r[1:21]]
+    avg = sum(prev) / len(prev) if prev else None
+    return {"day": r[0][0], "ratio": round(r[0][1], 1), "avg20": round(avg, 1) if avg else None,
+            "x": round(r[0][1] / avg, 2) if avg else None, "n": len(r), "hist": [[d, round(v, 1)] for d, v in reversed(r[:40])]}
+
+
+@app.route("/api/flow-stock/<ticker>")
+def flow_stock_api(ticker):
+    """미국 종목 수급·내부자 — 공매도 잔고(Nasdaq)·일별 공매도 비율(FINRA, 20일 평균 대비)·기관 보유(13F)·내부자 거래(Finnhub). 6시간 캐시."""
+    t = _canon_us_ticker(ticker.strip())
+    key = f"flow_stock_{t}"
+    base = cache.get_fresh(key)
+    if base is None:
+        si = df.fetch_nasdaq_short_interest(t)
+        inst = df.fetch_nasdaq_institutional(t)
+        ins = df.fetch_finnhub_insider(t)
+        cut90 = (date.today() - timedelta(days=90)).isoformat()
+        buys = [x for x in ins if x["code"] == "P" and x["date"] >= cut90]
+        sells = [x for x in ins if x["code"] == "S" and x["date"] >= cut90]
+        val = lambda xs: sum(abs(x["change"] or 0) * (x["price"] or 0) for x in xs)
+        base = {"short_interest": si, "institutional": inst,
+                "insider": {"buys": len(buys), "sells": len(sells), "buyers": len({x["name"] for x in buys}),
+                            "buy_value": round(val(buys)), "sell_value": round(val(sells)),
+                            "cluster": len({x["name"] for x in buys if x["date"] >= (date.today() - timedelta(days=30)).isoformat()}) >= 2,
+                            "recent": [x for x in ins if x["code"] in ("P", "S")][:8]}}
+        cache.set(key, base, ttl=6 * 3600)
+    out = dict(base, ticker=t, short_daily=_short_ratio(t))
+    si = base["short_interest"]
+    if len(si) >= 2 and si[0]["interest"] and si[1]["interest"]:
+        out["si_change"] = round((si[0]["interest"] / si[1]["interest"] - 1) * 100, 1)
+    inst = base.get("institutional") or {}
+    if si and inst.get("shares_out"):
+        out["si_pct_out"] = round(si[0]["interest"] / (inst["shares_out"] * 1e6) * 100, 2)
+    return jsonify(out)
+
+
+def _macro_item(hist: list, freq: str, yoy: bool = False) -> dict:
+    """시계열 → {last, date, w1, m1(변화), lo, hi(1년 범위), spark:[값]}. yoy면 전년 같은 달 대비 %로 바꾼 뒤."""
+    if yoy:
+        hist = [(hist[i][0], round((hist[i][1] / hist[i - 12][1] - 1) * 100, 2)) for i in range(12, len(hist))]
+    if not hist:
+        return {}
+    vals = [v for _, v in hist]
+    last = vals[-1]
+    k1, k2, ky = (5, 21, 252) if freq in ("d", "D") else (None, 1, 12)   # 월간 지표는 1주 변화 없음
+    year = vals[-ky:]
+    step = max(1, len(year) // 60)
+    return {"last": last, "date": hist[-1][0], "w1": round(last - vals[-1 - k1], 3) if k1 and len(vals) > k1 else None,
+            "m1": round(last - vals[-1 - k2], 3) if len(vals) > k2 else None,
+            "lo": min(year), "hi": max(year), "spark": year[::step][-60:]}
+
+
+@app.route("/api/macro")
+def macro_api():
+    """매크로 지표 — 미국 FRED(금리·장단기 금리차·VIX·하이일드 스프레드·달러·유가·CPI·실업률)·한국 ECOS(기준금리·국고채·원달러). 6시간 캐시."""
+    hit = cache.get_fresh("macro")
+    if hit is not None:
+        return jsonify(hit)
+    items = []
+    for sid, name, unit, freq, desc, risk in df.MACRO_FRED:
+        it = _macro_item(df.fetch_fred(sid), freq, yoy=(sid == "CPIAUCSL"))
+        if it:
+            items.append(dict(it, id=sid, name=name, unit=unit, desc=desc, risk=risk, src="FRED", group="미국"))
+    for code, item, cyc, name, unit, desc in df.MACRO_ECOS:
+        it = _macro_item(df.fetch_ecos(code, item, cyc), "d")
+        if it:
+            items.append(dict(it, id=code, name=name, unit=unit, desc=desc, risk="up" if code == "731Y001" else "", src="ECOS", group="한국"))
+    # 한눈에 위험 신호 (일반적인 기준 — 투자 조언 아님)
+    g = {x["id"]: x for x in items}
+    flags = []
+    if g.get("T10Y2Y", {}).get("last", 1) < 0:
+        flags.append("장단기 금리차 역전")
+    if g.get("VIXCLS", {}).get("last", 0) >= 25:
+        flags.append(f"VIX {g['VIXCLS']['last']:.1f} (불안)")
+    if g.get("BAMLH0A0HYM2", {}).get("last", 0) >= 5:
+        flags.append("하이일드 스프레드 5%p 이상")
+    out = {"items": items, "flags": flags, "at": int(time.time())}
+    cache.set("macro", out, ttl=6 * 3600 if items else 600)
+    return jsonify(out)
 
 
 # ── 미국 종목 실적 (11-25) ─────────────────────────────────────────────────────

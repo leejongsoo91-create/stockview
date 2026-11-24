@@ -2290,6 +2290,47 @@ function _nxApplyPending() {
   document.getElementById('news-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// ── 🌐 매크로 지표 창 (11-25) — FRED·ECOS, 시장 전체 위험도 ──────────
+async function openMacroModal() {
+  const ov = document.getElementById('macro-modal'), body = document.getElementById('macro-modal-body');
+  if (!ov) return;
+  ov.hidden = false;
+  body.innerHTML = '<div class="br-empty">불러오는 중…</div>';
+  let d = null;
+  try { d = await api('/api/macro'); } catch {}
+  if (!d || !(d.items || []).length) { body.innerHTML = '<div class="br-empty">매크로 지표를 불러오지 못했어요</div>'; return; }
+  const fmt = (v, u) => v == null ? '—' : (u === '$' ? '$' : '') + (Math.abs(v) >= 100 ? v.toLocaleString(undefined, { maximumFractionDigits: 1 }) : (+v).toFixed(2)) + (u && u !== '$' ? u : '');
+  const chg = (v, it) => {
+    if (v == null) return '—';
+    const bad = it.risk === 'up' ? v > 0 : it.risk === 'down' ? v < 0 : null;
+    return `<span class="${bad == null ? '' : bad ? 'down' : 'up'}">${v > 0 ? '+' : ''}${Math.abs(v) >= 100 ? v.toFixed(1) : (+v).toFixed(2)}</span>`;
+  };
+  const spark = it => {
+    const v = it.spark || []; if (v.length < 2) return '';
+    const lo = Math.min(...v), hi = Math.max(...v), W = 120, H = 28;
+    const pts = v.map((x, i) => `${(i / (v.length - 1) * W).toFixed(1)},${(H - 2 - (hi > lo ? (x - lo) / (hi - lo) : .5) * (H - 4)).toFixed(1)}`).join(' ');
+    return `<svg viewBox="0 0 ${W} ${H}" class="mc-spark"><polyline points="${pts}"/></svg>`;
+  };
+  const pos = it => it.hi > it.lo ? Math.round((it.last - it.lo) / (it.hi - it.lo) * 100) : 50;
+  const rows = g => d.items.filter(x => x.group === g).map(it => `<tr title="${_escHtml(it.desc)}">
+      <td><b>${_escHtml(it.name)}</b><div class="mc-desc">${_escHtml(it.desc)}</div></td>
+      <td class="num"><b>${fmt(it.last, it.unit)}</b><div class="mc-desc">${_escHtml(String(it.date).slice(2))}</div></td>
+      <td class="num">${chg(it.w1, it)}</td><td class="num">${chg(it.m1, it)}</td>
+      <td>${spark(it)}<div class="mc-range"><i style="left:${pos(it)}%"></i></div><div class="mc-desc">1년 ${fmt(it.lo, it.unit)} ~ ${fmt(it.hi, it.unit)}</div></td></tr>`).join('');
+  const head = '<thead><tr><th>지표</th><th class="num">최근</th><th class="num">1주 변화</th><th class="num">1개월 변화</th><th>1년 흐름·범위</th></tr></thead>';
+  body.innerHTML = `${(d.flags || []).length ? `<div class="mc-flags">⚠️ 위험 신호: ${d.flags.map(_escHtml).join(' · ')}</div>` : '<div class="mc-flags ok">눈에 띄는 위험 신호 없음 (금리 역전·VIX 25↑·하이일드 5%p↑ 기준)</div>'}
+    <div class="mc-h">🇺🇸 미국</div><table class="mc-tbl">${head}<tbody>${rows('미국')}</tbody></table>
+    <div class="mc-h">🇰🇷 한국</div><table class="mc-tbl">${head}<tbody>${rows('한국')}</tbody></table>
+    <p class="vt-note">변화 색: 위험이 커지는 방향 = 빨강, 줄어드는 방향 = 초록 (방향이 정해지지 않은 지표는 무색). 마우스를 올리면 설명. 물가는 전년 같은 달 대비 %. 6시간마다 새로.</p>`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('macro-btn')?.addEventListener('click', openMacroModal);
+  const ov = document.getElementById('macro-modal');
+  document.getElementById('macro-modal-close')?.addEventListener('click', () => { ov.hidden = true; });
+  ov?.addEventListener('click', e => { if (e.target === ov) ov.hidden = true; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && ov && !ov.hidden) ov.hidden = true; });
+});
+
 // ── 📑 DART 국내 공시 (11-25) — 호재·악재·실적 분류 (일반적 경향, 실제 반응은 events 기록으로 검증) ──────────
 const _DART_TONE = { pos: ['호재', 'up'], neg: ['악재', 'down'], neu: ['중립', ''], earn: ['실적', 'new'] };
 function krAmt(v) {

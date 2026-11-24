@@ -65,7 +65,19 @@
           <!-- 경제 일정 배지 (11-23: 홈 아래 칸 대신) — 가장 가까운 일정, 누르면 3주 일정 창 -->
           <button type="button" id="eco-badge" class="fg-badge eco-badge" title="다가오는 미국 주요 경제지표 발표 — 눌러서 3주 일정 보기" aria-haspopup="dialog" hidden></button>
           <div id="market-stat-bar" class="market-stat-bar"></div>
+          <button type="button" id="macro-btn" class="mf-btn" title="금리·장단기 금리차·VIX·하이일드 스프레드·달러·유가·물가 + 한국 기준금리·국고채·환율" aria-haspopup="dialog">🌐 매크로</button>
           <button type="button" id="mf-btn" class="mf-btn" title="시장 전체 일별 거래량·거래대금 추이 (코스피·코스닥·미국)" aria-haspopup="dialog">📊 시장 거래</button>
+        </div>
+      </div>
+
+      <!-- 🌐 매크로 지표 창 (11-25) -->
+      <div id="macro-modal" class="fg-modal-overlay" hidden>
+        <div class="fg-modal-box" role="dialog" aria-modal="true" aria-labelledby="macro-modal-title">
+          <div class="fg-modal-head">
+            <h3 id="macro-modal-title">🌐 매크로 지표<small>시장 전체 위험도 — FRED·한국은행 ECOS</small></h3>
+            <button type="button" class="fg-modal-close" id="macro-modal-close" aria-label="닫기">✕</button>
+          </div>
+          <div class="fg-modal-body" id="macro-modal-body"></div>
         </div>
       </div>
 
@@ -554,6 +566,8 @@
           <div id="broker-research-section"></div>
           <!-- 📅 실적 (11-25, 미국) -->
           <div id="earnings-section"></div>
+          <!-- 🧭 수급·내부자 (11-25, 미국) -->
+          <div id="flow-section"></div>
           <div id="financials-card" style="display:none"></div>
           <div id="stock-info-panel">
             <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>

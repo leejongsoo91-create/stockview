@@ -1614,8 +1614,8 @@ async function loadChart(ticker) {
     _updateAlertBadge();
     document.getElementById('chart-alert-panel').style.display = 'none';
 
-    if (!_isIndex(ticker)) { _loadStockNews(ticker); _loadBrokerResearch(ticker); _loadEarningsStock(ticker); }
-    else { ['stock-news-section', 'broker-research-section', 'earnings-section'].forEach(id => { const ns = document.getElementById(id); if (ns) ns.innerHTML = ''; }); }
+    if (!_isIndex(ticker)) { _loadStockNews(ticker); _loadBrokerResearch(ticker); _loadEarningsStock(ticker); _loadFlowStock(ticker); }
+    else { ['stock-news-section', 'broker-research-section', 'earnings-section', 'flow-section'].forEach(id => { const ns = document.getElementById(id); if (ns) ns.innerHTML = ''; }); }
     if (!_isIndex(ticker) && stockKind(stockData) === 'stock') {
       renderStockAnalysis(ticker);
       renderFinancials(ticker);
@@ -3678,6 +3678,35 @@ function _krEarningsHtml(d) {
   return `<div class="info-section-title" style="margin-top:10px">📅 실적·공시</div>${preHtml}${ir}${qHtml}
     ${ds ? `<div class="er-sub">주요 공시 (180일)</div>${ds}` : ''}
     <div class="er-note">DART(금융감독원) · 분기 실적은 정기보고서 연결 기준 · 호재·악재는 일반적 분류</div>`;
+}
+
+// 🧭 수급·내부자 (11-25, 미국) — 공매도 잔고·일별 공매도 비율(20일 평균 대비)·기관 보유·내부자 장내 매수/매도
+async function _loadFlowStock(ticker) {
+  const sec = document.getElementById('flow-section');
+  if (!sec) return;
+  if (_isKrStock(ticker)) { sec.innerHTML = ''; return; }   // 국내 수급은 아래 '수급 동향'(네이버)·KRX 공매도는 승인 후
+  let d = null;
+  try { d = await api(`/api/flow-stock/${encTk(ticker)}`); } catch {}
+  if (_currentTicker && _currentTicker !== ticker) return;
+  if (!d) { sec.innerHTML = ''; return; }
+  const n = v => v == null ? '—' : v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'K' : String(v);
+  const sg = v => v == null ? '' : `<span class="${v > 0 ? 'down' : v < 0 ? 'up' : ''}">${v > 0 ? '+' : ''}${v}%</span>`;   // 공매도 증가 = 빨강
+  const si = (d.short_interest || [])[0];
+  const sd = d.short_daily || {};
+  const inst = d.institutional || {};
+  const ins = d.insider || {};
+  const cells = [];
+  if (si) cells.push(`<div><small>공매도 잔고 (${si.date.slice(5).replace('-', '/')})</small><b>${n(si.interest)}주</b><small>${d.si_pct_out != null ? `발행 주식의 ${d.si_pct_out}% · ` : ''}2주 전 대비 ${sg(d.si_change)}</small></div>`);
+  if (si) cells.push(`<div><small>숏 커버 일수</small><b class="${si.dtc >= 5 ? 'down' : ''}">${si.dtc}일</b><small>잔고 ÷ 하루 평균 거래량</small></div>`);
+  if (sd.ratio != null) cells.push(`<div><small>오늘 공매도 비율 (FINRA)</small><b class="${sd.x >= 1.3 ? 'down' : ''}">${sd.ratio}%</b><small>${sd.avg20 != null ? `20일 평균 ${sd.avg20}% · <b>${sd.x}배</b>` : `기록 ${sd.n}일째 (20일 쌓이면 비교)`}</small></div>`);
+  if (inst.pct != null) cells.push(`<div><small>기관 보유 (13F)</small><b>${inst.pct}%</b><small>늘린 곳 ${(inst.increased || {}).holders ?? '—'} · 줄인 곳 ${(inst.decreased || {}).holders ?? '—'}</small></div>`);
+  const insHtml = (ins.buys || ins.sells) ? `<div class="flow-ins${ins.cluster ? ' hot' : ''}">👤 내부자 90일: 장내 매수 <b class="up">${ins.buys}건</b>${ins.buy_value ? ` ($${n(ins.buy_value)})` : ''} · 장내 매도 <b class="down">${ins.sells}건</b>${ins.sell_value ? ` ($${n(ins.sell_value)})` : ''}
+      ${ins.cluster ? '<div class="flow-cluster">⚡ 최근 30일 임원 여러 명이 장내 매수</div>' : ''}</div>
+      ${(ins.recent || []).slice(0, 4).map(x => `<div class="flow-ins-row"><span class="${x.code === 'P' ? 'up' : 'down'}">${x.code === 'P' ? '매수' : '매도'}</span> ${_escHtml((x.name || '').slice(0, 22))} · ${n(Math.abs(x.change || 0))}주${x.price ? ` @ $${x.price}` : ''} <small>${(x.date || '').slice(5).replace('-', '/')}</small></div>`).join('')}` : '';
+  if (!cells.length && !insHtml) { sec.innerHTML = ''; return; }
+  sec.innerHTML = `<div class="info-section-title" style="margin-top:10px">🧭 수급·내부자</div>
+    <div class="br-summary flow-grid">${cells.join('')}</div>${insHtml}
+    <div class="er-note">공매도 잔고·기관: Nasdaq(2주·분기마다) · 일별 공매도: FINRA(시장조성 포함이라 평소 대비로 봄) · 내부자: Finnhub(SEC Form 4) — 공매도 증가는 빨강</div>`;
 }
 
 // 🏦 증권사 리포트 (11-24) — 최근 180일 이 종목 글 + 요약(증권사별 최근 목표가 평균·현재가 대비 상승 여력·의견)

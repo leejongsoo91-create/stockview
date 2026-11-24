@@ -4669,6 +4669,158 @@ def fetch_earnings_calendar(date_str: str) -> list[dict]:
         return []
 
 
+# ── 수급·공매도·내부자·매크로 (11-25, A4-③④⑤) ────────────────────────────────────
+# 미국 종목: Nasdaq 공매도 잔고(2주마다)·기관 보유 요약, FINRA 일별 공매도 거래량(매일 쌓아 20일 평균 대비로),
+# Finnhub 내부자 거래(장내 매수 P·매도 S). 매크로: FRED(키 없는 CSV)·한국은행 ECOS(api/ecos.txt). 모두 무료.
+ECOS_KEY = _load_api_key("ecos.txt")
+
+
+def _to_int(v) -> int | None:
+    try:
+        return int(str(v).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_nasdaq_short_interest(ticker: str) -> list[dict]:
+    """공매도 잔고 [{date, interest, avg_vol, dtc(숏 커버 일수)}] (최신 먼저, 최대 12회 = 약 6개월)."""
+    try:
+        d = requests.get(f"https://api.nasdaq.com/api/quote/{ticker.replace('/', '.')}/short-interest",
+                         params={"assetClass": "stocks"}, headers={**_NASDAQ_HDR, "Accept": "application/json"}, timeout=12).json()
+        rows = ((d.get("data") or {}).get("shortInterestTable") or {}).get("rows") or []
+    except Exception as e:
+        log.warning(f"Nasdaq 공매도 {ticker}: {e}")
+        return []
+    out = []
+    for x in rows[:12]:
+        try:
+            m, dd, yy = (int(v) for v in str(x.get("settlementDate")).split("/"))
+        except ValueError:
+            continue
+        out.append({"date": f"{yy:04d}-{m:02d}-{dd:02d}", "interest": _to_int(x.get("interest")),
+                    "avg_vol": _to_int(x.get("avgDailyShareVolume")), "dtc": round(float(x.get("daysToCover") or 0), 2)})
+    return out
+
+
+def fetch_nasdaq_institutional(ticker: str) -> dict:
+    """기관 보유 요약 {pct, shares_out(백만), increased·decreased·new·soldout: {holders, shares}} (13F, 분기마다·45일 늦음)."""
+    try:
+        d = (requests.get(f"https://api.nasdaq.com/api/company/{ticker.replace('/', '.')}/institutional-holdings",
+                          params={"limit": 1, "type": "TOTAL"}, headers={**_NASDAQ_HDR, "Accept": "application/json"}, timeout=12).json() or {}).get("data") or {}
+    except Exception as e:
+        log.warning(f"Nasdaq 기관 {ticker}: {e}")
+        return {}
+    o = d.get("ownershipSummary") or {}
+    out = {"pct": _safe(str((o.get("SharesOutstandingPCT") or {}).get("value") or "").rstrip("%")),
+           "shares_out": _safe(str((o.get("ShareoutstandingTotal") or {}).get("value") or "").replace(",", ""))}
+    for blk, keys in (("activePositions", {"Increased Positions": "increased", "Decreased Positions": "decreased"}),
+                      ("newSoldOutPositions", {"New Positions": "new", "Sold Out Positions": "soldout"})):
+        for r in ((d.get(blk) or {}).get("rows") or []):
+            k = keys.get(r.get("positions"))
+            if k:
+                out[k] = {"holders": _to_int(r.get("holders")), "shares": _to_int(r.get("shares"))}
+    return out if out.get("pct") is not None else {}
+
+
+def fetch_finnhub_insider(ticker: str, days: int = 180) -> list[dict]:
+    """내부자 거래 [{name, date, code, change, price}] (최근 days일, 최신 먼저). code: P 장내 매수·S 장내 매도·A 부여·F 세금 등."""
+    if not FINNHUB_KEY:
+        return []
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        r = requests.get("https://finnhub.io/api/v1/stock/insider-transactions",
+                         params={"symbol": ticker.replace("/", "."), "from": since, "token": FINNHUB_KEY}, timeout=12).json()
+    except Exception as e:
+        log.warning(f"Finnhub 내부자 {ticker}: {e}")
+        return []
+    out = [{"name": x.get("name"), "date": x.get("transactionDate"), "code": x.get("transactionCode"),
+            "change": x.get("change"), "price": x.get("transactionPrice")}
+           for x in (r.get("data") or []) if not x.get("isDerivative") and (x.get("transactionDate") or "") >= since]
+    return sorted(out, key=lambda x: x["date"] or "", reverse=True)
+
+
+def fetch_finra_short(day: str) -> dict[str, tuple[int, int]]:
+    """FINRA 일별 공매도 거래량(통합, CNMS) {티커(BRK/B 표기): (공매도 주수, 전체 주수)} — 미국 동부 18시쯤 올라옴. 없으면 {}."""
+    try:
+        r = requests.get(f"https://cdn.finra.org/equity/regsho/daily/CNMSshvol{day.replace('-', '')}.txt", timeout=20)
+        if r.status_code != 200:
+            return {}
+    except Exception as e:
+        log.warning(f"FINRA {day}: {e}")
+        return {}
+    out = {}
+    for line in r.text.splitlines()[1:]:
+        f = line.split("|")
+        if len(f) >= 5:
+            try:
+                out[_norm_us_ticker(f[1])] = (int(float(f[2])), int(float(f[4])))
+            except ValueError:
+                continue
+    return out
+
+
+# (FRED id, 이름, 단위, 주기, 쉬운 설명, 위험 방향 up=높을수록 위험·down=낮을수록 위험·'')
+MACRO_FRED = [
+    ("DGS10", "미국 10년물 금리", "%", "d", "장기 금리. 오르면 성장주·부동산에 부담, 대출 이자 상승", "up"),
+    ("DGS2", "미국 2년물 금리", "%", "d", "연준 금리 기대를 가장 빨리 반영", ""),
+    ("T10Y2Y", "장단기 금리차 (10년−2년)", "%p", "d", "0 아래(역전)면 과거 경기 침체 전 신호로 자주 나타남", "down"),
+    ("DFF", "미국 기준금리(실효 연방기금)", "%", "d", "연준 정책 금리", ""),
+    ("VIXCLS", "VIX 변동성 지수", "", "d", "공포 지수. 20 위면 불안, 30 위면 공포", "up"),
+    ("BAMLH0A0HYM2", "하이일드 스프레드", "%p", "d", "위험 회사채 추가 금리. 벌어지면 신용 위험·경기 걱정", "up"),
+    ("DTWEXBGS", "달러 지수(무역가중)", "", "d", "달러 강세는 신흥국·원자재·수출 기업 이익에 부담", "up"),
+    ("DCOILWTICO", "WTI 유가", "$", "d", "유가 급등은 물가·비용 부담", ""),
+    ("CPIAUCSL", "미국 소비자물가(전년비)", "%", "m", "물가 상승률. 높으면 금리 인하 어려움", "up"),
+    ("UNRATE", "미국 실업률", "%", "m", "빠르게 오르면 경기 둔화 신호", "up"),
+]
+# (ECOS 통계표, 항목, 주기, 이름, 단위, 설명)
+MACRO_ECOS = [
+    ("722Y001", "0101000", "D", "한국 기준금리", "%", "한국은행 정책 금리"),
+    ("817Y002", "010200000", "D", "국고채 3년", "%", "한국 시장 금리 기준"),
+    ("731Y001", "0000001", "D", "원/달러 환율", "원", "오르면(원화 약세) 외국인 매도 압력·수입 물가 상승"),
+]
+
+
+def fetch_fred(series: str) -> list[tuple[str, float]]:
+    """FRED 시계열 [(날짜, 값)] 최근 약 3년 (키 없는 CSV)."""
+    try:
+        t = requests.get(f"https://fred.stlouisfed.org/graph/fredgraph.csv", params={"id": series,
+                         "cosd": (datetime.now() - timedelta(days=3 * 366)).strftime("%Y-%m-%d")},
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=20).text
+    except Exception as e:
+        log.warning(f"FRED {series}: {e}")
+        return []
+    out = []
+    for line in t.strip().splitlines()[1:]:
+        d, _, v = line.partition(",")
+        try:
+            out.append((d, float(v)))
+        except ValueError:
+            continue
+    return out
+
+
+def fetch_ecos(code: str, item: str, cycle: str = "D", days: int = 800) -> list[tuple[str, float]]:
+    """한국은행 ECOS 시계열 [(YYYY-MM-DD, 값)]."""
+    if not ECOS_KEY:
+        return []
+    end = datetime.now()
+    st = (end - timedelta(days=days)).strftime("%Y%m%d")
+    try:
+        j = requests.get(f"https://ecos.bok.or.kr/api/StatisticSearch/{ECOS_KEY}/json/kr/1/1000/{code}/{cycle}/{st}/{end.strftime('%Y%m%d')}/{item}",
+                         timeout=20).json()
+    except Exception as e:
+        log.warning(f"ECOS {code}: {e}")
+        return []
+    out = []
+    for r in ((j.get("StatisticSearch") or {}).get("row") or []):
+        t = str(r.get("TIME") or "")
+        try:
+            out.append((f"{t[:4]}-{t[4:6]}-{t[6:8]}" if len(t) == 8 else t, float(r.get("DATA_VALUE"))))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
 # ── 국내 공시·잠정실적 (DART, 11-25) ─────────────────────────────────────────
 # 금융감독원 DART Open API(무료 키 api/dart.txt, 하루 2만 건). 공시 목록(거래소공시 I·주요사항보고 B)을 투자 판단용으로 분류하고,
 # 영업(잠정)실적 공시 본문에서 매출·영업이익·순이익(당기·전기·전년 같은 기간·증감률)을 뽑는다. 정기보고서 주요 계정으로 분기 실적.

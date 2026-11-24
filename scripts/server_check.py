@@ -218,6 +218,12 @@ def check_us(mode: str, base: str) -> tuple[str, Check]:
         ch.add("상승·하락 종목 모두 있음", neg >= 100 and pos >= 100, f"상승 {pos:,} · 하락 {neg:,}")
         f = get_json(f"{base}/api/market-flow?market=US&days=5")
         last = (f.get("rows") or [{}])[-1]
+        try:   # 11-25: FINRA 일별 공매도 쌓기 — 최근 4일 안 기록이 있어야
+            fs = (get_json(f"{base}/api/flow-stock/AAPL") or {}).get("short_daily") or {}
+        except Exception:
+            fs = {}
+        ch.add("FINRA 일별 공매도 기록", bool(fs.get("day")) and fs["day"] >= (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d"),
+               f"최근 {fs.get('day')} · 쌓인 {fs.get('n')}일")
         ch.add("오늘 미국 정규장 거래 기록(16:01)", last.get("date") == today and (last.get("amount") or 0) > 1e10,
                f"{last.get('date')} 정규장 ${(last.get('amount') or 0) / 1e9:,.1f}B · {(last.get('volume') or 0) / 1e9:.2f}B주")
         # 11-23: 네이버 누적값엔 프리마켓이 없어 09:29 기록을 없앰 → 대신 정규장 값이 말이 되는지(음수·0 아님) 확인

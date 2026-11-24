@@ -2721,6 +2721,27 @@ body.light-theme .rd-head input { color-scheme: light; }
 .dart-num .up, .er-tbl td.up { color: var(--green); } .dart-num .down, .er-tbl td.down { color: var(--red); }
 .er-sub { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 8px 0 2px; }
 #earnings-section .dart-row { padding: 5px 0; font-size: 12px; }
+/* 🧭 수급·내부자 · 🌐 매크로 (11-25) */
+#flow-section { padding: 0 16px 8px; }
+.flow-grid { grid-template-columns: 1fr 1fr; }
+.flow-grid small b { font-size: 11px; }
+.flow-grid b.down, .flow-ins .down, .flow-ins-row .down { color: var(--red); } .flow-ins .up, .flow-ins-row .up { color: var(--green); }
+.flow-ins { font-size: 12px; margin: 6px 0 2px; padding: 6px 8px; background: var(--bg-input); border-radius: 6px; }
+.flow-ins.hot { border-left: 3px solid var(--green); }
+.flow-cluster { font-size: 11.5px; font-weight: 700; color: var(--green); margin-top: 3px; }
+.flow-ins-row { font-size: 11.5px; padding: 2px 0; } .flow-ins-row small { color: var(--muted); }
+.mc-flags { font-size: 12.5px; padding: 8px 10px; border-radius: 8px; background: var(--red-bg); color: var(--red); margin-bottom: 10px; }
+.mc-flags.ok { background: var(--green-bg); color: var(--green); }
+.mc-h { font-size: 13px; font-weight: 700; margin: 10px 0 4px; }
+.mc-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mc-tbl th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+.mc-tbl td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.mc-tbl .num { text-align: right; white-space: nowrap; } .mc-tbl .up { color: var(--green); } .mc-tbl .down { color: var(--red); }
+.mc-desc { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.mc-spark { width: 120px; height: 28px; display: block; } .mc-spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.mc-range { width: 120px; height: 4px; background: var(--bg-input); border-radius: 2px; position: relative; margin-top: 3px; }
+.mc-range i { position: absolute; top: -2px; width: 3px; height: 8px; margin-left: -1px; background: var(--text); }
+@media (max-width: 760px) { .mc-tbl td:nth-child(3), .mc-tbl th:nth-child(3) { display: none; } }
 .an-leg { font-size: 11px; color: var(--muted); margin: 3px 0 8px; }
 #br-ch { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 12px; padding: 6px 10px; }
 .low-rel { opacity: .55; }   /* 미국 종목 뉴스 중 제목·요약에 종목 이름이 없는 기사 (11-24) */
