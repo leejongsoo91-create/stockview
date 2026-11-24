@@ -573,6 +573,12 @@ def _na_db():
                 " text TEXT, links TEXT, analyst TEXT, opinion TEXT, target REAL, cur TEXT, single INTEGER, PRIMARY KEY (ch, msg))")
     con.execute("CREATE INDEX IF NOT EXISTS tg_posts_ts ON tg_posts(ts)")
     con.execute("CREATE TABLE IF NOT EXISTS tg_tk (tk TEXT, ch TEXT, msg INTEGER, PRIMARY KEY (tk, ch, msg)) WITHOUT ROWID")
+    # 리포트 목록 (11-24) — 네이버 리서치(src naver: company·industry·market·economy)·한경 컨센서스(src hk: company·industry)
+    con.execute("CREATE TABLE IF NOT EXISTS reports (src TEXT, rid INTEGER, cat TEXT, ts INTEGER, day TEXT, broker TEXT, tk TEXT,"
+                " name TEXT, title TEXT, summary TEXT, opinion TEXT, target REAL, cur TEXT, chg TEXT, analyst TEXT, url TEXT, pdf TEXT,"
+                " PRIMARY KEY (src, rid))")
+    con.execute("CREATE INDEX IF NOT EXISTS reports_day ON reports(day)")
+    con.execute("CREATE INDEX IF NOT EXISTS reports_tk ON reports(tk, day)")
     return con
 
 
@@ -684,6 +690,131 @@ def refresh_broker_research(force: bool = False):
         time.sleep(0.5)
     if new:
         log.info(f"증권사 텔레그램 리서치: 새 글 {new}건")
+
+
+# ── 리포트 목록 수집 (11-24) — 네이버 리서치 4종 + 한경 컨센서스, 평일 07~22시 30분마다(그 밖 3시간) ──────────
+_rp_last = 0.0
+
+
+def refresh_report_lists(force: bool = False):
+    global _rp_last
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    busy = now.weekday() < 5 and 7 <= now.hour < 22
+    if not force and time.time() - _rp_last < (25 * 60 if busy else 170 * 60):
+        return
+    kr = [x for x in (cache.get("kr_stocks") or []) if x.get("code")]
+    if len(kr) < 1000:
+        return
+    _rp_last = time.time()
+    code2tk = {x["code"]: x["ticker"] for x in kr}
+    ts = int(time.time())
+    try:
+        with _na_lock, closing(_na_db()) as con:
+            have = {(a, b) for a, b in con.execute("SELECT src, rid FROM reports WHERE day >= ?",
+                                                      ((now - timedelta(days=10)).strftime("%Y-%m-%d"),))}
+    except sqlite3.Error:
+        have = set()
+    rows = []
+    details = 0
+    for cat in df.NAVER_RESEARCH_CATS:
+        for x in df.fetch_naver_research(cat, 100):
+            if ("naver", x["rid"]) in have:
+                continue
+            det = {}
+            if cat in ("company", "industry") and details < 40:   # 새 리포트만 상세(요약 본문·PDF·목표가) 한 번씩
+                det = df.fetch_naver_research_detail(cat, x["rid"]); details += 1
+                time.sleep(0.2)
+            text = det.get("text") or ""
+            rows.append(("naver", x["rid"], cat, ts, x["date"], x["broker"], code2tk.get(x["code"], ""), x["name"], x["title"],
+                         text[:1500], det.get("opinion"), det.get("target"), det.get("cur"), df.report_change(text),
+                         "", x["url"], det.get("pdf", "")))
+    sd, ed = (now - timedelta(days=3)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+    for rt, cat in (("CO", "company"), ("IN", "industry")):
+        for x in df.fetch_hankyung_reports(sd, ed, rt):
+            if ("hk", x["rid"]) in have:
+                continue
+            rows.append(("hk", x["rid"], cat, ts, x["date"], x["broker"], code2tk.get(x["code"], ""), x["name"], x["title"],
+                         x["summary"], x["opinion"], x["target"], "KRW" if x["target"] else None, df.report_change(x["title"] + " " + x["summary"]),
+                         x["analyst"], x["pdf"], x["pdf"]))
+    try:
+        with _na_lock, closing(_na_db()) as con:
+            if rows:
+                con.executemany("INSERT OR IGNORE INTO reports VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+                con.commit()
+            # 상세를 아직 못 받은 최근 네이버 종목·산업 리포트를 이어서 (한 번에 40건 한도라 남은 것)
+            todo = con.execute("SELECT cat, rid FROM reports WHERE src='naver' AND cat IN ('company','industry') AND (summary IS NULL OR summary='')"
+                               " AND day >= ? ORDER BY day DESC LIMIT ?", ((now - timedelta(days=5)).strftime("%Y-%m-%d"), max(0, 40 - details))).fetchall()
+        upd = []
+        for cat, rid in todo:
+            det = df.fetch_naver_research_detail(cat, rid)
+            time.sleep(0.2)
+            text = det.get("text") or ""
+            if text:
+                upd.append((text[:1500], det.get("opinion"), det.get("target"), det.get("cur"), df.report_change(text), det.get("pdf", ""), rid))
+        if upd:
+            with _na_lock, closing(_na_db()) as con:
+                con.executemany("UPDATE reports SET summary=?, opinion=?, target=?, cur=?, chg=?, pdf=? WHERE src='naver' AND rid=?", upd)
+                con.commit()
+        if rows or upd:
+            log.info(f"리포트 목록: 새 {len(rows)}건 · 상세 {details + len(upd)}건")
+    except sqlite3.Error as e:
+        log.warning(f"리포트 목록 저장 실패: {e}")
+
+
+def _names_map() -> dict:
+    names = {s["ticker"]: s.get("name") for s in (cache.get("kr_stocks") or [])}
+    names.update({s["ticker"]: s.get("name_ko") or s.get("name") for s in (cache.get("stocks") or [])})
+    return names
+
+
+def _feed_rows(days: int, tk: str | None = None, src: str = "", cat: str = "", q: str = "", day: str = "", limit: int = 600) -> list[dict]:
+    """텔레그램·네이버·한경을 한 형식으로 [{src, cat, title, broker, bkey, timestamp, day, stocks, opinion, target, cur, chg,
+    analyst, url, pdf, text, single}] (최신 먼저). day를 주면 그날(한국 날짜)만."""
+    out = []
+    since = int(time.time()) - days * 86400
+    since_day = datetime.fromtimestamp(since).strftime("%Y-%m-%d")
+    if src in ("", "tg") and cat in ("", "company", "industry"):
+        where, args = ("WHERE p.day = ?", [day]) if day else ("WHERE p.ts >= ?", [since])
+        if tk:
+            where = "JOIN tg_tk k ON k.ch = p.ch AND k.msg = p.msg " + where + " AND k.tk = ?"; args.append(tk)
+        if q:
+            where += " AND (p.text LIKE ? OR p.title LIKE ?)"; args += [f"%{q}%", f"%{q}%"]
+        for p in _tg_rows(where, tuple(args), limit):
+            c = "company" if p["stocks"] else "industry"
+            if cat and c != cat:
+                continue
+            out.append({"src": "tg", "cat": c, "title": p["title"], "broker": p["broker"], "timestamp": p["timestamp"],
+                        "stocks": p["stocks"], "opinion": p["opinion"] if p["single"] else None, "target": p["target"], "cur": p["cur"],
+                        "chg": df.report_change(p["text"]) if p["single"] else None, "analyst": p["analyst"], "url": p["url"],
+                        "pdf": (p["links"] or [""])[0], "text": p["text"][:600], "single": p["single"]})
+    if src in ("", "naver", "hk") and os.path.exists(NEWS_ARCHIVE_DB):
+        where, args = (["day = ?"], [day]) if day else (["day >= ?"], [since_day])
+        if src:
+            where.append("src = ?"); args.append(src)
+        if cat:
+            where.append("cat = ?"); args.append(cat)
+        if tk:
+            where.append("tk = ?"); args.append(tk)
+        if q:
+            where.append("(title LIKE ? OR summary LIKE ? OR name LIKE ?)"); args += [f"%{q}%"] * 3
+        with _na_lock, closing(_na_db()) as con:
+            cur = con.execute("SELECT * FROM reports WHERE " + " AND ".join(where) + f" ORDER BY day DESC, ts DESC LIMIT {int(limit)}", args)
+            cols = [c[0] for c in cur.description]
+            rr = [dict(zip(cols, r)) for r in cur.fetchall()]
+        names = _names_map()
+        for r in rr:
+            from zoneinfo import ZoneInfo
+            d0 = int(datetime.strptime(r["day"], "%Y-%m-%d").replace(tzinfo=ZoneInfo("Asia/Seoul")).timestamp()) if r["day"] else r["ts"]
+            out.append({"src": r["src"], "cat": r["cat"], "title": r["title"], "broker": r["broker"],
+                        "timestamp": min(r["ts"], d0 + 86399) if r["day"] else r["ts"],
+                        "stocks": [{"ticker": r["tk"], "name": names.get(r["tk"]) or r["name"]}] if r["tk"] else [],
+                        "opinion": r["opinion"], "target": r["target"], "cur": r["cur"], "chg": r["chg"], "analyst": r["analyst"],
+                        "url": r["url"], "pdf": r["pdf"], "text": (r["summary"] or "")[:600], "single": bool(r["tk"])})
+    for x in out:
+        x["bkey"] = df.broker_key(x["broker"])
+    out.sort(key=lambda x: -x["timestamp"])
+    return out[:limit]
 
 
 def _tg_rows(where: str, args: tuple, limit: int = 400) -> list[dict]:
@@ -1166,6 +1297,7 @@ def initial_load():
     _start_after(2,  refresh_finnhub_news)
     _start_after(4,  refresh_news)
     _start_after(90, lambda: refresh_broker_research(force=True))   # 종목 목록이 들어온 뒤
+    _start_after(120, lambda: refresh_report_lists(force=True))
     _start_after(6,  refresh_fear_greed)
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
@@ -1325,6 +1457,7 @@ _scheduler.add_job(lambda: refresh_kr_quotes(force=True), "cron", day_of_week="m
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
 _scheduler.add_job(refresh_broker_research, "interval", minutes=15, id="broker_research")   # 평일 07~22시 15분, 그 밖 1시간 (11-24)
+_scheduler.add_job(refresh_report_lists,    "interval", minutes=30, id="report_lists")      # 네이버 리서치·한경, 평일 30분·그 밖 3시간 (11-24)
 _scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")
 _scheduler.add_job(refresh_reports,         "interval", minutes=15, id="reports")
 _scheduler.add_job(refresh_earnings,        "interval", hours=1,    id="earnings")
@@ -1556,36 +1689,136 @@ def broker_research_api():
 
 @app.route("/api/broker-research/<ticker>")
 def broker_research_stock_api(ticker):
-    """한 종목의 증권사 리포트 글 + 요약(최근 120일 증권사별 마지막 목표가 평균·현재가 대비 상승 여력·의견 수)."""
+    """한 종목의 증권사 리포트(텔레그램·네이버 리서치·한경) + 요약: 120일 안 증권사별 가장 최근 목표가 평균·현재가 대비 상승 여력·의견 수.
+    같은 증권사 리포트가 여러 출처에 있으면 한 번만 센다(한경 > 네이버 > 텔레그램). 미국 종목은 Nasdaq 컨센서스(analyst)도."""
     raw = ticker.strip()
     t = raw.upper() if raw.upper().endswith((".KS", ".KQ")) else _canon_us_ticker(raw)
     days = max(7, min(int(request.args.get("days") or 180), 730))
     home = _home_json(f"/api/broker-research/{t}", {"days": days}, f"brs_home_{t}_{days}", "posts")
     if home is not None:
         return jsonify(home)
-    posts = _tg_rows("JOIN tg_tk k ON k.ch = p.ch AND k.msg = p.msg WHERE k.tk = ? AND p.ts >= ?",
-                     (t, int(time.time()) - days * 86400), 200)
+    posts = _feed_rows(days, tk=t, cat="company", limit=200)
     is_kr = t.endswith((".KS", ".KQ"))
-    src = cache.get("kr_stocks" if is_kr else "stocks") or []
-    price = next((s.get("price") for s in src if s.get("ticker") == t), None)
-    want_cur = "KRW" if is_kr else "USD"
-    latest = {}   # 증권사별 가장 최근 목표가 (120일 안, 종목 하나짜리 글, 현재가의 0.3~5배만 — 오탐 방지)
-    for p in posts:
-        if not (p["single"] and p["target"] and p["cur"] == want_cur and time.time() - p["timestamp"] < 120 * 86400):
+    src_list = cache.get("kr_stocks" if is_kr else "stocks") or []
+    price = next((x.get("price") for x in src_list if x.get("ticker") == t), None)
+    want = "KRW" if is_kr else "USD"
+    rank = {"hk": 0, "naver": 1, "tg": 2}
+    latest = {}
+    for p in sorted(posts, key=lambda x: (-x["timestamp"], rank.get(x["src"], 3))):
+        if not (p["single"] and p["target"] and (p["cur"] or want) == want and time.time() - p["timestamp"] < 120 * 86400):
             continue
         if price and not (0.3 <= p["target"] / price <= 5):
             continue
-        latest.setdefault(p["broker"], p)
+        latest.setdefault(p["bkey"], p)
     tg = [p["target"] for p in latest.values()]
     ops = {}
-    for p in latest.values() if latest else [p for p in posts if p["single"] and p["opinion"]][:5]:
+    for p in latest.values():
         if p.get("opinion"):
             ops[p["opinion"]] = ops.get(p["opinion"], 0) + 1
     mean = sum(tg) / len(tg) if tg else None
-    return jsonify({"ticker": t, "posts": posts, "summary": {
-        "brokers": len(latest), "target_mean": round(mean, 2) if mean else None, "cur": want_cur, "price": price,
+    out = {"ticker": t, "posts": posts, "summary": {
+        "brokers": len(latest), "target_mean": round(mean, 2) if mean else None, "cur": want, "price": price,
         "upside": round((mean / price - 1) * 100, 1) if mean and price else None, "opinions": ops,
-        "targets": [{"broker": b, "target": p["target"], "timestamp": p["timestamp"], "opinion": p["opinion"]} for b, p in latest.items()]}})
+        "targets": [{"broker": p["broker"], "target": p["target"], "timestamp": p["timestamp"], "opinion": p["opinion"], "src": p["src"]}
+                    for p in latest.values()]}}
+    if not is_kr:
+        out["analyst"] = _us_analyst(t)
+    return jsonify(out)
+
+
+def _us_analyst(t: str) -> dict:
+    key = f"nasdaq_analyst_{t}"
+    d = cache.get_fresh(key)
+    if d is None:
+        d = df.fetch_nasdaq_analyst(t)
+        cache.set(key, d, ttl=6 * 3600 if d else 1800)
+    return d or {}
+
+
+@app.route("/api/reports-feed")
+def reports_feed_api():
+    """뉴스 탭 🏦 증권사 리포트 목록 — 텔레그램·네이버 리서치·한경을 합쳐. ?days=7&src=tg|naver|hk&cat=company|industry|market|economy&q="""
+    days = max(1, min(int(request.args.get("days") or 7), 90))
+    src, cat, q = (request.args.get("src") or ""), (request.args.get("cat") or ""), (request.args.get("q") or "").strip()
+    home = _home_json("/api/reports-feed", {"days": days, "src": src, "cat": cat, "q": q}, f"rf_home_{days}_{src}_{cat}_{q}", None)
+    if home is not None:
+        return jsonify(home)
+    return jsonify(_feed_rows(days, src=src, cat=cat, q=q))
+
+
+@app.route("/api/report-digest")
+def report_digest_api():
+    """📋 오늘의 리포트 정리 (11-24, 규칙 기반·무료). ?date=YYYY-MM-DD(한국 날짜, 기본 오늘).
+    목표가 상향·하향·신규(리포트 문구 또는 같은 증권사의 이전 목표가와 비교) · 의견 변경 · 업종 의견 · 많이 다뤄진 종목 · 증권사별 건수."""
+    from zoneinfo import ZoneInfo
+    day = (request.args.get("date") or datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d"))[:10]
+    home = _home_json("/api/report-digest", {"date": day}, f"rd_home_{day}", "date")
+    if home is not None:
+        return jsonify(home)
+    items = _feed_rows(1, day=day, limit=1000)
+    prices = {x["ticker"]: x.get("price") for x in (cache.get("kr_stocks") or [])}
+    prices.update({x["ticker"]: x.get("price") for x in (cache.get("stocks") or [])})
+    # 같은 증권사·종목의 이전 목표가·의견 (그날 이전, 최근 1년)
+    prev = {}
+    if os.path.exists(NEWS_ARCHIVE_DB):
+        with _na_lock, closing(_na_db()) as con:
+            for broker, tk, target, opinion, d in con.execute(
+                    "SELECT broker, tk, target, opinion, day FROM reports WHERE tk != '' AND day < ? AND day >= ? ORDER BY day",
+                    (day, (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d"))):
+                k = (df.broker_key(broker), tk)
+                cur = prev.get(k, {})
+                prev[k] = {"target": target or cur.get("target"), "opinion": opinion or cur.get("opinion")}
+    # 같은 증권사·같은 종목 리포트는 하나로 합친다 — 목표가·의견은 한경 > 네이버 > 텔레그램, 변화 문구(상향·하향·신규)는 있는 출처에서
+    rank = {"hk": 0, "naver": 1, "tg": 2}
+    merged = {}
+    for p in sorted(items, key=lambda x: rank.get(x["src"], 3)):
+        if not (p["single"] and p["stocks"]):
+            continue
+        k = (p["bkey"], p["stocks"][0]["ticker"])
+        m = merged.get(k)
+        if m is None:
+            merged[k] = dict(p)
+            continue
+        for f in ("target", "cur", "opinion", "chg", "url"):
+            if not m.get(f) and p.get(f):
+                m[f] = p[f]
+        if m.get("chg") in (None, "keep") and p.get("chg") in ("up", "down", "new"):
+            m["chg"] = p["chg"]
+    rows = []
+    for (bk, tk), p in merged.items():
+        k = (bk, tk)
+        pv = prev.get(k, {})
+        chg = p["chg"]
+        if chg in (None, "keep") and p["target"] and pv.get("target"):
+            chg = "up" if p["target"] > pv["target"] * 1.001 else "down" if p["target"] < pv["target"] * 0.999 else chg
+        price = prices.get(tk)
+        rows.append({"ticker": tk, "name": p["stocks"][0]["name"], "broker": p["broker"], "src": p["src"], "title": p["title"],
+                     "opinion": p["opinion"], "prev_opinion": pv.get("opinion"), "target": p["target"], "prev_target": pv.get("target"),
+                     "cur": p["cur"] or "KRW", "chg": chg, "price": price, "url": p["url"],
+                     "upside": round((p["target"] / price - 1) * 100, 1) if p["target"] and price and 0.3 <= p["target"] / price <= 5 else None})
+    by = lambda c: sorted([r for r in rows if r["chg"] == c], key=lambda r: -(r["upside"] or -999))
+    op_changes = [r for r in rows if r["opinion"] and r["prev_opinion"] and r["opinion"] != r["prev_opinion"]]
+    industry = []
+    for p in items:
+        m = re.search(r"([가-힣A-Za-z/·&\s]{2,20})\s*\(\s*(Overweight|Neutral|Underweight|비중\s*확대|중립|비중\s*축소|Positive|Negative)\s*\)", p["title"], re.I)
+        if p["cat"] == "industry" or m:
+            industry.append({"title": p["title"], "broker": p["broker"], "src": p["src"], "url": p["url"],
+                             "sector": m.group(1).strip() if m else "", "view": (m.group(2) if m else "")})
+    cnt = {}
+    for p in items:
+        for st in p["stocks"]:
+            c = cnt.setdefault(st["ticker"], {"ticker": st["ticker"], "name": st["name"], "count": 0, "brokers": set()})
+            c["count"] += 1; c["brokers"].add(p["bkey"])
+    top = sorted(cnt.values(), key=lambda c: (-len(c["brokers"]), -c["count"]))[:10]
+    for c in top:
+        c["brokers"] = len(c["brokers"])
+    brokers = {}
+    for p in items:
+        brokers[p["bkey"]] = brokers.get(p["bkey"], 0) + 1
+    return jsonify({"date": day, "total": len(items), "stock_reports": len(rows),
+                    "up": by("up"), "down": by("down"), "new": by("new"), "opinion_changes": op_changes,
+                    "industry": industry[:40], "top": top, "brokers": sorted(brokers.items(), key=lambda x: -x[1])[:20],
+                    "rows": sorted(rows, key=lambda r: -(r["upside"] or -999))})
 
 
 @app.route("/api/news-archive/days")

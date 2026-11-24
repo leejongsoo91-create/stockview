@@ -2746,6 +2746,134 @@ def tg_extract(text: str, kr_codes: dict, us_tickers: set, kr_names: dict | None
             "single": single}
 
 
+# ── 증권사 리포트 목록 (11-24) — 네이버 리서치 4종·한경 컨센서스·Nasdaq 애널리스트 ───────────────
+# 텔레그램(속보·코멘트)과 함께 리포트 기록을 모은다. 네이버: 전체 증권사 종목·산업·시황·경제 리포트(본문 요약·PDF 링크),
+# 한경: 목표가·투자의견이 표 칸으로 따로 있어 정확. 모두 키 없음, 사이트 내부 주소라 구조가 바뀌면 빈 목록.
+NAVER_RESEARCH_CATS = {"company": "종목", "industry": "산업", "market": "시황", "economy": "경제"}
+_OP_WORD = {"buy": "buy", "매수": "buy", "strongbuy": "buy", "outperform": "buy", "tradingbuy": "buy", "비중확대": "buy", "overweight": "buy",
+            "hold": "hold", "중립": "hold", "neutral": "hold", "marketperform": "hold", "보유": "hold", "notrated": None, "nr": None,
+            "sell": "sell", "매도": "sell", "underperform": "sell", "비중축소": "sell", "reduce": "sell", "underweight": "sell"}
+
+
+def norm_opinion(v: str | None) -> str | None:
+    k = re.sub(r"[\s\-_.()]", "", str(v or "")).lower()
+    return _OP_WORD.get(k)
+
+
+def fetch_naver_research(cat: str, size: int = 100) -> list[dict]:
+    """네이버 리서치 목록 [{rid, cat, code, name, title, broker, date, url}] (최신 먼저). cat: company·industry·market·economy."""
+    try:
+        r = requests.get(f"https://m.stock.naver.com/api/research/{cat}", params={"pageSize": size, "page": 1},
+                         headers=_TG_HEADERS, timeout=12)
+        r.raise_for_status()
+        items = r.json() or []
+    except Exception as e:
+        log.warning(f"네이버 리서치 {cat} 실패: {e}")
+        return []
+    out = []
+    for x in items:
+        rid = x.get("researchId")
+        if not rid:
+            continue
+        out.append({"rid": int(rid), "cat": cat, "code": x.get("itemCode") or "", "name": x.get("itemName") or x.get("industryName") or "",
+                    "title": (x.get("title") or "").strip(), "broker": (x.get("brokerName") or "").strip(),
+                    "date": str(x.get("writeDate") or "")[:10], "url": x.get("endUrl") or ""})
+    return out
+
+
+def fetch_naver_research_detail(cat: str, rid: int) -> dict:
+    """리포트 상세 → {text(본문 요약, 태그 뺀 글), pdf, opinion, target, cur}. 실패 시 {}."""
+    try:
+        r = requests.get(f"https://m.stock.naver.com/api/research/{cat}/{rid}", headers=_TG_HEADERS, timeout=12)
+        r.raise_for_status()
+        c = (r.json() or {}).get("researchContent") or {}
+    except Exception as e:
+        log.warning(f"네이버 리서치 상세 {cat}/{rid} 실패: {e}")
+        return {}
+    text = _tg_text(re.sub(r"(?i)</p>", "\n", c.get("content") or ""))
+    tgt, cur = _tg_target(text)
+    op = norm_opinion(c.get("opinion")) or _tg_opinion(text)
+    return {"text": text[:3000], "pdf": c.get("attachUrl") or "", "opinion": op,
+            "target": float(str(c.get("targetPrice")).replace(",", "")) if str(c.get("targetPrice") or "").replace(",", "").isdigit() else tgt,
+            "cur": "KRW" if tgt or c.get("targetPrice") else None}
+
+
+def fetch_hankyung_reports(sdate: str, edate: str, report_type: str = "CO", max_pages: int = 3) -> list[dict]:
+    """한경 컨센서스 리포트 [{rid, date, code, name, title, summary, target, opinion, analyst, broker, pdf}].
+    report_type: CO(기업)·IN(산업). 목표가·의견은 표 칸 그대로(오탐 없음)."""
+    out = []
+    for page in range(1, max_pages + 1):
+        try:
+            t = requests.get("https://consensus.hankyung.com/analysis/list",
+                             params={"sdate": sdate, "edate": edate, "now_page": page, "report_type": report_type, "pagenum": 80},
+                             headers=_TG_HEADERS, timeout=15).text
+        except Exception as e:
+            log.warning(f"한경 컨센서스 실패: {e}")
+            break
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", t, re.S)[1:]
+        n = 0
+        for row in rows:
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+            rid = re.search(r"report_idx=(\d+)", row)
+            if len(cells) < 6 or not rid:
+                continue
+            title = _tg_text(re.search(r"<a [^>]*>(.*?)</a>", cells[1], re.S).group(1)) if "<a " in cells[1] else _tg_text(cells[1])
+            summary = " / ".join(_tg_text(li) for li in re.findall(r"<li>(.*?)</li>", cells[1], re.S))
+            code = re.search(r"\((\d[0-9A-Z]{5})\)", title)
+            tgt = _tg_text(cells[2]).replace(",", "")
+            out.append({"rid": int(rid.group(1)), "date": _tg_text(cells[0])[:10], "code": code.group(1) if code else "",
+                        "name": title.split("(")[0].strip() if code else "", "title": title, "summary": summary[:600],
+                        "target": float(tgt) if tgt.replace(".", "").isdigit() and float(tgt) > 0 else None,
+                        "opinion": norm_opinion(_tg_text(cells[3])), "analyst": _tg_text(cells[4]), "broker": _tg_text(cells[5]),
+                        "pdf": f"https://consensus.hankyung.com/analysis/downpdf?report_idx={rid.group(1)}"})
+            n += 1
+        if n < 80:
+            break
+    return out
+
+
+def report_change(text: str) -> str | None:
+    """리포트 앞부분의 목표가·커버리지 변화 표현 → 'up'(상향)·'down'(하향)·'new'(신규·커버리지 개시)·'keep'(유지) 또는 None.
+    "목표주가 84,000원으로 +12.0% 상향", "BUY/190,000원 (유지/상향)", "투자의견 BUY(신규)"."""
+    head = (text or "")[:400]
+    if re.search(r"커버리지\s*개시|신규\s*(?:커버|편입)|Initiat|\(\s*신규\s*\)|/\s*신규|신규\s*/", head, re.I):
+        return "new"
+    m = re.search(r"(?:목표\s*주가|목표가|TP)[^\n]{0,40}?(상향|하향|유지)|\(\s*유지\s*/\s*(상향|하향|유지)\s*\)|\(\s*(상향|하향)\s*\)", head)
+    if m:
+        w = next(g for g in m.groups() if g)
+        return {"상향": "up", "하향": "down", "유지": "keep"}[w]
+    return None
+
+
+def broker_key(name: str) -> str:
+    """증권사 이름 묶음 키 — '신한투자증권'·'신한투자증권 리서치'·'키움증권 미국' → '신한'·'키움' (같은 리포트를 출처끼리 묶을 때)."""
+    n = (name or "").strip().split()[0] if (name or "").strip() else ""
+    return re.sub(r"(투자증권|금융투자|증권|투자)$", "", n) or n
+
+
+def fetch_nasdaq_analyst(ticker: str) -> dict:
+    """미국 종목 애널리스트 컨센서스(Nasdaq) → {target, low, high, buy, hold, sell, rating, history:[{date, buy, hold, sell}]}. 실패 시 {}."""
+    hdr = {**_TG_HEADERS, "Accept": "application/json"}
+    sym = ticker.replace("/", ".")
+    out = {}
+    try:
+        d = (requests.get(f"https://api.nasdaq.com/api/analyst/{sym}/targetprice", headers=hdr, timeout=12).json() or {}).get("data") or {}
+        c = d.get("consensusOverview") or {}
+        out = {"target": c.get("priceTarget"), "low": c.get("lowPriceTarget"), "high": c.get("highPriceTarget"),
+               "buy": c.get("buy"), "hold": c.get("hold"), "sell": c.get("sell")}
+        hist = []
+        for h in (d.get("historicalConsensus") or [])[-12:]:
+            z = h.get("z") or {}
+            hist.append({"date": h.get("x"), "buy": z.get("buy"), "hold": z.get("hold"), "sell": z.get("sell"), "target": h.get("y")})
+        out["history"] = hist
+        r = (requests.get(f"https://api.nasdaq.com/api/analyst/{sym}/ratings", headers=hdr, timeout=12).json() or {}).get("data") or {}
+        out["rating"] = r.get("meanRatingType")
+        out["brokers"] = (r.get("brokerNames") or [])[:30]
+    except Exception as e:
+        log.warning(f"Nasdaq 애널리스트 {ticker} 실패: {e}")
+    return out if out.get("target") else {}
+
+
 def fetch_kr_stock_days_daum(code: str, count: int = 260) -> list[dict]:
     """국내 종목 일별 시세 — 다음 금융 종목 일별(KRX 정규장 시가·고가·저가·종가·거래량·실제 거래대금, 약 8,000일).
     단위는 주·원 그대로(11-23: 삼성전자 11-20 16,646,588주·3,074,615,398,400원). 한 쪽 100일씩.

@@ -616,11 +616,16 @@
 
       <!-- 🏦 증권사 리포트 패널 (11-24 — 증권사 공식 텔레그램 리서치 채널) -->
       <div id="broker-panel" style="display:none">
+        <!-- 📋 오늘의 리포트 정리 (11-24, 규칙 기반) -->
+        <div id="rd-card" class="rd-card"></div>
         <div class="nx-tools">
           <div class="nx-seg" id="br-days">
             <button data-days="1">오늘</button><button class="on" data-days="7">7일</button><button data-days="30">30일</button>
           </div>
-          <select id="br-ch"><option value="">전체 증권사</option></select>
+          <div class="nx-seg" id="br-cat">
+            <button class="on" data-cat="">전체</button><button data-cat="company">종목</button><button data-cat="industry">산업</button><button data-cat="market">시황</button><button data-cat="economy">경제</button>
+          </div>
+          <select id="br-ch"><option value="">전체 출처</option><option value="tg">텔레그램</option><option value="naver">네이버 리서치</option><option value="hk">한경 컨센서스</option></select>
           <div class="nx-search"><input id="br-q" type="text" class="news-kw-input" placeholder="🔍 종목·내용 검색…"></div>
         </div>
         <div id="br-list"></div>

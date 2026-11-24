@@ -2279,26 +2279,58 @@ function _nxApplyPending() {
   document.getElementById('news-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ── 🏦 증권사 리포트 (11-24) — 증권사 공식 텔레그램 리서치 채널 글을 서버가 15분마다 쌓은 것 ──────────
-const _br = { days: 7, ch: '', q: '', bound: false, timer: null };
+// ── 🏦 증권사 리포트 (11-24) — 텔레그램 9곳 + 네이버 리서치(종목·산업·시황·경제) + 한경 컨센서스를 서버가 쌓은 것 ──────────
+const _br = { days: 7, src: '', cat: '', q: '', bound: false, timer: null, date: null };
 const _BR_OP = { buy: ['매수', 'up'], hold: ['중립', ''], sell: ['매도', 'down'] };
+const _BR_SRC = { tg: '텔레그램', naver: '네이버', hk: '한경' };
+const _BR_CHG = { up: ['▲ 상향', 'up'], down: ['▼ 하향', 'down'], new: ['신규', 'new'], keep: ['유지', ''] };
 function brTargetText(p) {
   if (!p.target) return '';
   return p.cur === 'USD' ? `$${p.target.toLocaleString('en-US')}` : `${Math.round(p.target).toLocaleString()}원`;
 }
 // 글 한 줄 (뉴스 탭·차트 오른쪽 칸 공용). compact = 오른쪽 칸(본문 미리보기 없음)
 function brItemHtml(p, compact) {
-  const when = new Date(p.timestamp * 1000).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const when = new Date(p.timestamp * 1000).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', ...(p.src === 'tg' ? { hour: '2-digit', minute: '2-digit' } : {}) });
   const op = p.single && p.opinion ? `<span class="br-op ${_BR_OP[p.opinion][1]}">${_BR_OP[p.opinion][0]}</span>` : '';
+  const chg = p.chg && _BR_CHG[p.chg] && p.chg !== 'keep' ? `<span class="br-chg ${_BR_CHG[p.chg][1]}">${_BR_CHG[p.chg][0]}</span>` : '';
   const tg = p.single && p.target ? `<span class="br-tg">목표 ${brTargetText(p)}</span>` : '';
   const stocks = compact ? '' : (p.stocks || []).slice(0, 6).map(s =>
     `<span class="br-stock" onclick="event.stopPropagation();navigateToChart('${_escHtml(s.ticker)}')">${_escHtml(s.name)}</span>`).join('');
-  const body = compact ? '' : `<div class="br-body">${_escHtml((p.text || '').replace(/^\s*\[[^\]]*\]\s*/, '').slice(0, 220))}</div>`;
-  return `<div class="br-item" onclick="window.open('${_escHtml(p.url)}','_blank')" title="텔레그램에서 원문 보기">
-    <div class="br-head">${op}${tg}<span class="br-title">${_escHtml(p.title || '')}</span></div>
+  const body = compact || !p.text ? '' : `<div class="br-body">${_escHtml((p.text || '').replace(/^\s*\[[^\]]*\]\s*/, '').slice(0, 220))}</div>`;
+  const pdf = p.pdf && /\.pdf|downpdf/i.test(p.pdf) ? ` · <a href="${_escHtml(p.pdf)}" target="_blank" onclick="event.stopPropagation()">PDF</a>` : '';
+  return `<div class="br-item" onclick="window.open('${_escHtml(p.url || p.pdf)}','_blank')" title="원문 보기">
+    <div class="br-head">${chg}${op}${tg}<span class="br-title">${_escHtml(p.title || '')}</span></div>
     ${body}
-    <div class="br-meta"><b>${_escHtml(p.broker)}</b>${p.analyst ? ` · ${_escHtml(p.analyst.slice(0, 30))}` : ''} · ${when}${stocks ? ' ' + stocks : ''}</div>
+    <div class="br-meta"><span class="br-src">${_BR_SRC[p.src] || ''}</span><b>${_escHtml(p.broker)}</b>${p.analyst ? ` · ${_escHtml(p.analyst.slice(0, 30))}` : ''} · ${when}${pdf}${stocks ? ' ' + stocks : ''}</div>
   </div>`;
+}
+// 📋 오늘의 리포트 정리 (규칙 기반) — 날짜를 바꾸면 그날 정리
+async function loadReportDigest(day) {
+  const el = document.getElementById('rd-card');
+  if (!el) return;
+  day = day || _br.date || _kstToday();
+  _br.date = day;
+  el.innerHTML = '<div class="br-empty">정리 중…</div>';
+  let d = null;
+  try { d = await api(`/api/report-digest?date=${day}`); } catch {}
+  if (!d) { el.innerHTML = ''; return; }
+  const name = r => `<span class="br-stock" onclick="navigateToChart('${_escHtml(r.ticker)}')">${_escHtml(r.name || r.ticker)}</span>`;
+  const tgt = r => r.target ? (r.cur === 'USD' ? `$${r.target}` : `${Math.round(r.target).toLocaleString()}원`) : '—';
+  const prevT = r => r.prev_target ? `<small>${r.cur === 'USD' ? '$' + r.prev_target : Math.round(r.prev_target).toLocaleString()} →</small> ` : '';
+  const up = r => r.upside == null ? '' : `<b class="${r.upside > 0 ? 'up' : 'down'}">${r.upside > 0 ? '+' : ''}${r.upside}%</b>`;
+  const table = (list, label, cls) => list.length ? `<div class="rd-sec"><div class="rd-h ${cls}">${label} <small>${list.length}</small></div>
+      <table class="rd-tbl"><tbody>${list.slice(0, 12).map(r => `<tr onclick="window.open('${_escHtml(r.url)}','_blank')">
+        <td>${name(r)}</td><td>${_escHtml(r.broker)}</td><td>${r.opinion ? _BR_OP[r.opinion][0] : ''}</td><td class="num">${prevT(r)}${tgt(r)}</td><td class="num">${up(r)}</td></tr>`).join('')}</tbody></table></div>` : '';
+  const opch = d.opinion_changes.length ? `<div class="rd-sec"><div class="rd-h">의견 변경 <small>${d.opinion_changes.length}</small></div>${d.opinion_changes.map(r => `<div class="rd-line">${name(r)} ${_escHtml(r.broker)}: ${_BR_OP[r.prev_opinion]?.[0] || r.prev_opinion} → <b>${_BR_OP[r.opinion]?.[0] || r.opinion}</b></div>`).join('')}</div>` : '';
+  const ind = d.industry.length ? `<div class="rd-sec"><div class="rd-h">업종 의견·산업 리포트 <small>${d.industry.length}</small></div>${d.industry.slice(0, 8).map(i => `<div class="rd-line" onclick="window.open('${_escHtml(i.url)}','_blank')">${i.view ? `<span class="br-op ${/over|확대|posit/i.test(i.view) ? 'up' : /under|축소|negat/i.test(i.view) ? 'down' : ''}">${_escHtml(i.view)}</span> ` : ''}${_escHtml(i.title.slice(0, 60))} <small>${_escHtml(i.broker)}</small></div>`).join('')}</div>` : '';
+  const top = d.top.length ? `<div class="rd-sec"><div class="rd-h">많이 다뤄진 종목</div><div class="rd-chips">${d.top.map(t => `<span class="br-stock" onclick="navigateToChart('${_escHtml(t.ticker)}')">${_escHtml(t.name)} <small>${t.brokers}곳</small></span>`).join('')}</div></div>` : '';
+  el.innerHTML = `<div class="rd-head"><b>📋 리포트 정리</b>
+      <input type="date" id="rd-date" value="${day}" max="${_kstToday()}">
+      <span>리포트 ${d.total}건 · 종목 리포트 ${d.stock_reports}건 · 상향 ${d.up.length} · 하향 ${d.down.length} · 신규 ${d.new.length}</span></div>
+    <div class="rd-grid">${table(d.up, '▲ 목표가 상향', 'up')}${table(d.down, '▼ 목표가 하향', 'down')}${table(d.new, '신규 커버리지', 'new')}${opch}${top}${ind}</div>
+    ${!d.up.length && !d.down.length && !d.new.length ? '<div class="br-empty" style="padding:8px">이날 목표가 변화로 잡힌 리포트가 없어요 (기록이 쌓일수록 이전 목표가와 비교가 정확해져요)</div>' : ''}
+    <div class="rd-note">규칙으로 뽑은 정리입니다 — 목표가 변화는 리포트 문구(상향·하향·신규)와 같은 증권사의 이전 목표가 비교. "현재가 대비"는 목표가 ÷ 지금 가격.</div>`;
+  document.getElementById('rd-date').onchange = e => loadReportDigest(e.target.value);
 }
 async function loadBrokerResearch() {
   const el = document.getElementById('br-list');
@@ -2309,20 +2341,20 @@ async function loadBrokerResearch() {
       document.querySelectorAll('#br-days button').forEach(x => x.classList.toggle('on', x === b));
       _br.days = +b.dataset.days; loadBrokerResearch();
     });
-    document.getElementById('br-ch').onchange = e => { _br.ch = e.target.value; loadBrokerResearch(); };
+    document.querySelectorAll('#br-cat button').forEach(b => b.onclick = () => {
+      document.querySelectorAll('#br-cat button').forEach(x => x.classList.toggle('on', x === b));
+      _br.cat = b.dataset.cat; loadBrokerResearch();
+    });
+    document.getElementById('br-ch').onchange = e => { _br.src = e.target.value; loadBrokerResearch(); };
     document.getElementById('br-q').oninput = e => { clearTimeout(_br.timer); _br.timer = setTimeout(() => { _br.q = e.target.value.trim(); loadBrokerResearch(); }, 300); };
+    loadReportDigest();
   }
   el.innerHTML = '<div class="br-empty">불러오는 중…</div>';
   let list = [];
-  try { list = await api(`/api/broker-research?days=${_br.days}&ch=${encodeURIComponent(_br.ch)}&q=${encodeURIComponent(_br.q)}`); } catch {}
-  const sel = document.getElementById('br-ch');
-  if (sel && sel.options.length <= 1 && !_br.ch) {
-    const chs = [...new Map(list.map(p => [p.ch, p.broker])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
-    sel.innerHTML = '<option value="">전체 증권사</option>' + chs.map(([c, n]) => `<option value="${_escHtml(c)}">${_escHtml(n)}</option>`).join('');
-  }
+  try { list = await api(`/api/reports-feed?days=${_br.days}&src=${_br.src}&cat=${_br.cat}&q=${encodeURIComponent(_br.q)}`); } catch {}
   el.innerHTML = list.length
-    ? `<div class="br-count">${list.length.toLocaleString()}건 · 증권사 공식 텔레그램 리서치 채널 (개인 참고용, 원문은 텔레그램)</div>` + list.map(p => brItemHtml(p)).join('')
-    : '<div class="br-empty">이 기간에 수집된 리포트가 없어요 (11/24부터 수집)</div>';
+    ? `<div class="br-count">${list.length.toLocaleString()}건 · 텔레그램 9곳 + 네이버 리서치 + 한경 컨센서스 (개인 참고용, 원문은 각 사이트)</div>` + list.slice(0, 400).map(p => brItemHtml(p)).join('')
+    : '<div class="br-empty">이 조건에 맞는 리포트가 없어요 (11/24부터 수집)</div>';
 }
 
 // 오른쪽 칸: 오늘 뉴스 분위기(해외 기사 — 국내는 긍정·부정 분석 없음) · 분야별 기사 · 많이 보도한 출처

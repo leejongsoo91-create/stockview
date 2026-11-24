@@ -2665,6 +2665,37 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .br-summary small { font-size: 10px; color: var(--muted); } .br-summary b { font-size: 13px; }
 .br-summary b.up { color: var(--green); } .br-summary b.down { color: var(--red); }
 #broker-research-section { padding: 0 16px; }
+.br-chg { font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 4px; flex-shrink: 0; }
+.br-chg.up { color: var(--green); background: var(--green-bg); } .br-chg.down { color: var(--red); background: var(--red-bg); }
+.br-chg.new { color: var(--accent); background: var(--bg-input); }
+.br-src { font-size: 10px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
+.br-meta a { color: var(--accent); }
+/* 📋 오늘의 리포트 정리 (11-24) */
+.rd-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.rd-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.rd-head b { color: var(--text); font-size: 14px; }
+.rd-head input { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; font-size: 12px; padding: 3px 6px; color-scheme: dark; }
+body.light-theme .rd-head input { color-scheme: light; }
+.rd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px 16px; }
+.rd-h { font-size: 12.5px; font-weight: 700; margin: 4px 0; color: var(--text); }
+.rd-h.up { color: var(--green); } .rd-h.down { color: var(--red); } .rd-h.new { color: var(--accent); }
+.rd-h small { color: var(--muted); font-weight: 400; }
+.rd-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rd-tbl td { padding: 4px 4px; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; }
+.rd-tbl tr:hover td { background: var(--bg-input); }
+.rd-tbl td.num { text-align: right; } .rd-tbl td small { color: var(--muted); }
+.rd-tbl b.up, .rd-line b.up { color: var(--green); } .rd-tbl b.down { color: var(--red); }
+.rd-line { font-size: 12px; padding: 3px 0; cursor: pointer; } .rd-line small { color: var(--muted); }
+.rd-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.rd-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+/* 미국 애널리스트 목표가 범위·의견 분포 (Nasdaq) */
+.an-range { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); margin: 6px 0 4px; }
+.an-bar { flex: 1; height: 6px; background: var(--bg-input); border-radius: 3px; position: relative; }
+.an-mean { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--accent); }
+.an-now { position: absolute; top: -2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--text); border: 2px solid var(--bg-card); }
+.an-dist { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; background: var(--bg-input); }
+.an-dist i { display: block; } .an-dist .b { background: var(--green); } .an-dist .h { background: var(--muted); } .an-dist .s { background: var(--red); }
+.an-leg { font-size: 11px; color: var(--muted); margin: 3px 0 8px; }
 #br-ch { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 12px; padding: 6px 10px; }
 .low-rel { opacity: .55; }   /* 미국 종목 뉴스 중 제목·요약에 종목 이름이 없는 기사 (11-24) */
 .low-rel-tag { font-size: 10px; }

@@ -3643,9 +3643,26 @@ async function _loadBrokerResearch(ticker, all) {
   let d = null;
   try { d = await api(`/api/broker-research/${encTk(ticker)}?days=180`); } catch {}
   if (_currentTicker && _currentTicker !== ticker) return;
-  const posts = (d && d.posts) || [], sm = (d && d.summary) || {};
+  const posts = (d && d.posts) || [], sm = (d && d.summary) || {}, an = (d && d.analyst) || {};
   const title = `<div class="info-section-title" style="margin-top:10px">🏦 증권사 리포트 <small class="stock-news-cnt">180일 ${posts.length}건</small></div>`;
-  if (!posts.length) { sec.innerHTML = title + '<div style="color:var(--muted);font-size:11px;padding:4px 0 8px">최근 리포트가 없어요 (증권사 텔레그램, 11/24부터 수집)</div>'; return; }
+  // 미국: Nasdaq 애널리스트 컨센서스 — 목표가 범위(최저~최고, 현재가·평균 위치)와 매수/보유/매도 분포
+  let usBlock = '';
+  if (an.target) {
+    const p = sm.price, lo = an.low, hi = an.high, pos = v => hi > lo ? Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)) : 50;
+    const tot = (an.buy || 0) + (an.hold || 0) + (an.sell || 0) || 1;
+    const upv = p ? ((an.target / p - 1) * 100) : null;
+    usBlock = `<div class="br-summary">
+        <div><small>목표가 평균 (애널리스트 ${tot}명)</small><b>$${an.target}</b></div>
+        <div><small>현재가 대비</small><b class="${upv > 0 ? 'up' : 'down'}">${upv == null ? '—' : (upv > 0 ? '+' : '') + upv.toFixed(1) + '%'}</b></div>
+        <div><small>의견</small><b>${_escHtml(an.rating || '')}</b></div>
+      </div>
+      <div class="an-range" title="목표가 범위 — 막대 = 최저~최고, | = 평균, ● = 현재가">
+        <span>$${lo}</span><div class="an-bar"><i class="an-mean" style="left:${pos(an.target)}%"></i>${p ? `<i class="an-now" style="left:${pos(p)}%"></i>` : ''}</div><span>$${hi}</span>
+      </div>
+      <div class="an-dist"><i class="b" style="width:${an.buy / tot * 100}%"></i><i class="h" style="width:${an.hold / tot * 100}%"></i><i class="s" style="width:${an.sell / tot * 100}%"></i></div>
+      <div class="an-leg">매수 ${an.buy} · 보유 ${an.hold} · 매도 ${an.sell} <small>(Nasdaq)</small></div>`;
+  }
+  if (!posts.length) { sec.innerHTML = title + usBlock + '<div style="color:var(--muted);font-size:11px;padding:4px 0 8px">최근 국내 증권사 리포트가 없어요 (텔레그램·네이버·한경, 11/24부터 수집)</div>'; return; }
   const fmtT = v => sm.cur === 'USD' ? `$${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `${Math.round(v).toLocaleString()}원`;
   const ops = Object.entries(sm.opinions || {}).map(([k, n]) => `${({ buy: '매수', hold: '중립', sell: '매도' })[k]} ${n}`).join(' · ');
   const summary = sm.target_mean ? `<div class="br-summary">
@@ -3654,7 +3671,7 @@ async function _loadBrokerResearch(ticker, all) {
       ${ops ? `<div><small>의견</small><b>${ops}</b></div>` : ''}
     </div>` : '';
   const shown = all ? posts : posts.slice(0, 5);
-  sec.innerHTML = title + summary + shown.map(p => brItemHtml(p, true)).join('') +
+  sec.innerHTML = title + (usBlock || summary) + shown.map(p => brItemHtml(p, true)).join('') +
     (posts.length > 5 && !all ? `<button type="button" class="stock-news-more" onclick="_loadBrokerResearch('${_escHtml(ticker)}', true)">리포트 ${posts.length}건 모두 보기</button>` : '');
 }
 
