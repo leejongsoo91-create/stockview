@@ -81,6 +81,27 @@
         </div>
       </div>
 
+      <!-- 📈 매크로 시세 차트 창 (11-25) — 매크로 창 위에 겹쳐 뜨고, 닫으면 매크로 창으로 돌아감 -->
+      <div id="mchart-modal" class="fg-modal-overlay mchart-overlay" hidden>
+        <div class="fg-modal-box mchart-box" role="dialog" aria-modal="true" aria-labelledby="mchart-title">
+          <div class="fg-modal-head">
+            <h3 id="mchart-title">📈 시세 차트</h3>
+            <button type="button" class="fg-modal-close" id="mchart-close" aria-label="닫고 매크로 창으로">✕</button>
+          </div>
+          <div class="fg-modal-body">
+            <div class="mchart-bar" id="mchart-periods">
+              <button type="button" data-n="66">3개월</button><button type="button" data-n="132">6개월</button><button type="button" data-n="0" class="active">1년</button>
+              <span class="mchart-chg" id="mchart-chg"></span>
+            </div>
+            <div id="mchart-box" class="mchart-chart"></div>
+            <div class="mchart-foot">
+              <button type="button" class="mc-chart-btn" id="mchart-back">← 매크로 창으로</button>
+              <button type="button" class="mc-chart-btn" id="mchart-full">차트 탭에서 자세히 (보조지표·그리기)</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 📅 경제 일정 창 (11-23) -->
       <div id="eco-modal" class="fg-modal-overlay" hidden>
         <div class="fg-modal-box" role="dialog" aria-modal="true" aria-labelledby="eco-modal-title">

@@ -2364,13 +2364,60 @@ async function openMacroModal() {
   body.innerHTML = `${(d.flags || []).length ? `<div class="mc-flags">⚠️ 위험 신호: ${d.flags.map(_escHtml).join(' · ')}</div>` : '<div class="mc-flags ok">눈에 띄는 위험 신호 없음 (금리 역전·VIX 25↑·하이일드 5%p↑ 기준)</div>'}
     <div class="mc-h">🇺🇸 미국</div><table class="mc-tbl">${head}<tbody>${rows('미국')}</tbody></table>
     <div class="mc-h">🇰🇷 한국</div><table class="mc-tbl">${head}<tbody>${rows('한국')}</tbody></table>
-    <p class="vt-note">지표 줄을 누르면 자세한 설명과 3년 그래프가 펼쳐져요 · 📈 차트 = 차트 탭에서 시세 차트(10년물 ^TNX·VIX·달러 지수 DXY·WTI 선물·원/달러). 변화 색: 위험이 커지는 방향 = 빨강, 줄어드는 방향 = 초록 (방향이 정해지지 않은 지표는 무색). 물가는 전년 같은 달 대비 %. 6시간마다 새로.</p>`;
+    <p class="vt-note">지표 줄을 누르면 자세한 설명과 3년 그래프가 펼쳐져요 · 📈 차트 = 이 창 위에 시세 차트(닫으면 다시 여기로)(10년물 ^TNX·VIX·달러 지수 DXY·WTI 선물·원/달러). 변화 색: 위험이 커지는 방향 = 빨강, 줄어드는 방향 = 초록 (방향이 정해지지 않은 지표는 무색). 물가는 전년 같은 달 대비 %. 6시간마다 새로.</p>`;
   body.querySelectorAll('.mc-row').forEach(tr => tr.addEventListener('click', () => _macroRowClick(tr)));
   body.querySelectorAll('.mc-chart-btn').forEach(btn => btn.addEventListener('click', e => {
     e.stopPropagation();
-    document.getElementById('macro-modal').hidden = true;
-    navigateToChart(btn.dataset.chart);
+    openMacroChart(btn.dataset.chart, btn.closest('.mc-row')?.querySelector('b')?.textContent);
   }));
+}
+
+// 📈 매크로 시세 차트 창 (11-25) — 차트 탭으로 넘어가지 않고 매크로 창 위에 캔들 차트를 띄운다. 닫으면 매크로 창 그대로
+let _mchart = null, _mchartBars = [];
+async function openMacroChart(tk, name) {
+  const mc = document.getElementById('mchart-modal');
+  if (!mc || !tk) return;
+  mc.dataset.tk = tk;
+  mc.hidden = false;
+  document.getElementById('mchart-title').textContent = `📈 ${name || tk} · ${tk}`;
+  document.getElementById('mchart-chg').textContent = '';
+  document.querySelectorAll('#mchart-periods button').forEach(x => x.classList.toggle('active', x.dataset.n === '0'));
+  const box = document.getElementById('mchart-box');
+  _mchart?.remove(); _mchart = null;
+  box.innerHTML = '<div class="br-empty">불러오는 중…</div>';
+  let bars = [];
+  try { bars = await api(`/api/chart/${encodeURIComponent(tk)}`); } catch {}
+  if (mc.hidden || mc.dataset.tk !== tk) return;
+  _mchartBars = (bars || []).filter(b => !b._dummy && b.close != null);
+  if (!_mchartBars.length) { box.innerHTML = '<div class="br-empty">시세를 불러오지 못했어요</div>'; return; }
+  box.innerHTML = '';
+  const css = getComputedStyle(document.documentElement);
+  const up = css.getPropertyValue('--green').trim() || '#22c55e', dn = css.getPropertyValue('--red').trim() || '#ef4444';
+  _mchart = LightweightCharts.createChart(box, {
+    autoSize: true,
+    layout: { background: { color: 'transparent' }, textColor: css.getPropertyValue('--muted').trim() || '#888' },
+    grid: { vertLines: { visible: false }, horzLines: { color: css.getPropertyValue('--border').trim() || '#333' } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
+    crosshair: { mode: 0 },
+  });
+  const s = _mchart.addCandlestickSeries({ upColor: up, downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn });
+  s.setData(_mchartBars.map(b => ({ time: String(b.time).slice(0, 10), open: b.open, high: b.high, low: b.low, close: b.close })));
+  _mchartRange(0);
+}
+function _mchartRange(n) {
+  if (!_mchart || !_mchartBars.length) return;
+  const len = _mchartBars.length, from = n && n < len ? len - n : 0;
+  const ts = _mchart.timeScale();
+  if (from) ts.setVisibleLogicalRange({ from, to: len - 1 }); else ts.fitContent();
+  const a = _mchartBars[from].close, z = _mchartBars[len - 1].close, pct = (z / a - 1) * 100;
+  const el = document.getElementById('mchart-chg');
+  el.className = `mchart-chg ${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}`;
+  el.textContent = `${String(_mchartBars[from].time).slice(0, 10)} 이후 ${pct > 0 ? '+' : ''}${pct.toFixed(1)}% · 마지막 ${z.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+function closeMacroChart() {
+  const mc = document.getElementById('mchart-modal');
+  if (mc) mc.hidden = true;
+  _mchart?.remove(); _mchart = null;
 }
 
 // 지표 행 클릭 (11-25): 바로 아래에 자세한 설명 + 3년 선 그래프를 펼친다(다시 누르면 접힘). 차트 탭 이동은 📈 차트 버튼
@@ -2384,8 +2431,8 @@ async function _macroRowClick(tr) {
   row.innerHTML = `<td colspan="5">${g.what ? `<div class="mc-guide">
       <div><b>무엇인가요</b>${_escHtml(g.what)}</div><div><b>읽는 법</b>${_escHtml(g.read)}</div><div><b>주식에는</b>${_escHtml(g.stock)}</div></div>` : ''}
     <div class="mc-chart"><div class="br-empty">불러오는 중…</div></div>
-    ${tr.dataset.chart ? `<button type="button" class="mc-chart-btn mc-chart-btn-lg" data-chart="${_escHtml(tr.dataset.chart)}">📈 차트 탭에서 시세 차트 보기 (${_escHtml(tr.dataset.chart)})</button>` : ''}</td>`;
-  row.querySelector('.mc-chart-btn')?.addEventListener('click', e => { e.stopPropagation(); document.getElementById('macro-modal').hidden = true; navigateToChart(e.currentTarget.dataset.chart); });
+    ${tr.dataset.chart ? `<button type="button" class="mc-chart-btn mc-chart-btn-lg" data-chart="${_escHtml(tr.dataset.chart)}">📈 시세 차트 보기 (${_escHtml(tr.dataset.chart)})</button>` : ''}</td>`;
+  row.querySelector('.mc-chart-btn')?.addEventListener('click', e => { e.stopPropagation(); openMacroChart(e.currentTarget.dataset.chart, tr.querySelector('b')?.textContent); });
   tr.after(row);
   let h = [];
   try { h = await api(`/api/macro-series/${encodeURIComponent(tr.dataset.id)}`); } catch {}
@@ -2411,7 +2458,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const ov = document.getElementById('macro-modal');
   document.getElementById('macro-modal-close')?.addEventListener('click', () => { ov.hidden = true; });
   ov?.addEventListener('click', e => { if (e.target === ov) ov.hidden = true; });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && ov && !ov.hidden) ov.hidden = true; });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const mc = document.getElementById('mchart-modal');
+    if (mc && !mc.hidden) { closeMacroChart(); return; }   // 시세 차트 창이 위에 있으면 그것만 닫는다
+    if (ov && !ov.hidden) ov.hidden = true;
+  });
+  const mc = document.getElementById('mchart-modal');
+  ['mchart-close', 'mchart-back'].forEach(id => document.getElementById(id)?.addEventListener('click', closeMacroChart));
+  mc?.addEventListener('click', e => { if (e.target === mc) closeMacroChart(); });
+  document.getElementById('mchart-full')?.addEventListener('click', () => {
+    const tk = mc.dataset.tk; closeMacroChart(); ov.hidden = true; navigateToChart(tk);
+  });
+  document.querySelectorAll('#mchart-periods button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#mchart-periods button').forEach(x => x.classList.toggle('active', x === b));
+    _mchartRange(+b.dataset.n);
+  }));
 });
 
 // ── 📑 DART 국내 공시 (11-25) — 호재·악재·실적 분류 (일반적 경향, 실제 반응은 events 기록으로 검증) ──────────

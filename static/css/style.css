@@ -2751,6 +2751,16 @@ body.light-theme .rd-head input { color-scheme: light; }
 .mc-range { width: 120px; height: 4px; background: var(--bg-input); border-radius: 2px; position: relative; margin-top: 3px; }
 .mc-range i { position: absolute; top: -2px; width: 3px; height: 8px; margin-left: -1px; background: var(--text); }
 .mc-chart { overflow: hidden; }
+.mchart-overlay { z-index: 1010; }   /* 매크로 창(1000) 위 */
+.mchart-box { max-width: 860px; width: 100%; }
+.mchart-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.mchart-bar button { font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+.mchart-bar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mchart-chg { font-size: 12px; margin-left: auto; color: var(--muted); } .mchart-chg.up { color: var(--green); } .mchart-chg.down { color: var(--red); }
+.mchart-chart { width: 100%; height: 380px; overflow: hidden; }
+.mchart-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.mchart-foot .mc-chart-btn { font-size: 12px; padding: 5px 12px; }
+@media (max-width: 760px) { .mchart-chart { height: 300px; } .mchart-chg { margin-left: 0; width: 100%; } }
 @media (max-width: 760px) {
   .mc-tbl .mc-row td:nth-child(3), .mc-tbl .mc-row td:nth-child(4), .mc-tbl th:nth-child(3), .mc-tbl th:nth-child(4) { display: none; }
   .mc-tbl .mc-row td:first-child { min-width: 120px; }
