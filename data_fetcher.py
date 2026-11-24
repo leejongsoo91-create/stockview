@@ -4669,6 +4669,207 @@ def fetch_earnings_calendar(date_str: str) -> list[dict]:
         return []
 
 
+# ── 국내 공시·잠정실적 (DART, 11-25) ─────────────────────────────────────────
+# 금융감독원 DART Open API(무료 키 api/dart.txt, 하루 2만 건). 공시 목록(거래소공시 I·주요사항보고 B)을 투자 판단용으로 분류하고,
+# 영업(잠정)실적 공시 본문에서 매출·영업이익·순이익(당기·전기·전년 같은 기간·증감률)을 뽑는다. 정기보고서 주요 계정으로 분기 실적.
+DART_KEY = _load_api_key("dart.txt")
+DART_CORP_FILE = os.path.join(os.path.dirname(__file__), "data", "dart_corp_codes.json")
+# 공시 제목 → (종류, 성향). 성향은 일반적 경향일 뿐 — 실제 반응은 events 기록으로 검증(결정 문서 참고). 위에서부터 먼저 맞는 것.
+_DART_RULES = [
+    ("prelim", "earn", r"영업\(잠정\)실적|잠정\)실적|매출액또는손익구조"),
+    ("buyback", "pos", r"자기주식취득결정|자기주식취득신탁계약체결결정|주식소각결정|자기주식소각"),
+    ("bonus", "pos", r"무상증자결정"),
+    ("contract", "pos", r"단일판매ㆍ공급계약체결|단일판매·공급계약체결|공급계약체결"),
+    ("dividend", "pos", r"현금ㆍ현물배당결정|현금·현물배당결정|분기배당|중간배당"),
+    ("rights", "neg", r"유상증자결정"),
+    ("cb", "neg", r"전환사채권발행결정|신주인수권부사채권발행결정|교환사채권발행결정"),
+    ("reduction", "neg", r"감자결정"),
+    # 11-25 점검: 소유주식 변동 신고(정기적 지분 변동)·기술적 거래정지(병합·분할, 중요 공시 시 잠깐)는 중립
+    ("owner_report", "neu", r"최대주주등소유주식변동신고서|주식등의대량보유상황"),
+    ("halt_tech", "neu", r"매매거래정지\(주식의병합|매매거래정지및정지해제\(중요내용공시\)|매매거래정지해제"),
+    ("owner", "neg", r"최대주주변경"),
+    ("legal", "neg", r"소송등의제기|횡령|배임|불성실공시|관리종목|상장폐지|매매거래정지|거래정지|영업정지|회생절차|부도"),
+    ("treasury_sale", "neg", r"자기주식처분결정"),
+    ("ma", "neu", r"합병결정|분할결정|분할합병결정|영업양수|영업양도|타법인주식및출자증권취득결정|타법인주식및출자증권처분결정"),
+    ("ir", "neu", r"기업설명회"),
+]
+
+
+def dart_classify(report_nm: str) -> tuple[str | None, str | None]:
+    t = re.sub(r"\s+", "", report_nm or "")
+    for kind, tone, rx in _DART_RULES:
+        if re.search(rx, t):
+            return kind, tone
+    return None, None
+
+
+def load_dart_corp_map(force: bool = False) -> dict[str, str]:
+    """{6자리 종목코드: DART 회사코드} — corpCode.xml(전체 회사, zip)을 받아 상장사만. data/dart_corp_codes.json에 7일 보관."""
+    import io
+    import zipfile
+    try:
+        if not force and os.path.exists(DART_CORP_FILE) and time.time() - os.path.getmtime(DART_CORP_FILE) < 7 * 86400:
+            with open(DART_CORP_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except (OSError, ValueError):
+        pass
+    if not DART_KEY:
+        return {}
+    try:
+        r = requests.get("https://opendart.fss.or.kr/api/corpCode.xml", params={"crtfc_key": DART_KEY}, timeout=60)
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        x = z.read(z.namelist()[0]).decode("utf-8")
+    except Exception as e:
+        log.warning(f"DART 회사코드 받기 실패: {e}")
+        return {}
+    m = {}
+    for blk in re.findall(r"<list>(.*?)</list>", x, re.S):
+        sc = re.search(r"<stock_code>\s*([0-9A-Z]{6})\s*</stock_code>", blk)
+        cc = re.search(r"<corp_code>(\d{8})</corp_code>", blk)
+        if sc and cc:
+            m[sc.group(1)] = cc.group(1)
+    if len(m) > 1000:
+        with open(DART_CORP_FILE, "w", encoding="utf-8") as f:
+            json.dump(m, f)
+    return m
+
+
+def fetch_dart_list(bgn: str, end: str, ptype: str, corp_code: str = "", max_pages: int = 10) -> list[dict]:
+    """DART 공시 목록 [{rcept_no, corp, code, cls, title, day, filer}] — ptype: I(거래소공시)·B(주요사항보고) 등. bgn·end YYYYMMDD."""
+    if not DART_KEY:
+        return []
+    out = []
+    for page in range(1, max_pages + 1):
+        params = {"crtfc_key": DART_KEY, "bgn_de": bgn, "end_de": end, "pblntf_ty": ptype, "page_no": page, "page_count": 100}
+        if corp_code:
+            params["corp_code"] = corp_code
+        try:
+            j = requests.get("https://opendart.fss.or.kr/api/list.json", params=params, timeout=20).json()
+        except Exception as e:
+            log.warning(f"DART 목록 실패 ({ptype} {page}): {e}")
+            break
+        if j.get("status") not in ("000",):
+            if j.get("status") != "013":   # 013 = 조회 결과 없음
+                log.warning(f"DART 목록 {ptype}: {j.get('status')} {j.get('message')}")
+            break
+        for x in j.get("list") or []:
+            out.append({"rcept_no": x.get("rcept_no"), "corp": x.get("corp_name"), "code": (x.get("stock_code") or "").strip(),
+                        "cls": x.get("corp_cls"), "title": re.sub(r"\s+", " ", x.get("report_nm") or "").strip(),
+                        "day": f"{x['rcept_dt'][:4]}-{x['rcept_dt'][4:6]}-{x['rcept_dt'][6:8]}" if x.get("rcept_dt") else "",
+                        "filer": x.get("flr_nm")})
+        if page >= int(j.get("total_page") or 1):
+            break
+        time.sleep(0.2)
+    return out
+
+
+def _dart_num(v: str) -> float | None:
+    v = (v or "").replace(",", "").replace(" ", "").strip()
+    if v in ("", "-", "N/A"):
+        return None
+    neg = v.startswith("(") and v.endswith(")") or v.startswith("△") or v.startswith("-")
+    v = v.strip("()△-")
+    try:
+        x = float(v)
+    except ValueError:
+        return None
+    return -x if neg else x
+
+
+def parse_dart_prelim(rcept_no: str) -> dict:
+    """영업(잠정)실적 공시 본문 → {unit, period, sales·op·pretax·net: {cur, prev, qoq, yoy_base, yoy}, consolidated}.
+    표: 항목 | 당해실적 | 당기 | 전기 | 전기대비% | 흑자적자 | 전년동기 | 전년동기대비% | 흑자적자. 금액은 원 단위로 바꿔 돌려준다. 실패 시 {}."""
+    import io
+    import zipfile
+    if not DART_KEY:
+        return {}
+    try:
+        r = requests.get("https://opendart.fss.or.kr/api/document.xml", params={"crtfc_key": DART_KEY, "rcept_no": rcept_no}, timeout=30)
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        x = z.read(z.namelist()[0]).decode("utf-8", "ignore")
+    except Exception as e:
+        log.warning(f"DART 문서 {rcept_no} 실패: {e}")
+        return {}
+    cells = [html.unescape(re.sub(r"<[^>]+>", " ", c)).strip()
+             for c in re.findall(r"<(?:TD|TE|TU|TH)[^>]*>(.*?)</(?:TD|TE|TU|TH)>", x, re.S | re.I)]
+    cells = [re.sub(r"\s+", " ", c) for c in cells]
+    flat = " ".join(cells)
+    um = re.search(r"단위\s*[:：]\s*(백만원|억원|천원|원)", flat)
+    mult = {"백만원": 1e6, "억원": 1e8, "천원": 1e3, "원": 1}.get(um.group(1) if um else "백만원", 1e6)
+    pm = re.search(r"\((\d{4})\s*\.\s*(\d{1,2})\s*(?:Q|분기|월)?\)", flat) or re.search(r"(\d{4})\s*년\s*(\d)\s*분기", flat)
+    out = {"unit": um.group(1) if um else "", "period": f"{pm.group(1)}.{pm.group(2)}" if pm else "",
+           "consolidated": "연결" in flat[:3000]}
+    names = {"sales": r"^매출액$|^영업수익$|^매출$", "op": r"^영업이익", "pretax": r"^법인세비용차감전", "net": r"^당기순이익|^지배기업"}
+    for key, rx in names.items():
+        for i, c in enumerate(cells):
+            if re.search(rx, c.replace(" ", "")) and i + 1 < len(cells) and "당해" in cells[i + 1]:
+                v = cells[i + 2:i + 9]
+                if len(v) < 6:
+                    break
+                cur, prev, qoq, yb, yoy = _dart_num(v[0]), _dart_num(v[1]), _dart_num(v[2]), _dart_num(v[4]), _dart_num(v[5])
+                if cur is None:   # 월간 수주 보고 등 금액 칸이 비어 있는 공시(11-25 HD한국조선해양)
+                    break
+                out[key] = {"cur": cur * mult if cur is not None else None, "prev": prev * mult if prev is not None else None,
+                            "qoq": qoq, "yoy_base": yb * mult if yb is not None else None, "yoy": yoy,
+                            "turn": (v[3] or v[6] or "").strip() or None}
+                break
+    return out if any(k in out for k in names) else {}
+
+
+def dart_quarter_of(day: str) -> str:
+    """공시 날짜 → 실적 분기(직전 분기) 'YYYY Qn' — 잠정실적 기간 표시가 본문에 없을 때."""
+    try:
+        y, m = int(day[:4]), int(day[5:7])
+    except (ValueError, TypeError):
+        return ""
+    q = (m - 1) // 3
+    return f"{y - 1} Q4" if q == 0 else f"{y} Q{q}"
+
+
+def fetch_dart_quarterly(corp_code: str, years: int = 2) -> list[dict]:
+    """정기보고서 주요 계정(연결 우선) → 분기별 [{period 'YYYY Qn', sales, op, net}] (오래된 것 먼저).
+    1Q·반기·3Q·사업보고서는 누계라 차이로 분기 값을 만든다."""
+    if not DART_KEY:
+        return []
+    codes = [("11013", 1), ("11012", 2), ("11014", 3), ("11011", 4)]
+    cum = {}
+    y0 = datetime.now().year
+    for y in range(y0 - years, y0 + 1):
+        for rc, q in codes:
+            try:
+                j = requests.get("https://opendart.fss.or.kr/api/fnlttSinglAcnt.json",
+                                 params={"crtfc_key": DART_KEY, "corp_code": corp_code, "bsns_year": y, "reprt_code": rc}, timeout=15).json()
+            except Exception:
+                continue
+            if j.get("status") != "000":
+                continue
+            rows = j.get("list") or []
+            fs = "CFS" if any(r.get("fs_div") == "CFS" for r in rows) else "OFS"
+            v = {}
+            for r in rows:
+                if r.get("fs_div") != fs:
+                    continue
+                nm = r.get("account_nm", "").replace(" ", "")
+                amt = _dart_num(r.get("thstrm_amount") or "")   # 1Q·반기·3Q는 그 분기 3개월, 사업보고서는 1년
+                k = "sales" if nm in ("매출액", "수익(매출액)", "영업수익") else "op" if nm == "영업이익" else "net" if nm in ("당기순이익", "당기순이익(손실)") else None
+                if k and amt is not None and k not in v:
+                    v[k] = amt
+            if v:
+                cum[(y, q)] = v
+            time.sleep(0.15)
+    out = []
+    for (y, q), v in sorted(cum.items()):
+        # 반기·3Q 보고서의 thstrm_amount는 그 분기 3개월 값, 사업보고서는 1년 값 → 4Q = 1년 − (1Q+2Q+3Q)
+        if q == 4:
+            prev = [cum.get((y, k)) for k in (1, 2, 3)]
+            if all(prev):
+                v = {k: v[k] - sum(p.get(k, 0) for p in prev) for k in v if all(k in p for p in prev)}
+            else:
+                continue
+        out.append({"period": f"{y} Q{q}", **v})
+    return out
+
+
 # ── 미국 종목 실적 (11-25) — 다음 발표일·EPS 예상·과거 서프라이즈 ─────────────────────────
 def fetch_finnhub_earnings_hist(symbol: str, years: int = 3) -> list[dict]:
     """Finnhub 실적 캘린더(종목) — 과거·다음 발표 [{date, hour(bmo·amc·''), quarter, year, eps_est, eps_act, rev_est, rev_act}]."""

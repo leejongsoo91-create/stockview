@@ -647,6 +647,8 @@
 
       <!-- 공시 패널 -->
       <div id="disclosures-panel" style="display:none">
+        <!-- 📑 DART 주요 공시 (11-25) — 호재·악재·실적으로 분류, 아래는 기존 KRX KIND 오늘 공시 전체 -->
+        <div id="dart-box"></div>
         <div class="news-filter-bar">
           <button class="report-tag active" data-dcat="all">전체</button>
           <button class="report-tag" data-dcat="earnings">📊 실적발표</button>
@@ -969,6 +971,10 @@
     <div id="view-earnings" class="view">
       <div class="earnings-header">
         <h2 class="earnings-title">실적발표 일정</h2>
+        <div class="earnings-period-bar" id="earn-mkt-bar">
+          <button class="earn-period-btn active" data-mkt="us">🇺🇸 미국</button>
+          <button class="earn-period-btn" data-mkt="kr">🇰🇷 국내</button>
+        </div>
         <div class="earnings-period-bar">
           <button class="earn-period-btn active" data-period="week">이번 주</button>
           <button class="earn-period-btn" data-period="next_week">다음 주</button>

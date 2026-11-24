@@ -1902,6 +1902,7 @@ function initNews() {
       }
       if (_activeSubtab === 'disclosures') {
         loadDisclosures();
+        loadDartFeed();
       }
     });
   });
@@ -2287,6 +2288,54 @@ function _nxApplyPending() {
   _allNews = _nxPending; _nxPending = null;
   _populateSourceFilter(_allNews); renderNews();
   document.getElementById('news-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── 📑 DART 국내 공시 (11-25) — 호재·악재·실적 분류 (일반적 경향, 실제 반응은 events 기록으로 검증) ──────────
+const _DART_TONE = { pos: ['호재', 'up'], neg: ['악재', 'down'], neu: ['중립', ''], earn: ['실적', 'new'] };
+function krAmt(v) {
+  if (v == null) return '—';
+  const a = Math.abs(v), s = v < 0 ? '-' : '';
+  return a >= 1e12 ? `${s}${(a / 1e12).toFixed(2)}조` : a >= 1e8 ? `${s}${Math.round(a / 1e8).toLocaleString()}억` : `${s}${Math.round(a / 1e4).toLocaleString()}만`;
+}
+function krYoy(x) {
+  if (!x) return '';
+  if (x.turn && /전환/.test(x.turn)) return `<span class="${/흑자/.test(x.turn) ? 'up' : 'down'}">${_escHtml(x.turn)}</span>`;
+  return x.yoy == null ? '' : `<span class="${x.yoy > 0 ? 'up' : x.yoy < 0 ? 'down' : ''}">${x.yoy > 0 ? '+' : ''}${x.yoy}%</span>`;
+}
+function krHasNum(d) { return !!d && ['sales', 'op', 'net'].some(k => d[k] && d[k].cur != null); }
+// 잠정실적 한 줄 요약: 매출 1,345억(+8%) · 영업이익 195억(+19.5%)
+function krPrelimText(d) {
+  if (!d) return '';
+  const part = (lbl, x) => x && x.cur != null ? `${lbl} ${krAmt(x.cur)}${krYoy(x) ? `(${krYoy(x)})` : ''}` : '';
+  return [part('매출', d.sales), part('영업이익', d.op), part('순이익', d.net)].filter(Boolean).join(' · ');
+}
+function dartRowHtml(r, withName) {
+  const t = _DART_TONE[r.tone] || ['', ''];
+  const body = r.kind === 'prelim' && krHasNum(r.data) ? `<div class="dart-num">${r.data.period ? _escHtml(r.data.period) + ' · ' : ''}${krPrelimText(r.data)}</div>` : '';
+  return `<div class="dart-row" onclick="window.open('${_escHtml(r.url)}','_blank')" title="DART 원문 보기">
+    <span class="br-op ${t[1]}">${t[0]}</span>
+    ${withName ? `<span class="br-stock" onclick="event.stopPropagation();navigateToChart('${_escHtml(r.tk)}')">${_escHtml(r.name || r.corp)}</span>` : ''}
+    <span class="dart-title">${_escHtml(r.title)}</span><span class="dart-day">${r.day.slice(5).replace('-', '/')}</span>${body}</div>`;
+}
+const _dart = { tone: '', days: 7, bound: false };
+async function loadDartFeed() {
+  const box = document.getElementById('dart-box');
+  if (!box) return;
+  if (!_dart.bound) {
+    _dart.bound = true;
+    box.innerHTML = `<div class="dart-head"><b>📑 DART 주요 공시</b>
+        <div class="nx-seg" id="dart-tone"><button class="on" data-t="">전체</button><button data-t="earn">실적</button><button data-t="pos">호재</button><button data-t="neg">악재</button><button data-t="neu">중립</button></div>
+        <div class="nx-seg" id="dart-days"><button data-d="1">오늘</button><button class="on" data-d="7">7일</button><button data-d="30">30일</button></div>
+        <small>호재·악재는 일반적 경향이에요 (자사주·수주 = 호재, 유상증자·CB = 악재 등)</small></div><div id="dart-list"></div>`;
+    box.querySelectorAll('#dart-tone button').forEach(b => b.onclick = () => { box.querySelectorAll('#dart-tone button').forEach(x => x.classList.toggle('on', x === b)); _dart.tone = b.dataset.t; loadDartFeed(); });
+    box.querySelectorAll('#dart-days button').forEach(b => b.onclick = () => { box.querySelectorAll('#dart-days button').forEach(x => x.classList.toggle('on', x === b)); _dart.days = +b.dataset.d; loadDartFeed(); });
+  }
+  const el = document.getElementById('dart-list');
+  el.innerHTML = '<div class="br-empty">불러오는 중…</div>';
+  let rows = [];
+  try { rows = await api(`/api/dart-feed?days=${_dart.days}&tone=${_dart.tone}`); } catch {}
+  el.innerHTML = rows.length ? rows.slice(0, 200).map(r => dartRowHtml(r, true)).join('')
+    : '<div class="br-empty">이 기간에 분류된 공시가 없어요 (11/25부터 수집, 처음엔 최근 7일)</div>';
 }
 
 // ── 🏦 증권사 리포트 (11-24) — 텔레그램 9곳 + 네이버 리서치(종목·산업·시황·경제) + 한경 컨센서스를 서버가 쌓은 것 ──────────

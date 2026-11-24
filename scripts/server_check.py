@@ -155,6 +155,12 @@ def check_kr(mode: str, base: str) -> tuple[str, Check]:
         n_nv = sum(1 for x in feed if x.get("src") == "naver") if isinstance(feed, list) else 0
         n_hk = sum(1 for x in feed if x.get("src") == "hk") if isinstance(feed, list) else 0
         ch.add("네이버 리서치·한경 오늘 수집", n_nv >= 10 and n_hk >= 5, f"네이버 {n_nv}건 · 한경 {n_hk}건")
+        try:
+            dl = get_json(f"{base}/api/dart-feed?days=1")
+        except Exception:
+            dl = []
+        n_dart = len(dl) if isinstance(dl, list) else 0
+        ch.add("DART 공시 오늘 수집", n_dart >= 5, f"분류된 공시 {n_dart}건")
         for m in ("KOSPI", "KOSDAQ"):
             f = get_json(f"{base}/api/market-flow?market={m}&days=5")
             last = (f.get("rows") or [{}])[-1]

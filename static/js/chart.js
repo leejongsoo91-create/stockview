@@ -3641,10 +3641,10 @@ function _stockNewsItems(list) {
 async function _loadEarningsStock(ticker) {
   const sec = document.getElementById('earnings-section');
   if (!sec) return;
-  if (_isKrStock(ticker)) { sec.innerHTML = ''; return; }   // 국내는 2차(DART)
   let d = null;
   try { d = await api(`/api/earnings-stock/${encTk(ticker)}`); } catch {}
   if (_currentTicker && _currentTicker !== ticker) return;
+  if (d && d.market === 'KR') { sec.innerHTML = _krEarningsHtml(d); return; }
   if (!d || (!d.next && !(d.history || []).length)) { sec.innerHTML = ''; return; }
   const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : ''}${(+v).toFixed(1)}%</span>`;
   const hourKo = h => h === 'amc' ? '장 후' : h === 'bmo' ? '장 전' : '';
@@ -3661,6 +3661,23 @@ async function _loadEarningsStock(ticker) {
   sec.innerHTML = `<div class="info-section-title" style="margin-top:10px">📅 실적</div>${head}${fc}${sum}
     ${rows ? `<table class="er-tbl"><thead><tr><th>발표</th><th class="num">실제</th><th class="num">예상</th><th class="num">서프라이즈</th><th class="num" title="발표 전 종가 → 발표 다음 거래일 종가">주가 반응</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
     <div class="er-note">Nasdaq·Finnhub · 주가 반응은 발표 전 종가→다음 거래일 종가</div>`;
+}
+
+// 📅 국내 실적·공시 (11-25, DART) — 최근 잠정실적(공시 뒤 주가 반응), 분기 실적 추이, 주요 공시, IR 일정
+function _krEarningsHtml(d) {
+  const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : ''}${(+v).toFixed(1)}%</span>`;
+  const pre = (d.prelim || []).find(r => krHasNum(r.data));
+  const preHtml = pre ? `<div class="er-next"><b>잠정실적</b> ${_escHtml(pre.data.period || '')} <small>${pre.day.slice(5).replace('-', '/')} 공시</small>
+      <div class="dart-num">${krPrelimText(pre.data)}</div>${pre.r1 != null ? `<small>공시 뒤 주가 반응 ${pct(pre.r1)}${pre.r5 != null ? ` · 5일 ${pct(pre.r5)}` : ''}</small>` : ''}</div>` : '';
+  const q = (d.quarterly || []).slice(-6);
+  const qHtml = q.length ? `<table class="er-tbl"><thead><tr><th>분기</th><th class="num">매출</th><th class="num">영업이익</th><th class="num">이익률</th></tr></thead><tbody>${q.slice().reverse().map(x =>
+      `<tr><td>${x.period.replace(' ', '.')}</td><td class="num">${krAmt(x.sales)}</td><td class="num ${x.op < 0 ? 'down' : ''}">${krAmt(x.op)}</td><td class="num">${x.sales && x.op != null ? (x.op / x.sales * 100).toFixed(1) + '%' : '—'}</td></tr>`).join('')}</tbody></table>` : '';
+  const ds = (d.disclosures || []).slice(0, 6).map(r => dartRowHtml(r, false)).join('');
+  const ir = d.ir && (d.ir.irDate || d.ir.title) ? `<div class="er-fc">📣 IR 일정 ${_escHtml(String(d.ir.irDate || '').slice(0, 10))} ${_escHtml(d.ir.title || '')}</div>` : '';
+  if (!preHtml && !qHtml && !ds && !ir) return '';
+  return `<div class="info-section-title" style="margin-top:10px">📅 실적·공시</div>${preHtml}${ir}${qHtml}
+    ${ds ? `<div class="er-sub">주요 공시 (180일)</div>${ds}` : ''}
+    <div class="er-note">DART(금융감독원) · 분기 실적은 정기보고서 연결 기준 · 호재·악재는 일반적 분류</div>`;
 }
 
 // 🏦 증권사 리포트 (11-24) — 최근 180일 이 종목 글 + 요약(증권사별 최근 목표가 평균·현재가 대비 상승 여력·의견)

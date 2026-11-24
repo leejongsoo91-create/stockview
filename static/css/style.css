@@ -2709,6 +2709,18 @@ body.light-theme .rd-head input { color-scheme: light; }
 .er-note { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
 .earn-dn { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; margin-left: 4px; border-radius: 4px; background: var(--bg-input); color: var(--fg-c3); vertical-align: 1px; }
 .earn-dn.hot { color: #fff; background: var(--fg-c2); }
+/* 📑 DART 국내 공시 (11-25) */
+#dart-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+.dart-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.dart-head small { color: var(--muted); font-size: 11px; }
+#dart-list { max-height: 420px; overflow-y: auto; }
+.dart-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; padding: 6px 2px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12.5px; }
+.dart-row:hover { background: var(--bg-input); }
+.dart-title { flex: 1; min-width: 0; } .dart-day { color: var(--muted); font-size: 11px; }
+.dart-num { flex-basis: 100%; font-size: 12px; color: var(--text); margin-top: 2px; }
+.dart-num .up, .er-tbl td.up { color: var(--green); } .dart-num .down, .er-tbl td.down { color: var(--red); }
+.er-sub { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 8px 0 2px; }
+#earnings-section .dart-row { padding: 5px 0; font-size: 12px; }
 .an-leg { font-size: 11px; color: var(--muted); margin: 3px 0 8px; }
 #br-ch { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 12px; padding: 6px 10px; }
 .low-rel { opacity: .55; }   /* 미국 종목 뉴스 중 제목·요약에 종목 이름이 없는 기사 (11-24) */

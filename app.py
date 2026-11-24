@@ -581,6 +581,11 @@ def _na_db():
     con.execute("CREATE INDEX IF NOT EXISTS reports_tk ON reports(tk, day)")
     # 실적·공시 이벤트 기록 (11-25) — 나중에 '이벤트 뒤 사면 이겼나' 검증(C2·D)에 쓴다. data = JSON(숫자·반응)
     con.execute("CREATE TABLE IF NOT EXISTS events (kind TEXT, tk TEXT, day TEXT, data TEXT, PRIMARY KEY (kind, tk, day)) WITHOUT ROWID")
+    # 국내 공시 (DART, 11-25) — 투자 판단용으로 분류된 것만. data = JSON(잠정실적 숫자 등)
+    con.execute("CREATE TABLE IF NOT EXISTS dart (rcept_no TEXT PRIMARY KEY, day TEXT, tk TEXT, corp TEXT, title TEXT, kind TEXT,"
+                " tone TEXT, data TEXT)")
+    con.execute("CREATE INDEX IF NOT EXISTS dart_tk ON dart(tk, day)")
+    con.execute("CREATE INDEX IF NOT EXISTS dart_day ON dart(day)")
     return con
 
 
@@ -1303,6 +1308,7 @@ def initial_load():
     _start_after(4,  refresh_news)
     _start_after(90, lambda: refresh_broker_research(force=True))   # 종목 목록이 들어온 뒤
     _start_after(120, lambda: refresh_report_lists(force=True))
+    _start_after(150, lambda: refresh_dart(force=True))
     _start_after(6,  refresh_fear_greed)
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
@@ -1463,6 +1469,7 @@ _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
 _scheduler.add_job(refresh_broker_research, "interval", minutes=15, id="broker_research")   # 평일 07~22시 15분, 그 밖 1시간 (11-24)
 _scheduler.add_job(refresh_report_lists,    "interval", minutes=30, id="report_lists")      # 네이버 리서치·한경, 평일 30분·그 밖 3시간 (11-24)
+_scheduler.add_job(lambda: refresh_dart(),  "interval", minutes=30, id="dart")              # DART 국내 공시·잠정실적, 평일 30분·그 밖 3시간 (11-25)
 _scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")
 _scheduler.add_job(refresh_reports,         "interval", minutes=15, id="reports")
 _scheduler.add_job(refresh_earnings,        "interval", hours=1,    id="earnings")
@@ -1740,6 +1747,109 @@ def _us_analyst(t: str) -> dict:
     return d or {}
 
 
+# ── 국내 공시·잠정실적 수집 (DART, 11-25) — 평일 07~20시 30분마다(그 밖 3시간) ─────────────────
+_dart_last = 0.0
+_DART_TONE_KO = {"pos": "호재", "neg": "악재", "neu": "중립", "earn": "실적"}
+
+
+def refresh_dart(force: bool = False):
+    global _dart_last
+    from zoneinfo import ZoneInfo
+    if not df.DART_KEY:
+        return
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    busy = now.weekday() < 5 and 7 <= now.hour < 20
+    if not force and time.time() - _dart_last < (25 * 60 if busy else 170 * 60):
+        return
+    kr = [x for x in (cache.get("kr_stocks") or []) if x.get("code")]
+    if len(kr) < 1000:
+        return
+    _dart_last = time.time()
+    code2tk = {x["code"]: x["ticker"] for x in kr}
+    first = force or not os.path.exists(NEWS_ARCHIVE_DB)
+    bgn = (now - timedelta(days=7 if first else 1)).strftime("%Y%m%d")
+    end = now.strftime("%Y%m%d")
+    try:
+        with _na_lock, closing(_na_db()) as con:
+            have = {r[0] for r in con.execute("SELECT rcept_no FROM dart WHERE day >= ?", ((now - timedelta(days=10)).strftime("%Y-%m-%d"),))}
+    except sqlite3.Error:
+        have = set()
+    rows, parsed = [], 0
+    for ptype in ("I", "B"):
+        for x in df.fetch_dart_list(bgn, end, ptype, max_pages=15):
+            if x["rcept_no"] in have or not x["code"] or x["code"] not in code2tk:
+                continue
+            kind, tone = df.dart_classify(x["title"])
+            if not kind:
+                continue
+            data = {}
+            if kind == "prelim" and "정정" not in x["title"] and parsed < 30:
+                data = df.parse_dart_prelim(x["rcept_no"]); parsed += 1
+                if data and not data.get("period"):
+                    data["period"] = df.dart_quarter_of(x["day"])
+                time.sleep(0.2)
+            rows.append((x["rcept_no"], x["day"], code2tk[x["code"]], x["corp"], x["title"], kind, tone, json.dumps(data, ensure_ascii=False)))
+            have.add(x["rcept_no"])
+    if not rows:
+        return
+    try:
+        with _na_lock, closing(_na_db()) as con:
+            con.executemany("INSERT OR IGNORE INTO dart VALUES (?,?,?,?,?,?,?,?)", rows)
+            con.executemany("INSERT OR REPLACE INTO events VALUES (?,?,?,?)",
+                            [("kr_" + r[5], r[2], r[1], r[7]) for r in rows if r[5] in ("prelim", "buyback", "rights", "cb", "contract")])
+            con.commit()
+        log.info(f"DART 공시: 새 {len(rows)}건 (잠정실적 본문 {parsed}건)")
+    except sqlite3.Error as e:
+        log.warning(f"DART 저장 실패: {e}")
+
+
+def _dart_rows(where: str, args: tuple, limit: int = 500) -> list[dict]:
+    if not os.path.exists(NEWS_ARCHIVE_DB):
+        return []
+    with _na_lock, closing(_na_db()) as con:
+        cur = con.execute(f"SELECT rcept_no, day, tk, corp, title, kind, tone, data FROM dart {where} ORDER BY day DESC, rcept_no DESC LIMIT {int(limit)}", args)
+        cols = [c[0] for c in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    for r in rows:
+        r["data"] = json.loads(r["data"] or "{}")
+        r["url"] = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={r['rcept_no']}"
+        r["tone_ko"] = _DART_TONE_KO.get(r["tone"], "")
+    return rows
+
+
+def _kr_reaction(tk: str, day: str) -> dict:
+    """국내 공시 뒤 주가 반응 — 공시 전 거래일 종가 → 공시 다음 거래일 종가(이틀 창), 5거래일 뒤 (다음 금융 일별, 1시간 캐시)."""
+    code = df.kr_code(tk)
+    key = f"stock_days_kr_{code}"
+    bars = cache.get_fresh(key)
+    if bars is None:
+        bars = df.fetch_kr_stock_days_daum(code, 260)
+        cache.set(key, bars, ttl=3600 if bars else 120)
+    return _earn_reaction([{"time": b["date"], "close": b["close"]} for b in (bars or [])], day, "")
+
+
+@app.route("/api/dart-feed")
+def dart_feed_api():
+    """DART 국내 공시(분류된 것) — ?days=7&tone=pos|neg|neu|earn&kind=&q=. 뉴스 탭 📢 공시·실적발표 탭 국내. 작업 PC는 집 서버 기록."""
+    days = max(1, min(int(request.args.get("days") or 7), 90))
+    tone, kind, q = request.args.get("tone") or "", request.args.get("kind") or "", (request.args.get("q") or "").strip()
+    home = _home_json("/api/dart-feed", {"days": days, "tone": tone, "kind": kind, "q": q}, f"df_home_{days}_{tone}_{kind}_{q}", None)
+    if home is not None:
+        return jsonify(home)
+    where, args = ["day >= ?"], [(date.today() - timedelta(days=days)).isoformat()]
+    if tone:
+        where.append("tone = ?"); args.append(tone)
+    if kind:
+        where.append("kind = ?"); args.append(kind)
+    if q:
+        where.append("(corp LIKE ? OR title LIKE ?)"); args += [f"%{q}%", f"%{q}%"]
+    names = _names_map()
+    rows = _dart_rows("WHERE " + " AND ".join(where), tuple(args))
+    for r in rows:
+        r["name"] = names.get(r["tk"]) or r["corp"]
+    return jsonify(rows)
+
+
 # ── 미국 종목 실적 (11-25) ─────────────────────────────────────────────────────
 def _earn_reaction(bars: list, day: str, hour: str) -> dict:
     """실적 발표 주가 반응 — 장 후(amc): 발표일 종가 → 다음 거래일 종가, 장 전(bmo): 전 거래일 종가 → 발표일 종가,
@@ -1770,9 +1880,10 @@ def _earn_reaction(bars: list, day: str, hour: str) -> dict:
 def earnings_stock_api(ticker):
     """미국 종목 실적 한눈에 — 다음 발표일(남은 일수·장 전/후), 분기·연간 EPS 예상, 최근 4분기 서프라이즈와 발표 뒤 주가 반응,
     요약(예상 상회 횟수·평균 반응). 6시간 캐시. 발표 결과는 events 표에도 쌓는다."""
-    t = _canon_us_ticker(ticker.strip())
-    if t.endswith((".KS", ".KQ")):
-        return jsonify({"ticker": t, "market": "KR"})
+    raw = ticker.strip()
+    if raw.upper().endswith((".KS", ".KQ")):
+        return jsonify(_kr_earnings_stock(raw.upper()))
+    t = _canon_us_ticker(raw)
     key = f"earn_stock_{t}"
     hit = cache.get_fresh(key)
     if hit is not None:
@@ -1811,6 +1922,31 @@ def earnings_stock_api(ticker):
         log.warning(f"실적 이벤트 저장 실패: {e}")
     cache.set(key, out, ttl=6 * 3600 if (rows or nxt) else 1800)
     return jsonify(out)
+
+
+def _kr_earnings_stock(t: str) -> dict:
+    """국내 종목 실적·공시 — 최근 잠정실적(매출·영업이익·순이익과 증감률, 공시 뒤 주가 반응), 분기 실적 추이(정기보고서),
+    최근 180일 주요 공시(호재·악재·중립), 다음 IR 일정(네이버). 6시간 캐시(공시 목록은 바로 반영)."""
+    key = f"kr_earn_{t}"
+    base = cache.get_fresh(key)
+    if base is None:
+        code = df.kr_code(t)
+        corp = df.load_dart_corp_map().get(code)
+        quarterly = df.fetch_dart_quarterly(corp) if corp else []
+        ir = None
+        try:
+            d = requests.get(f"https://m.stock.naver.com/api/stock/{code}/integration", headers={"User-Agent": "Mozilla/5.0"}, timeout=10).json()
+            ir = d.get("irScheduleInfo") or None
+        except Exception:
+            pass
+        base = {"quarterly": quarterly[-8:], "ir": ir}
+        cache.set(key, base, ttl=6 * 3600)
+    since = (date.today() - timedelta(days=400)).isoformat()
+    prelim = [r for r in _dart_rows("WHERE tk = ? AND kind = 'prelim' AND day >= ?", (t, since), 12) if r["data"]][:6]
+    for r in prelim:
+        r.update(_kr_reaction(t, r["day"]))
+    discl = _dart_rows("WHERE tk = ? AND kind != 'prelim' AND day >= ?", (t, (date.today() - timedelta(days=180)).isoformat()), 30)
+    return {"ticker": t, "market": "KR", "prelim": prelim, "quarterly": base["quarterly"], "disclosures": discl, "ir": base["ir"]}
 
 
 @app.route("/api/earnings-soon")

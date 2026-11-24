@@ -10,9 +10,9 @@ async function initEarnings() {
   if (_earnInited) { renderEarnings(); return; }
   _earnInited = true;
 
-  document.querySelectorAll('.earn-period-btn').forEach(btn => {
+  document.querySelectorAll('.earn-period-btn[data-period]').forEach(btn => {   // 시장 전환 버튼(data-mkt)과 구분 (11-25)
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.earn-period-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.earn-period-btn[data-period]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _earnPeriod = btn.dataset.period;
       loadEarnings();
@@ -64,7 +64,52 @@ function _getEarnSector(symbol) {
   return s ? s.sector : null;
 }
 
+// 🇰🇷 국내 (11-25) — DART 잠정실적(최근 7·30일)과 IR(기업설명회) 공시
+let _earnMkt = 'us';
+function _bindEarnMkt() {
+  document.querySelectorAll('#earn-mkt-bar button').forEach(b => {
+    if (b._bound) return;
+    b._bound = true;
+    b.onclick = () => {
+      document.querySelectorAll('#earn-mkt-bar button').forEach(x => x.classList.toggle('active', x === b));
+      _earnMkt = b.dataset.mkt;
+      document.querySelector('.earnings-filter-bar').style.display = _earnMkt === 'kr' ? 'none' : '';
+      document.querySelectorAll('.earn-period-btn[data-period]').forEach(x => {
+        x.style.display = _earnMkt === 'kr' && x.dataset.period === 'next_week' ? 'none' : '';
+      });
+      loadEarnings();
+    };
+  });
+}
+async function loadKrEarnings() {
+  const content = document.getElementById('earnings-content');
+  const days = _earnPeriod === 'today' ? 1 : 7;
+  content.innerHTML = '<div class="loading-msg">국내 잠정실적을 불러오는 중…</div>';
+  let pre = [], ir = [];
+  try { [pre, ir] = await Promise.all([api(`/api/dart-feed?days=${days}&kind=prelim`), api(`/api/dart-feed?days=14&kind=ir`)]); } catch {}
+  const rows = pre.filter(r => krHasNum(r.data));   // 금액이 비어 있는 월간 수주 보고 등은 뺌
+  const row = r => {
+    const d = r.data;
+    return `<tr onclick="window.open('${_escHtml(r.url)}','_blank')" style="cursor:pointer">
+      <td>${r.day.slice(5).replace('-', '/')}</td>
+      <td><span class="earn-ticker" data-ticker="${_escHtml(r.tk)}">${_escHtml(r.name || r.corp)}</span></td>
+      <td>${_escHtml(d.period || '')}${d.consolidated ? '' : ' <small>별도</small>'}</td>
+      <td class="num">${krAmt(d.sales?.cur)}</td><td class="num">${krYoy(d.sales) || '—'}</td>
+      <td class="num">${krAmt(d.op?.cur)}</td><td class="num">${krYoy(d.op) || '—'}</td>
+      <td class="num">${krAmt(d.net?.cur)}</td><td class="num">${krYoy(d.net) || '—'}</td></tr>`;
+  };
+  content.innerHTML = `<div class="earn-date-group"><div class="earn-date-header">🇰🇷 잠정실적 공시 · 최근 ${days}일 <span class="earn-date-count">${rows.length}개</span></div>
+    ${rows.length ? `<div class="earn-table-wrap"><table class="earn-table"><thead><tr><th>공시</th><th>종목</th><th>기간</th><th class="num">매출</th><th class="num">전년 대비</th><th class="num">영업이익</th><th class="num">전년 대비</th><th class="num">순이익</th><th class="num">전년 대비</th></tr></thead>
+      <tbody>${rows.map(row).join('')}</tbody></table></div>` : '<div class="loading-msg">이 기간에 잠정실적 공시가 없어요 (분기 실적 시즌: 1·4·7·10월 말~다음 달 중순)</div>'}</div>
+    <div class="earn-date-group"><div class="earn-date-header">📣 기업설명회(IR) 공시 · 최근 14일 <span class="earn-date-count">${ir.length}개</span></div>
+      ${ir.length ? ir.slice(0, 40).map(r => dartRowHtml(r, true)).join('') : '<div class="loading-msg">IR 공시가 없어요</div>'}</div>
+    <div class="er-note">DART(금융감독원) 영업(잠정)실적 공시 · 전년 대비는 공시에 적힌 전년 같은 기간 대비 · 행을 누르면 원문</div>`;
+  content.querySelectorAll('.earn-ticker').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); navigateToChart(el.dataset.ticker); }));
+}
+
 async function loadEarnings() {
+  _bindEarnMkt();
+  if (_earnMkt === 'kr') return loadKrEarnings();
   const content = document.getElementById('earnings-content');
   content.innerHTML = '<div class="loading-msg">불러오는 중…</div>';
   try {
