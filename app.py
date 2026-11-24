@@ -1946,7 +1946,21 @@ def _macro_item(hist: list, freq: str, yoy: bool = False) -> dict:
     step = max(1, len(year) // 60)
     return {"last": last, "date": hist[-1][0], "w1": round(last - vals[-1 - k1], 3) if k1 and len(vals) > k1 else None,
             "m1": round(last - vals[-1 - k2], 3) if len(vals) > k2 else None,
-            "lo": min(year), "hi": max(year), "spark": year[::step][-60:]}
+            "lo": min(year), "hi": max(year), "spark": year[::step][-60:], "hist": [[d, v] for d, v in hist]}
+
+
+# 차트 탭에서 열 수 있는 지표 → 시세 종목 (11-25). 나머지는 매크로 창 안에서 3년 그래프를 펼친다
+MACRO_CHART = {"DGS10": "^TNX", "VIXCLS": "^VIX", "DTWEXBGS": "DX-Y.NYB", "DCOILWTICO": "CL=F", "731Y001": "KRW=X"}
+
+
+@app.route("/api/macro-series/<sid>")
+def macro_series_api(sid):
+    """매크로 지표 하나의 약 3년 시계열 [[날짜, 값]] — /api/macro가 받아 둔 것을 쓴다."""
+    hist = (cache.get("macro_hist") or {}).get(sid)
+    if hist is None:
+        macro_api()
+        hist = (cache.get("macro_hist") or {}).get(sid)
+    return jsonify(hist or [])
 
 
 @app.route("/api/macro")
@@ -1964,6 +1978,9 @@ def macro_api():
         it = _macro_item(df.fetch_ecos(code, item, cyc), "d")
         if it:
             items.append(dict(it, id=code, name=name, unit=unit, desc=desc, risk="up" if code == "731Y001" else "", src="ECOS", group="한국"))
+    cache.set("macro_hist", {x["id"]: x.pop("hist") for x in items}, ttl=6 * 3600)
+    for x in items:
+        x["chart"] = MACRO_CHART.get(x["id"])
     # 한눈에 위험 신호 (일반적인 기준 — 투자 조언 아님)
     g = {x["id"]: x for x in items}
     flags = []

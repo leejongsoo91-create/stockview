@@ -2290,6 +2290,49 @@ function _nxApplyPending() {
   document.getElementById('news-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// 매크로 지표 자세한 설명 (11-25) — what: 무엇인지 · read: 읽는 법(기준 값) · stock: 주식에 미치는 영향
+const MACRO_GUIDE = {
+  DGS10: { what: '미국 정부가 10년 동안 돈을 빌릴 때 내는 이자율. 전 세계 장기 금리·주택담보대출 금리의 기준입니다.',
+    read: '4% 안팎이 최근 몇 년의 보통 수준, 5% 가까이 오르면 부담이 커집니다. 빠르게 오를수록(한 달 +0.3%p 이상) 시장이 흔들리기 쉽습니다.',
+    stock: '금리가 오르면 미래 이익의 현재 가치가 줄어 기술·성장주가 특히 약해지고, 은행주는 상대적으로 유리합니다.' },
+  DGS2: { what: '미국 2년 만기 국채 금리. 앞으로 1~2년 동안 연준이 금리를 어떻게 할지에 대한 시장의 예상이 담깁니다.',
+    read: '기준금리보다 낮으면 시장이 금리 인하를, 높으면 인상을 예상한다는 뜻입니다.',
+    stock: '2년물이 내려가면(인하 기대) 보통 주식에 우호적입니다. 다만 경기 악화 때문에 내려가는 경우는 예외입니다.' },
+  T10Y2Y: { what: '10년물 금리에서 2년물 금리를 뺀 값. 보통은 오래 빌릴수록 이자가 높아 플러스입니다.',
+    read: '0 아래(역전)는 과거 대부분의 미국 경기 침체 6~24개월 전에 나타났습니다. 역전이 풀리며 다시 플러스로 오를 때 실제 침체가 오는 경우가 많았습니다.',
+    stock: '역전 자체로 바로 주가가 빠지진 않지만, 역전 해소 직후 구간은 조심하는 신호로 봅니다. 그래프의 빨간 점선이 0입니다.' },
+  DFF: { what: '연준(미국 중앙은행)이 정하는 정책 금리를 실제 거래로 잰 값.',
+    read: '계단처럼 움직입니다. 내려가는 계단이 시작되면 금리 인하기, 올라가면 인상기입니다.',
+    stock: '인하기는 보통 주식에 우호적이지만, 경기가 급히 나빠져서 내리는 경우에는 주가가 먼저 빠지기도 합니다.' },
+  VIXCLS: { what: 'S&P500 옵션 가격으로 계산한 앞으로 30일의 예상 변동성. "공포 지수"라고 부릅니다.',
+    read: '15 아래 = 안심, 20 위 = 불안, 30 위 = 공포, 40 위 = 극단적 공포(급락장).',
+    stock: '높을 때는 손절폭을 넓히거나 비중을 줄이는 게 일반적입니다. 극단적으로 높았다가 꺾일 때가 역사적으로 저점 근처였던 경우가 많습니다.' },
+  BAMLH0A0HYM2: { what: '신용이 낮은 회사(하이일드) 채권이 국채보다 얼마나 더 높은 이자를 줘야 하는지.',
+    read: '3~4%p = 평온, 5%p 위 = 신용 불안, 7%p 위 = 위기 수준(2008·2020년). 짧은 기간에 크게 벌어지는 게 위험 신호입니다.',
+    stock: '스프레드가 벌어지면 돈 빌리기 어려운 회사(소형·적자 기업)부터 약해집니다. 주식보다 먼저 움직이는 경우가 많아 선행 지표로 봅니다.' },
+  DTWEXBGS: { what: '여러 나라 통화 대비 달러 가치(무역 비중으로 가중). 차트 탭은 비슷한 지표인 달러 인덱스(DXY)로 보여줍니다.',
+    read: '오르면 달러 강세. 몇 달 동안 계속 오르면 전 세계 돈이 미국으로 몰린다는 뜻입니다.',
+    stock: '달러 강세는 신흥국·한국 증시(외국인 매도)와 원자재, 해외 매출이 큰 미국 기업 이익에 부담입니다.' },
+  DCOILWTICO: { what: '미국 서부텍사스산 원유 가격(배럴당 달러). FRED 값은 며칠 늦게 올라오고, 차트 탭은 실시간 선물(CL=F)입니다.',
+    read: '짧은 기간 급등(한 달 +20% 이상)은 물가 걱정을, 급락은 경기 둔화 걱정을 키웁니다.',
+    stock: '유가가 오르면 정유·에너지주에 유리하고 항공·화학·운송주에는 비용 부담입니다.' },
+  CPIAUCSL: { what: '미국 소비자 물가가 1년 전보다 몇 % 올랐는지. 매달 중순에 지난달 값이 나옵니다.',
+    read: '연준의 목표는 2%입니다. 3% 위에서 머물면 금리 인하가 어렵고, 다시 오르기 시작하면 인상 걱정이 생깁니다.',
+    stock: '예상보다 높게 나온 날은 금리가 오르며 주가가 약해지는 경우가 많습니다(특히 성장주).' },
+  UNRATE: { what: '일자리를 찾는 사람 중 구하지 못한 사람의 비율. 매달 첫 금요일 고용보고서로 나옵니다.',
+    read: '낮은 수준 자체보다 방향이 중요합니다. 최근 저점보다 0.5%p 이상 오르면 과거엔 경기 침체가 시작된 경우가 많았습니다(삼 법칙).',
+    stock: '빠르게 오르면 소비 둔화 → 기업 이익 감소 걱정. 금리 인하 기대는 커집니다.' },
+  '722Y001': { what: '한국은행이 정하는 정책 금리.',
+    read: '미국 기준금리와의 차이도 중요합니다. 미국보다 많이 낮으면 원화 약세·외국인 자금 이탈 압력이 생깁니다.',
+    stock: '인하는 국내 증시·부동산에 우호적이지만, 환율이 오르는(원화 약세) 부작용을 같이 봐야 합니다.' },
+  '817Y002': { what: '한국 정부가 3년 동안 빌리는 이자율. 시장이 예상하는 한국 금리 방향이 담깁니다.',
+    read: '기준금리보다 낮으면 시장이 금리 인하를 예상한다는 뜻입니다.',
+    stock: '내려가면 국내 성장주·배당주에 우호적이고, 오르면 부담입니다.' },
+  '731Y001': { what: '1달러를 사는 데 드는 원화. 오르면 원화 가치가 떨어진 것(원화 약세)입니다.',
+    read: '1,300원 위면 원화 약세 구간, 1,400원 위면 과거 위기 때 수준입니다. 빠르게 오를수록 위험합니다.',
+    stock: '오르면 외국인이 한국 주식을 파는 경향이 있습니다. 수출 기업(반도체·자동차)은 원화 이익이 늘어 일부 상쇄됩니다.' },
+};
+
 // ── 🌐 매크로 지표 창 (11-25) — FRED·ECOS, 시장 전체 위험도 ──────────
 async function openMacroModal() {
   const ov = document.getElementById('macro-modal'), body = document.getElementById('macro-modal-body');
@@ -2312,8 +2355,8 @@ async function openMacroModal() {
     return `<svg viewBox="0 0 ${W} ${H}" class="mc-spark"><polyline points="${pts}"/></svg>`;
   };
   const pos = it => it.hi > it.lo ? Math.round((it.last - it.lo) / (it.hi - it.lo) * 100) : 50;
-  const rows = g => d.items.filter(x => x.group === g).map(it => `<tr title="${_escHtml(it.desc)}">
-      <td><b>${_escHtml(it.name)}</b><div class="mc-desc">${_escHtml(it.desc)}</div></td>
+  const rows = g => d.items.filter(x => x.group === g).map(it => `<tr class="mc-row" data-id="${_escHtml(it.id)}" data-chart="${_escHtml(it.chart || '')}" data-unit="${_escHtml(it.unit || '')}" title="눌러서 자세한 설명과 3년 그래프 펼치기">
+      <td><b>${_escHtml(it.name)}</b> <i class="mc-go" aria-hidden="true"></i>${it.chart ? ` <button type="button" class="mc-chart-btn" data-chart="${_escHtml(it.chart)}" title="차트 탭에서 시세 차트 보기 (${_escHtml(it.chart)})">📈 차트</button>` : ''}<div class="mc-desc">${_escHtml(it.desc)}</div></td>
       <td class="num"><b>${fmt(it.last, it.unit)}</b><div class="mc-desc">${_escHtml(String(it.date).slice(2))}</div></td>
       <td class="num">${chg(it.w1, it)}</td><td class="num">${chg(it.m1, it)}</td>
       <td>${spark(it)}<div class="mc-range"><i style="left:${pos(it)}%"></i></div><div class="mc-desc">1년 ${fmt(it.lo, it.unit)} ~ ${fmt(it.hi, it.unit)}</div></td></tr>`).join('');
@@ -2321,7 +2364,47 @@ async function openMacroModal() {
   body.innerHTML = `${(d.flags || []).length ? `<div class="mc-flags">⚠️ 위험 신호: ${d.flags.map(_escHtml).join(' · ')}</div>` : '<div class="mc-flags ok">눈에 띄는 위험 신호 없음 (금리 역전·VIX 25↑·하이일드 5%p↑ 기준)</div>'}
     <div class="mc-h">🇺🇸 미국</div><table class="mc-tbl">${head}<tbody>${rows('미국')}</tbody></table>
     <div class="mc-h">🇰🇷 한국</div><table class="mc-tbl">${head}<tbody>${rows('한국')}</tbody></table>
-    <p class="vt-note">변화 색: 위험이 커지는 방향 = 빨강, 줄어드는 방향 = 초록 (방향이 정해지지 않은 지표는 무색). 마우스를 올리면 설명. 물가는 전년 같은 달 대비 %. 6시간마다 새로.</p>`;
+    <p class="vt-note">지표 줄을 누르면 자세한 설명과 3년 그래프가 펼쳐져요 · 📈 차트 = 차트 탭에서 시세 차트(10년물 ^TNX·VIX·달러 지수 DXY·WTI 선물·원/달러). 변화 색: 위험이 커지는 방향 = 빨강, 줄어드는 방향 = 초록 (방향이 정해지지 않은 지표는 무색). 물가는 전년 같은 달 대비 %. 6시간마다 새로.</p>`;
+  body.querySelectorAll('.mc-row').forEach(tr => tr.addEventListener('click', () => _macroRowClick(tr)));
+  body.querySelectorAll('.mc-chart-btn').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    document.getElementById('macro-modal').hidden = true;
+    navigateToChart(btn.dataset.chart);
+  }));
+}
+
+// 지표 행 클릭 (11-25): 바로 아래에 자세한 설명 + 3년 선 그래프를 펼친다(다시 누르면 접힘). 차트 탭 이동은 📈 차트 버튼
+async function _macroRowClick(tr) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('mc-detail')) { next._chart?.remove(); next.remove(); tr.classList.remove('open'); return; }
+  tr.classList.add('open');
+  const row = document.createElement('tr');
+  row.className = 'mc-detail';
+  const g = MACRO_GUIDE[tr.dataset.id] || {};
+  row.innerHTML = `<td colspan="5">${g.what ? `<div class="mc-guide">
+      <div><b>무엇인가요</b>${_escHtml(g.what)}</div><div><b>읽는 법</b>${_escHtml(g.read)}</div><div><b>주식에는</b>${_escHtml(g.stock)}</div></div>` : ''}
+    <div class="mc-chart"><div class="br-empty">불러오는 중…</div></div>
+    ${tr.dataset.chart ? `<button type="button" class="mc-chart-btn mc-chart-btn-lg" data-chart="${_escHtml(tr.dataset.chart)}">📈 차트 탭에서 시세 차트 보기 (${_escHtml(tr.dataset.chart)})</button>` : ''}</td>`;
+  row.querySelector('.mc-chart-btn')?.addEventListener('click', e => { e.stopPropagation(); document.getElementById('macro-modal').hidden = true; navigateToChart(e.currentTarget.dataset.chart); });
+  tr.after(row);
+  let h = [];
+  try { h = await api(`/api/macro-series/${encodeURIComponent(tr.dataset.id)}`); } catch {}
+  const box = row.querySelector('.mc-chart');
+  if (!h.length || !row.isConnected) { if (box) box.innerHTML = '<div class="br-empty">그래프 자료가 없어요</div>'; return; }
+  box.innerHTML = '';
+  const css = getComputedStyle(document.documentElement);
+  const c = LightweightCharts.createChart(box, {
+    height: 220, autoSize: true,
+    layout: { background: { color: 'transparent' }, textColor: css.getPropertyValue('--muted').trim() || '#888' },
+    grid: { vertLines: { visible: false }, horzLines: { color: css.getPropertyValue('--border').trim() || '#333' } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
+    handleScroll: false, handleScale: false,
+  });
+  const s = c.addLineSeries({ color: css.getPropertyValue('--accent').trim() || '#3b82f6', lineWidth: 2, priceLineVisible: false });
+  s.setData(h.map(([t, v]) => ({ time: t.length === 7 ? t + '-01' : t, value: v })));
+  if (['T10Y2Y'].includes(tr.dataset.id)) s.createPriceLine({ price: 0, color: '#ef4444', lineStyle: 2, lineWidth: 1, axisLabelVisible: false, title: '역전 기준 0' });
+  c.timeScale().fitContent();
+  row._chart = c;
 }
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('macro-btn')?.addEventListener('click', openMacroModal);
