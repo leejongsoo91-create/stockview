@@ -2597,6 +2597,155 @@ def fetch_kr_market_history_daum(index: str, count: int = 500) -> dict[str, dict
     return out
 
 
+# ── 증권사 텔레그램 리서치 (11-24) ───────────────────────────────────────────
+# 증권사 공식 리서치 채널의 공개 미리보기(t.me/s/채널, 로그인 없음 — 최근 약 20개 글)를 읽어 쌓는다(app.py가 15분마다).
+# 글마다 종목(국내 코드·미국 티커)·투자의견·목표주가·애널리스트를 뽑는다. 증권사 자료라 개인 참고용 — 재배포 안 함, 원문은 링크만.
+TELEGRAM_RESEARCH = [   # (채널 주소, 표시 이름) — 사용자 가입 채널 포함 (11-24 접속 확인)
+    ("meritz_research", "메리츠증권"), ("kiwoomresearch", "키움증권"), ("kwusa", "키움증권 미국"),
+    ("shinhanresearch", "신한투자증권"), ("hmsecresearch", "현대차증권"), ("HanaResearch", "하나증권"),
+    ("ssi_research", "상상인증권"), ("yuantaresearch", "유안타증권"), ("jw_tech", "삼성증권 테크"),
+]
+_TG_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"}
+
+
+def _tg_text(frag: str) -> str:
+    t = re.sub(r"(?i)<br\s*/?>", "\n", frag)
+    t = re.sub(r"<[^>]+>", "", t)
+    return html.unescape(t).replace("\xa0", " ").strip()
+
+
+def fetch_tg_channel(ch: str) -> list[dict]:
+    """공개 채널 최근 글 [{msg, ts, text, links, views}] (오래된 것 먼저). 실패 시 []."""
+    try:
+        r = requests.get(f"https://t.me/s/{ch}", headers=_TG_HEADERS, timeout=12, allow_redirects=False)
+        if r.status_code != 200:
+            log.warning(f"텔레그램 {ch}: HTTP {r.status_code}")
+            return []
+        page = r.text
+    except Exception as e:
+        log.warning(f"텔레그램 {ch} 실패: {e}")
+        return []
+    out = []
+    for block in page.split('data-post="')[1:]:
+        m = re.match(r"[^/\"]+/(\d+)\"", block)
+        if not m:
+            continue
+        tm = re.search(r'<time datetime="([^"]+)"', block)
+        txt = re.search(r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, re.S)
+        doc = re.findall(r'tgme_widget_message_document_title[^>]*>(.*?)</div>', block, re.S)
+        text = _tg_text(txt.group(1)) if txt else ""
+        if doc:
+            text = (text + "\n" + " / ".join(_tg_text(d) for d in doc)).strip()
+        if not text or not tm:
+            continue
+        try:
+            ts = int(datetime.fromisoformat(tm.group(1)).timestamp())
+        except ValueError:
+            continue
+        links = [u for u in re.findall(r'href="(https?://[^"]+)"', txt.group(1) if txt else "") if "t.me/" not in u][:5]
+        views = re.search(r'tgme_widget_message_views">([^<]+)<', block)
+        out.append({"msg": int(m.group(1)), "ts": ts, "text": text[:4000], "links": links,
+                    "views": views.group(1) if views else ""})
+    return sorted(out, key=lambda x: x["msg"])
+
+
+_TG_OPINION = [   # 위에서부터 먼저 — 매수·중립·매도 셋으로
+    ("buy", r"Trading\s*Buy|Strong\s*Buy|BUY|매수|Outperform|비중\s*확대|Overweight|Add"),
+    ("hold", r"HOLD|중립|Neutral|Market\s*Perform|Marketperform|보유|Not\s*Rated|NR"),
+    ("sell", r"SELL|매도|Underperform|비중\s*축소|Underweight|Reduce"),
+]
+
+
+def _tg_opinion(text: str) -> str | None:
+    # 1) "투자의견 BUY", "투자의견: 매수(유지)"  2) "(088350.KS/매수)" 꼴  3) 영어 대문자 단어 BUY·HOLD
+    m = re.search(r"투자\s*의견\s*[:：]?\s*['\"‘“]?\s*([A-Za-z가-힣 ]{2,16})", text) or \
+        re.search(r"/\s*(매수|중립|매도|BUY|HOLD|SELL|Trading Buy|Outperform|Not Rated)\s*\)", text, re.I)
+    cand = m.group(1) if m else None
+    if not cand:
+        m = re.search(r"(?<![A-Za-z])(BUY|HOLD|SELL|Trading Buy|Outperform|Underperform)(?![A-Za-z])", text)
+        cand = m.group(1) if m else None
+    if not cand:
+        return None
+    for k, rx in _TG_OPINION:
+        if re.search(rf"(?i)(?<![A-Za-z])(?:{rx})(?![A-Za-z])", cand):
+            return k
+    return None
+
+
+def _tg_target(text: str) -> tuple[float | None, str | None]:
+    """목표주가 → (값, 'KRW'|'USD'). "목표주가 24,000원", "TP 31만원", "목표주가(12M) 250달러", "BUY/190,000원", "BUY 177,000원".
+    11-24 점검: "12개월 목표주가"·"31만원"을 12원·31원으로 읽던 것 수정. 원화는 100원 미만이면 버림."""
+    pats = [r"(?:목표\s*주가|목표가|적정\s*주가|TP|Target\s*Price)\s*(?:\(\s*12\s*(?:M|개월)\s*\)|12\s*개월)?\s*(?:를|은|는)?\s*[:：]?\s*"
+            r"(\$|US\$|USD\s*)?\s*([\d,]+(?:\.\d+)?)\s*(만\s*원|원|달러|USD|\$)?",
+            r"(?<![A-Za-z])(?:BUY|매수|Trading\s*Buy|HOLD|중립|Outperform)\s*[/,]?\s*\(?(\$)?([\d,]{3,}(?:\.\d+)?)\s*(만\s*원|원|달러|\$)"]
+    for rx in pats:
+        for m in re.finditer(rx, text, re.I):
+            try:
+                v = float(m.group(2).replace(",", ""))
+            except ValueError:
+                continue
+            unit = (m.group(3) or "").replace(" ", "")
+            usd = bool(m.group(1)) or unit in ("달러", "USD", "$")
+            if unit == "만원":
+                v *= 10000
+            if v <= 0 or (not usd and v < 100):
+                continue
+            return v, "USD" if usd else "KRW"
+    return None, None
+
+
+# 증권사 자기 이름(상장 모회사)으로 시작하는 제목은 종목 리포트가 아님 — "상상인 FICC Brief"를 상상인(종목)으로 읽었음
+_TG_SELF_NAMES = {"상상인", "메리츠금융지주", "키움증권", "신한지주", "현대차증권", "하나금융지주", "유안타증권", "삼성증권",
+                  "미래에셋증권", "한국금융지주", "NH투자증권", "대신증권", "교보증권", "한화투자증권", "DB금융투자", "SK증권"}
+_tg_names_src = None
+_tg_names_re = None
+
+
+def _tg_name_index(kr_names: dict, us_names: dict):
+    """제목 맨 앞 종목 이름 찾기용 — 긴 이름 먼저(삼성전자우보다 삼성전자 오탐 방지는 아래 경계로)."""
+    global _tg_names_src, _tg_names_re
+    key = (len(kr_names), len(us_names))
+    if _tg_names_src != key:
+        names = sorted({**kr_names, **us_names}, key=len, reverse=True)
+        _tg_names_re = {n: re.compile(r"^" + re.escape(n) + r"(?![가-힣A-Za-z0-9])") for n in names
+                        if len(n) >= 2 and n not in _TG_SELF_NAMES}
+        _tg_names_src = key
+    return _tg_names_re
+
+
+def tg_extract(text: str, kr_codes: dict, us_tickers: set, kr_names: dict | None = None, us_names: dict | None = None) -> dict:
+    """글 → {codes: [국내 티커 005930.KS], us: [NVDA], opinion, target, cur, analyst, title, single}.
+    kr_codes: {6자리 코드: 국내 티커}, us_tickers: 미국 티커 집합 (목록에 있는 것만 인정 — 숫자 오탐 방지).
+    kr_names/us_names: {이름: 티커} — 코드 없이 제목이 종목 이름으로 시작하는 글("금호건설 BUY/15,000원", "테슬라").
+    의견·목표가는 종목이 하나인 글(single)에서만 그 종목 것으로 본다(여러 종목 데일리·업종 글 제외)."""
+    codes = []
+    for m in re.finditer(r"\(\s*(?:A)?(\d[0-9A-Z]{5})(?:\s*\.?\s*K[SQ])?\s*(?:[/,][^)]{0,20})?\)|(?<![0-9A-Z])(\d[0-9A-Z]{5})\s*\.?\s*K[SQ](?![A-Za-z])", text):
+        c = m.group(1) or m.group(2)
+        t = kr_codes.get(c)
+        if t and t not in codes:
+            codes.append(t)
+    us = []
+    for m in re.finditer(r"(?<![A-Za-z])([A-Z]{1,5}(?:[./][A-Z])?)\s*[.\s]\s*US(?![A-Za-z])|\$([A-Z]{2,5})(?![A-Za-z])", text):
+        t = (m.group(1) or m.group(2) or "").replace(".", "/")
+        if t in us_tickers and t not in us:
+            us.append(t)
+    tgt, cur = _tg_target(text)
+    head = re.match(r"\s*\[([^\]\n]{3,60})\]", text)
+    lines = [l.strip(" ■□◆◈▶️►●💡📮★☆『』「」-*") for l in text.splitlines() if l.strip(" ■□◆◈▶️►●💡📮★☆『』「」-*")]
+    title = next((l for l in lines if not (l.startswith("[") and l.endswith("]"))), lines[0] if lines else "")
+    if not codes and not us and (kr_names or us_names):   # 코드 없이 종목 이름으로 시작하는 제목
+        t0 = re.sub(r"^\[[^\]]*\]\s*", "", title).strip()
+        for n, rx in _tg_name_index(kr_names or {}, us_names or {}).items():
+            if rx.match(t0):
+                tk = (kr_names or {}).get(n) or (us_names or {}).get(n)
+                (codes if tk.endswith((".KS", ".KQ")) else us).append(tk)
+                break
+    single = len(codes) + len(us) == 1
+    return {"codes": codes, "us": us, "opinion": _tg_opinion(text), "target": tgt if single else None,
+            "cur": cur if single else None, "analyst": head.group(1).strip() if head else "", "title": title[:160],
+            "single": single}
+
+
 def fetch_kr_stock_days_daum(code: str, count: int = 260) -> list[dict]:
     """국내 종목 일별 시세 — 다음 금융 종목 일별(KRX 정규장 시가·고가·저가·종가·거래량·실제 거래대금, 약 8,000일).
     단위는 주·원 그대로(11-23: 삼성전자 11-20 16,646,588주·3,074,615,398,400원). 한 쪽 100일씩.

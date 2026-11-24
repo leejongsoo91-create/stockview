@@ -568,6 +568,11 @@ def _na_db():
                 " category TEXT, ts INTEGER, day TEXT, sentiment TEXT)")
     con.execute("CREATE INDEX IF NOT EXISTS news_day ON news(day, ts)")
     con.execute("CREATE TABLE IF NOT EXISTS news_tk (tk TEXT, url TEXT, PRIMARY KEY (tk, url)) WITHOUT ROWID")
+    # 증권사 텔레그램 리서치 (11-24) — 글 하나 = (채널, 글 번호)
+    con.execute("CREATE TABLE IF NOT EXISTS tg_posts (ch TEXT, msg INTEGER, ts INTEGER, day TEXT, broker TEXT, title TEXT,"
+                " text TEXT, links TEXT, analyst TEXT, opinion TEXT, target REAL, cur TEXT, single INTEGER, PRIMARY KEY (ch, msg))")
+    con.execute("CREATE INDEX IF NOT EXISTS tg_posts_ts ON tg_posts(ts)")
+    con.execute("CREATE TABLE IF NOT EXISTS tg_tk (tk TEXT, ch TEXT, msg INTEGER, PRIMARY KEY (tk, ch, msg)) WITHOUT ROWID")
     return con
 
 
@@ -627,6 +632,79 @@ def _archive_rows(sql: str, args: tuple) -> list[dict]:
             else:
                 n.pop("title_ko", None)
     return out
+
+
+# ── 증권사 텔레그램 리서치 수집 (11-24) ───────────────────────────────────────
+# 증권사 공식 리서치 채널 공개 미리보기(최근 약 20개 글)를 평일 07~22시 15분마다(그 밖엔 1시간마다) 읽어 새 글만 쌓는다.
+# 글마다 종목·투자의견·목표주가를 뽑아(df.tg_extract) 종목과 묶는다. 점검: scripts/tg_extract_check.py
+_tg_last = 0.0
+
+
+def _tg_maps():
+    kr = [s for s in (cache.get("kr_stocks") or []) if s.get("code")]
+    us = cache.get("stocks") or []
+    return ({s["code"]: s["ticker"] for s in kr}, {s["ticker"] for s in us if s.get("ticker")},
+            {s["name"]: s["ticker"] for s in kr if s.get("name") and (s.get("kind") or "stock") == "stock"},
+            {s["name_ko"]: s["ticker"] for s in us if s.get("name_ko") and not s.get("non_common")})
+
+
+def refresh_broker_research(force: bool = False):
+    global _tg_last
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    busy = now.weekday() < 5 and 7 <= now.hour < 22
+    if not force and not busy and time.time() - _tg_last < 55 * 60:
+        return
+    kr_codes, us_set, kr_names, us_names = _tg_maps()
+    if len(kr_codes) < 1000 or len(us_set) < 1000:   # 종목 목록이 아직 없으면 종목을 못 묶으니 다음에
+        return
+    _tg_last = time.time()
+    kst = ZoneInfo("Asia/Seoul")
+    new = 0
+    for ch, broker in df.TELEGRAM_RESEARCH:
+        posts = df.fetch_tg_channel(ch)
+        if not posts:
+            continue
+        rows, tks = [], []
+        for p in posts:
+            e = df.tg_extract(p["text"], kr_codes, us_set, kr_names, us_names)
+            rows.append((ch, p["msg"], p["ts"], datetime.fromtimestamp(p["ts"], kst).strftime("%Y-%m-%d"), broker, e["title"],
+                         p["text"], json.dumps(p["links"], ensure_ascii=False), e["analyst"], e["opinion"],
+                         e["target"], e["cur"], int(e["single"])))
+            tks += [(t, ch, p["msg"]) for t in e["codes"] + e["us"]]
+        try:
+            with _na_lock, closing(_na_db()) as con:
+                before = con.total_changes
+                con.executemany("INSERT OR IGNORE INTO tg_posts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+                new += con.total_changes - before
+                con.executemany("INSERT OR IGNORE INTO tg_tk VALUES (?,?,?)", tks)
+                con.commit()
+        except sqlite3.Error as e:
+            log.warning(f"증권사 리서치 저장 실패 ({ch}): {e}")
+        time.sleep(0.5)
+    if new:
+        log.info(f"증권사 텔레그램 리서치: 새 글 {new}건")
+
+
+def _tg_rows(where: str, args: tuple, limit: int = 400) -> list[dict]:
+    if not os.path.exists(NEWS_ARCHIVE_DB):
+        return []
+    with _na_lock, closing(_na_db()) as con:
+        cur = con.execute(f"SELECT p.ch, p.msg, p.ts, p.broker, p.title, p.text, p.links, p.analyst, p.opinion, p.target, p.cur,"
+                          f" p.single, (SELECT group_concat(tk) FROM tg_tk t WHERE t.ch = p.ch AND t.msg = p.msg) AS tks"
+                          f" FROM tg_posts p {where} ORDER BY p.ts DESC LIMIT {int(limit)}", args)
+        cols = [c[0] for c in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    names = {s["ticker"]: s.get("name") for s in (cache.get("kr_stocks") or [])}
+    names.update({s["ticker"]: s.get("name_ko") or s.get("name") for s in (cache.get("stocks") or [])})
+    for r in rows:
+        r["timestamp"] = r.pop("ts")
+        r["url"] = f"https://t.me/{r['ch']}/{r['msg']}"
+        r["links"] = json.loads(r["links"] or "[]")
+        r["stocks"] = [{"ticker": t, "name": names.get(t) or t} for t in (r.pop("tks") or "").split(",") if t]
+        r["single"] = bool(r["single"])
+        r["text"] = (r["text"] or "")[:1500]
+    return rows
 
 
 def refresh_news():
@@ -1087,6 +1165,7 @@ def initial_load():
     _start_after(0,  _load_sp500_background)
     _start_after(2,  refresh_finnhub_news)
     _start_after(4,  refresh_news)
+    _start_after(90, lambda: refresh_broker_research(force=True))   # 종목 목록이 들어온 뒤
     _start_after(6,  refresh_fear_greed)
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
@@ -1245,6 +1324,7 @@ _scheduler.add_job(lambda: refresh_kr_quotes(force=True), "cron", day_of_week="m
                    timezone="Asia/Seoul", id="kr_quotes_close")   # 장 마감 확정 종가 (15:30~15:45 야후 값이 늦을 수 있어 한 번 더)
 _scheduler.add_job(refresh_indices,         "interval", seconds=30, id="idx")
 _scheduler.add_job(refresh_news,            "interval", minutes=10, id="news")
+_scheduler.add_job(refresh_broker_research, "interval", minutes=15, id="broker_research")   # 평일 07~22시 15분, 그 밖 1시간 (11-24)
 _scheduler.add_job(refresh_kr_market_news,  "interval", minutes=10, id="kr_market_news")
 _scheduler.add_job(refresh_reports,         "interval", minutes=15, id="reports")
 _scheduler.add_job(refresh_earnings,        "interval", hours=1,    id="earnings")
@@ -1456,6 +1536,56 @@ def news_archive_api():
     return jsonify(_archive_rows("SELECT n.url, title, title_ko, source, market, category, ts, sentiment,"
                                  " (SELECT tk FROM news_tk t WHERE t.url = n.url LIMIT 1) AS ticker"
                                  " FROM news n WHERE day = ? ORDER BY ts DESC LIMIT 1000", (day,)))
+
+
+@app.route("/api/broker-research")
+def broker_research_api():
+    """증권사 텔레그램 리서치 글 (최근 days일, 기본 7) — 뉴스 탭 🏦 증권사 리포트. ?ch=채널 &q=검색어. 작업 PC는 집 서버 기록."""
+    days = max(1, min(int(request.args.get("days") or 7), 90))
+    ch, q = (request.args.get("ch") or "").strip(), (request.args.get("q") or "").strip()
+    home = _home_json("/api/broker-research", {"days": days, "ch": ch, "q": q}, f"br_home_{days}_{ch}_{q}", None)
+    if home is not None:
+        return jsonify(home)
+    where, args = "WHERE p.ts >= ?", [int(time.time()) - days * 86400]
+    if ch:
+        where += " AND p.ch = ?"; args.append(ch)
+    if q:
+        where += " AND (p.text LIKE ? OR p.title LIKE ?)"; args += [f"%{q}%", f"%{q}%"]
+    return jsonify(_tg_rows(where, tuple(args)))
+
+
+@app.route("/api/broker-research/<ticker>")
+def broker_research_stock_api(ticker):
+    """한 종목의 증권사 리포트 글 + 요약(최근 120일 증권사별 마지막 목표가 평균·현재가 대비 상승 여력·의견 수)."""
+    raw = ticker.strip()
+    t = raw.upper() if raw.upper().endswith((".KS", ".KQ")) else _canon_us_ticker(raw)
+    days = max(7, min(int(request.args.get("days") or 180), 730))
+    home = _home_json(f"/api/broker-research/{t}", {"days": days}, f"brs_home_{t}_{days}", "posts")
+    if home is not None:
+        return jsonify(home)
+    posts = _tg_rows("JOIN tg_tk k ON k.ch = p.ch AND k.msg = p.msg WHERE k.tk = ? AND p.ts >= ?",
+                     (t, int(time.time()) - days * 86400), 200)
+    is_kr = t.endswith((".KS", ".KQ"))
+    src = cache.get("kr_stocks" if is_kr else "stocks") or []
+    price = next((s.get("price") for s in src if s.get("ticker") == t), None)
+    want_cur = "KRW" if is_kr else "USD"
+    latest = {}   # 증권사별 가장 최근 목표가 (120일 안, 종목 하나짜리 글, 현재가의 0.3~5배만 — 오탐 방지)
+    for p in posts:
+        if not (p["single"] and p["target"] and p["cur"] == want_cur and time.time() - p["timestamp"] < 120 * 86400):
+            continue
+        if price and not (0.3 <= p["target"] / price <= 5):
+            continue
+        latest.setdefault(p["broker"], p)
+    tg = [p["target"] for p in latest.values()]
+    ops = {}
+    for p in latest.values() if latest else [p for p in posts if p["single"] and p["opinion"]][:5]:
+        if p.get("opinion"):
+            ops[p["opinion"]] = ops.get(p["opinion"], 0) + 1
+    mean = sum(tg) / len(tg) if tg else None
+    return jsonify({"ticker": t, "posts": posts, "summary": {
+        "brokers": len(latest), "target_mean": round(mean, 2) if mean else None, "cur": want_cur, "price": price,
+        "upside": round((mean / price - 1) * 100, 1) if mean and price else None, "opinions": ops,
+        "targets": [{"broker": b, "target": p["target"], "timestamp": p["timestamp"], "opinion": p["opinion"]} for b, p in latest.items()]}})
 
 
 @app.route("/api/news-archive/days")

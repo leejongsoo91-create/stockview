@@ -550,6 +550,8 @@
           <div id="signal-card" style="display:none"></div>
           <!-- 관련 뉴스: 종합 신호 바로 아래 (11-24, 예전엔 오른쪽 칸 맨 아래) -->
           <div id="stock-news-section"></div>
+          <!-- 🏦 증권사 리포트 (11-24 텔레그램 리서치 수집) -->
+          <div id="broker-research-section"></div>
           <div id="financials-card" style="display:none"></div>
           <div id="stock-info-panel">
             <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>
@@ -567,6 +569,7 @@
         <button class="news-subtab active" data-subtab="news">📰 뉴스</button>
         <button class="news-subtab" data-subtab="reports">📋 리포트</button>
         <button class="news-subtab" data-subtab="disclosures">📢 공시</button>
+        <button class="news-subtab" data-subtab="broker">🏦 증권사 리포트</button>
       </div>
 
       <!-- News 패널 -->
@@ -609,6 +612,18 @@
           </div>
           <aside class="nx-side" id="nx-side"></aside>
         </div>
+      </div>
+
+      <!-- 🏦 증권사 리포트 패널 (11-24 — 증권사 공식 텔레그램 리서치 채널) -->
+      <div id="broker-panel" style="display:none">
+        <div class="nx-tools">
+          <div class="nx-seg" id="br-days">
+            <button data-days="1">오늘</button><button class="on" data-days="7">7일</button><button data-days="30">30일</button>
+          </div>
+          <select id="br-ch"><option value="">전체 증권사</option></select>
+          <div class="nx-search"><input id="br-q" type="text" class="news-kw-input" placeholder="🔍 종목·내용 검색…"></div>
+        </div>
+        <div id="br-list"></div>
       </div>
 
       <!-- Reports 패널 -->

@@ -141,6 +141,13 @@ def check_kr(mode: str, base: str) -> tuple[str, Check]:
         neg = sum(1 for s in rows.values() if (s.get("change_pct") or 0) < 0)
         pos = sum(1 for s in rows.values() if (s.get("change_pct") or 0) > 0)
         ch.add("상승·하락 종목 모두 있음", neg >= 50 and pos >= 50, f"상승 {pos:,} · 하락 {neg:,}")
+        # 11-24: 증권사 텔레그램 리서치 수집 — 평일 장 마감 무렵이면 오늘 글이 몇 건은 있어야 함(텔레그램 미리보기 구조 변경 감지)
+        try:
+            br = get_json(f"{base}/api/broker-research?days=1")
+        except Exception:
+            br = []
+        n_br = len(br) if isinstance(br, list) else 0
+        ch.add("증권사 리포트 오늘 수집", n_br >= 3, f"{n_br}건 (9개 채널)")
         for m in ("KOSPI", "KOSDAQ"):
             f = get_json(f"{base}/api/market-flow?market={m}&days=5")
             last = (f.get("rows") or [{}])[-1]

@@ -1614,8 +1614,8 @@ async function loadChart(ticker) {
     _updateAlertBadge();
     document.getElementById('chart-alert-panel').style.display = 'none';
 
-    if (!_isIndex(ticker)) _loadStockNews(ticker);
-    else { const ns = document.getElementById('stock-news-section'); if (ns) ns.innerHTML = ''; }
+    if (!_isIndex(ticker)) { _loadStockNews(ticker); _loadBrokerResearch(ticker); }
+    else { ['stock-news-section', 'broker-research-section'].forEach(id => { const ns = document.getElementById(id); if (ns) ns.innerHTML = ''; }); }
     if (!_isIndex(ticker) && stockKind(stockData) === 'stock') {
       renderStockAnalysis(ticker);
       renderFinancials(ticker);
@@ -3634,6 +3634,28 @@ function _stockNewsItems(list) {
       <div class="stock-news-meta">${_escHtml(n.source || '')} · ${_escHtml(when)}${n.rel === 0 ? ' · <span class="low-rel-tag">관련도 낮음</span>' : ''}</div>
     </div>`;
   }).join('');
+}
+
+// 🏦 증권사 리포트 (11-24) — 최근 180일 이 종목 글 + 요약(증권사별 최근 목표가 평균·현재가 대비 상승 여력·의견)
+async function _loadBrokerResearch(ticker, all) {
+  const sec = document.getElementById('broker-research-section');
+  if (!sec) return;
+  let d = null;
+  try { d = await api(`/api/broker-research/${encTk(ticker)}?days=180`); } catch {}
+  if (_currentTicker && _currentTicker !== ticker) return;
+  const posts = (d && d.posts) || [], sm = (d && d.summary) || {};
+  const title = `<div class="info-section-title" style="margin-top:10px">🏦 증권사 리포트 <small class="stock-news-cnt">180일 ${posts.length}건</small></div>`;
+  if (!posts.length) { sec.innerHTML = title + '<div style="color:var(--muted);font-size:11px;padding:4px 0 8px">최근 리포트가 없어요 (증권사 텔레그램, 11/24부터 수집)</div>'; return; }
+  const fmtT = v => sm.cur === 'USD' ? `$${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `${Math.round(v).toLocaleString()}원`;
+  const ops = Object.entries(sm.opinions || {}).map(([k, n]) => `${({ buy: '매수', hold: '중립', sell: '매도' })[k]} ${n}`).join(' · ');
+  const summary = sm.target_mean ? `<div class="br-summary">
+      <div><small>목표가 평균 (증권사 ${sm.brokers}곳 최근)</small><b>${fmtT(sm.target_mean)}</b></div>
+      <div><small>현재가 대비</small><b class="${sm.upside > 0 ? 'up' : sm.upside < 0 ? 'down' : ''}">${sm.upside > 0 ? '+' : ''}${sm.upside}%</b></div>
+      ${ops ? `<div><small>의견</small><b>${ops}</b></div>` : ''}
+    </div>` : '';
+  const shown = all ? posts : posts.slice(0, 5);
+  sec.innerHTML = title + summary + shown.map(p => brItemHtml(p, true)).join('') +
+    (posts.length > 5 && !all ? `<button type="button" class="stock-news-more" onclick="_loadBrokerResearch('${_escHtml(ticker)}', true)">리포트 ${posts.length}건 모두 보기</button>` : '');
 }
 
 // 쌓아 둔 이 종목 뉴스 30일치 (11-24 — 뉴스 기록은 11-24부터)

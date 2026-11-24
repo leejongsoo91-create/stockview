@@ -1885,6 +1885,8 @@ function initNews() {
       document.getElementById('news-panel').style.display         = _activeSubtab === 'news'         ? '' : 'none';
       document.getElementById('reports-panel').style.display      = _activeSubtab === 'reports'      ? '' : 'none';
       document.getElementById('disclosures-panel').style.display  = _activeSubtab === 'disclosures'  ? '' : 'none';
+      document.getElementById('broker-panel').style.display       = _activeSubtab === 'broker'       ? '' : 'none';
+      if (_activeSubtab === 'broker') loadBrokerResearch();
       if (_activeSubtab === 'reports' && _allReports.length === 0) {
         loadReports();
       }
@@ -2275,6 +2277,52 @@ function _nxApplyPending() {
   _allNews = _nxPending; _nxPending = null;
   _populateSourceFilter(_allNews); renderNews();
   document.getElementById('news-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── 🏦 증권사 리포트 (11-24) — 증권사 공식 텔레그램 리서치 채널 글을 서버가 15분마다 쌓은 것 ──────────
+const _br = { days: 7, ch: '', q: '', bound: false, timer: null };
+const _BR_OP = { buy: ['매수', 'up'], hold: ['중립', ''], sell: ['매도', 'down'] };
+function brTargetText(p) {
+  if (!p.target) return '';
+  return p.cur === 'USD' ? `$${p.target.toLocaleString('en-US')}` : `${Math.round(p.target).toLocaleString()}원`;
+}
+// 글 한 줄 (뉴스 탭·차트 오른쪽 칸 공용). compact = 오른쪽 칸(본문 미리보기 없음)
+function brItemHtml(p, compact) {
+  const when = new Date(p.timestamp * 1000).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const op = p.single && p.opinion ? `<span class="br-op ${_BR_OP[p.opinion][1]}">${_BR_OP[p.opinion][0]}</span>` : '';
+  const tg = p.single && p.target ? `<span class="br-tg">목표 ${brTargetText(p)}</span>` : '';
+  const stocks = compact ? '' : (p.stocks || []).slice(0, 6).map(s =>
+    `<span class="br-stock" onclick="event.stopPropagation();navigateToChart('${_escHtml(s.ticker)}')">${_escHtml(s.name)}</span>`).join('');
+  const body = compact ? '' : `<div class="br-body">${_escHtml((p.text || '').replace(/^\s*\[[^\]]*\]\s*/, '').slice(0, 220))}</div>`;
+  return `<div class="br-item" onclick="window.open('${_escHtml(p.url)}','_blank')" title="텔레그램에서 원문 보기">
+    <div class="br-head">${op}${tg}<span class="br-title">${_escHtml(p.title || '')}</span></div>
+    ${body}
+    <div class="br-meta"><b>${_escHtml(p.broker)}</b>${p.analyst ? ` · ${_escHtml(p.analyst.slice(0, 30))}` : ''} · ${when}${stocks ? ' ' + stocks : ''}</div>
+  </div>`;
+}
+async function loadBrokerResearch() {
+  const el = document.getElementById('br-list');
+  if (!el) return;
+  if (!_br.bound) {
+    _br.bound = true;
+    document.querySelectorAll('#br-days button').forEach(b => b.onclick = () => {
+      document.querySelectorAll('#br-days button').forEach(x => x.classList.toggle('on', x === b));
+      _br.days = +b.dataset.days; loadBrokerResearch();
+    });
+    document.getElementById('br-ch').onchange = e => { _br.ch = e.target.value; loadBrokerResearch(); };
+    document.getElementById('br-q').oninput = e => { clearTimeout(_br.timer); _br.timer = setTimeout(() => { _br.q = e.target.value.trim(); loadBrokerResearch(); }, 300); };
+  }
+  el.innerHTML = '<div class="br-empty">불러오는 중…</div>';
+  let list = [];
+  try { list = await api(`/api/broker-research?days=${_br.days}&ch=${encodeURIComponent(_br.ch)}&q=${encodeURIComponent(_br.q)}`); } catch {}
+  const sel = document.getElementById('br-ch');
+  if (sel && sel.options.length <= 1 && !_br.ch) {
+    const chs = [...new Map(list.map(p => [p.ch, p.broker])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    sel.innerHTML = '<option value="">전체 증권사</option>' + chs.map(([c, n]) => `<option value="${_escHtml(c)}">${_escHtml(n)}</option>`).join('');
+  }
+  el.innerHTML = list.length
+    ? `<div class="br-count">${list.length.toLocaleString()}건 · 증권사 공식 텔레그램 리서치 채널 (개인 참고용, 원문은 텔레그램)</div>` + list.map(p => brItemHtml(p)).join('')
+    : '<div class="br-empty">이 기간에 수집된 리포트가 없어요 (11/24부터 수집)</div>';
 }
 
 // 오른쪽 칸: 오늘 뉴스 분위기(해외 기사 — 국내는 긍정·부정 분석 없음) · 분야별 기사 · 많이 보도한 출처
