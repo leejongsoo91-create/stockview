@@ -878,7 +878,7 @@ async function _loadMarketFlow() {
       _mf.data[m] = await api(`/api/market-flow?market=${m}&days=260`);
       _mf.at[m] = Date.now();
     } catch {
-      body.innerHTML = '<div class="vt-empty">시장 거래 데이터를 불러오지 못했습니다.</div>';
+      body.innerHTML = '<div class="vt-empty">일별 거래 데이터를 불러오지 못했습니다.</div>';
       return;
     }
   }
