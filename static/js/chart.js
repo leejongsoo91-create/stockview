@@ -1614,8 +1614,8 @@ async function loadChart(ticker) {
     _updateAlertBadge();
     document.getElementById('chart-alert-panel').style.display = 'none';
 
-    if (!_isIndex(ticker)) { _loadStockNews(ticker); _loadBrokerResearch(ticker); }
-    else { ['stock-news-section', 'broker-research-section'].forEach(id => { const ns = document.getElementById(id); if (ns) ns.innerHTML = ''; }); }
+    if (!_isIndex(ticker)) { _loadStockNews(ticker); _loadBrokerResearch(ticker); _loadEarningsStock(ticker); }
+    else { ['stock-news-section', 'broker-research-section', 'earnings-section'].forEach(id => { const ns = document.getElementById(id); if (ns) ns.innerHTML = ''; }); }
     if (!_isIndex(ticker) && stockKind(stockData) === 'stock') {
       renderStockAnalysis(ticker);
       renderFinancials(ticker);
@@ -3288,6 +3288,7 @@ function _renderHeader(stock) {
   else companyEl.removeAttribute('title');
   if (!isIdx && stockKind(stock) !== 'stock')
     companyEl.insertAdjacentHTML('beforeend', ' ' + kindBadgeHtml(stock));
+  if (!isIdx && earnBadgeHtml(stock.ticker)) companyEl.insertAdjacentHTML('beforeend', ' ' + earnBadgeHtml(stock.ticker));
   if (isIdx) {
     companyEl.insertAdjacentHTML('beforeend', _relatedEtfHtml(stock.ticker));
     companyEl.querySelectorAll('.related-etf-btn').forEach(b =>
@@ -3634,6 +3635,32 @@ function _stockNewsItems(list) {
       <div class="stock-news-meta">${_escHtml(n.source || '')} · ${_escHtml(when)}${n.rel === 0 ? ' · <span class="low-rel-tag">관련도 낮음</span>' : ''}</div>
     </div>`;
   }).join('');
+}
+
+// 📅 실적 (11-25, 미국) — 다음 발표일, EPS 예상, 최근 4분기 서프라이즈와 발표 뒤 주가 반응
+async function _loadEarningsStock(ticker) {
+  const sec = document.getElementById('earnings-section');
+  if (!sec) return;
+  if (_isKrStock(ticker)) { sec.innerHTML = ''; return; }   // 국내는 2차(DART)
+  let d = null;
+  try { d = await api(`/api/earnings-stock/${encTk(ticker)}`); } catch {}
+  if (_currentTicker && _currentTicker !== ticker) return;
+  if (!d || (!d.next && !(d.history || []).length)) { sec.innerHTML = ''; return; }
+  const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : ''}${(+v).toFixed(1)}%</span>`;
+  const hourKo = h => h === 'amc' ? '장 후' : h === 'bmo' ? '장 전' : '';
+  const n = d.next;
+  const q = (d.quarterly || [])[0];
+  const head = n ? `<div class="er-next${n.days <= 7 ? ' soon' : ''}">
+      <b>${n.days === 0 ? '오늘' : 'D-' + n.days}</b> 다음 실적 ${n.date.slice(5).replace('-', '/')}${hourKo(n.hour) ? ' ' + hourKo(n.hour) : ''}
+      ${n.eps_est != null ? `<small>예상 EPS $${(+n.eps_est).toFixed(2)}</small>` : ''}</div>` : '';
+  const fc = q ? `<div class="er-fc">이번 분기(${_escHtml(q.period || '')}) 예상 EPS <b>$${q.mean}</b> <small>범위 $${q.low}~$${q.high} · ${q.n}명 · 최근 상향 ${q.up}·하향 ${q.down}</small></div>` : '';
+  const sm = d.summary || {};
+  const sum = sm.n ? `<div class="er-sum">최근 ${sm.n}번 중 <b>${sm.beats}번 예상 상회</b>${sm.avg_abs_move != null ? ` · 발표 뒤 평균 <b>±${sm.avg_abs_move}%</b> 움직임` : ''}</div>` : '';
+  const rows = (d.history || []).slice(0, 4).map(r => `<tr><td>${r.date.slice(2).replace(/-/g, '.')}${hourKo(r.hour) ? ` <small>${hourKo(r.hour)}</small>` : ''}</td>
+      <td class="num">$${r.eps}</td><td class="num">$${r.est ?? '—'}</td><td class="num">${pct(r.pct)}</td><td class="num">${pct(r.r1)}</td></tr>`).join('');
+  sec.innerHTML = `<div class="info-section-title" style="margin-top:10px">📅 실적</div>${head}${fc}${sum}
+    ${rows ? `<table class="er-tbl"><thead><tr><th>발표</th><th class="num">실제</th><th class="num">예상</th><th class="num">서프라이즈</th><th class="num" title="발표 전 종가 → 발표 다음 거래일 종가">주가 반응</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+    <div class="er-note">Nasdaq·Finnhub · 주가 반응은 발표 전 종가→다음 거래일 종가</div>`;
 }
 
 // 🏦 증권사 리포트 (11-24) — 최근 180일 이 종목 글 + 요약(증권사별 최근 목표가 평균·현재가 대비 상승 여력·의견)

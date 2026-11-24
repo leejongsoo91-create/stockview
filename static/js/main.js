@@ -19,6 +19,16 @@ function shortEnName(n) {
     x = x.replace(/,?\s+(Class [A-Z]|Common Stock|Ordinary Shares|American Depositary Shares|Inc\.?|Incorporated|Corporation|Corp\.?|Ltd\.?|Limited|plc|N\.V\.|S\.A\.|L\.P\.|LP)$/i, '').trim();
   return x || String(n || '');
 }
+// ── 실적 임박 배지 (11-25) — 이번 주·다음 주 미국 실적 캘린더에서 7일 안이면 'D-3 실적' ──
+window._earnSoon = {};
+async function loadEarnSoon() { try { window._earnSoon = await api('/api/earnings-soon') || {}; } catch {} }
+function earnBadgeHtml(ticker) {
+  const e = (window._earnSoon || {})[ticker];
+  if (!e || e.days > 7) return '';
+  const when = e.days === 0 ? '오늘' : `D-${e.days}`;
+  const t = e.time === 'Before Open' ? '장 전' : e.time === 'After Close' ? '장 후' : '';
+  return `<span class="earn-dn${e.days <= 2 ? ' hot' : ''}" title="실적 발표 ${e.date}${t ? ' ' + t : ''} — 발표 전후 주가가 크게 움직일 수 있어요">${when} 실적</span>`;
+}
 function usKoName(s) { return (s && (s.name_ko || shortEnName(s.name) || s.ticker)) || ''; }
 function stockLabel(s) {
   if (!s) return '';
@@ -2587,6 +2597,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 홈 초기 로드
   loadHome().then(updateTimestamp);
+  loadEarnSoon(); setInterval(loadEarnSoon, 60 * 60 * 1000);   // 실적 임박 배지 (11-25)
 
   // 시장 상태 배지 — 1분마다 갱신 (ET 시간 변동 반영)
   setInterval(renderMarketStatus, 60 * 1000);

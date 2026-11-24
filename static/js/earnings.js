@@ -125,6 +125,9 @@ function renderEarnings() {
                 <th>종목명</th>
                 <th>발표 시점</th>
                 <th class="num">예상 EPS</th>
+                <th class="num">실제 EPS</th>
+                <th class="num" title="실제 EPS가 예상보다 몇 % 높거나 낮은지">서프라이즈</th>
+                <th class="num" title="발표 전 종가 → 발표 다음 거래일 종가 (시총 $10B 이상)">주가 반응</th>
                 <th class="num">전년 EPS</th>
                 <th class="num">시가총액</th>
                 <th>회계 분기</th>
@@ -157,6 +160,9 @@ function _earnRow(r) {
       <td class="earn-name">${stockNameCell({ ticker: r.symbol, name: r.name, name_ko: ko })}</td>
       <td><span class="earn-time-badge ${timeClass}">${koEarnTime(r.time)}</span></td>
       <td class="num">${r.eps_forecast}</td>
+      <td class="num">${r.eps_actual || '—'}</td>
+      <td class="num">${r.surprise == null ? '—' : `<span class="${r.surprise > 0 ? 'up' : r.surprise < 0 ? 'down' : ''}">${r.surprise > 0 ? '+' : ''}${(+r.surprise).toFixed(1)}%</span>`}</td>
+      <td class="num">${r.r1 == null ? '—' : `<b class="${r.r1 > 0 ? 'up' : r.r1 < 0 ? 'down' : ''}">${r.r1 > 0 ? '+' : ''}${r.r1.toFixed(1)}%</b>`}</td>
       <td class="num">${r.last_year_eps}</td>
       <td class="num">${cap}</td>
       <td class="earn-quarter">${_koQuarter(r.fiscal_quarter)}</td>

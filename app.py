@@ -579,6 +579,8 @@ def _na_db():
                 " PRIMARY KEY (src, rid))")
     con.execute("CREATE INDEX IF NOT EXISTS reports_day ON reports(day)")
     con.execute("CREATE INDEX IF NOT EXISTS reports_tk ON reports(tk, day)")
+    # 실적·공시 이벤트 기록 (11-25) — 나중에 '이벤트 뒤 사면 이겼나' 검증(C2·D)에 쓴다. data = JSON(숫자·반응)
+    con.execute("CREATE TABLE IF NOT EXISTS events (kind TEXT, tk TEXT, day TEXT, data TEXT, PRIMARY KEY (kind, tk, day)) WITHOUT ROWID")
     return con
 
 
@@ -938,6 +940,9 @@ def refresh_earnings():
 
         cache.set("earnings", all_items, ttl=3600)
         log.info(f"어닝스 캘린더 갱신: {len(all_items)}건")
+        # 11-25: 발표가 끝난 큰 종목(시총 $10B↑, 60개까지)에 주가 반응 — 일봉을 받아야 해서 뒤에서 계산해 다시 저장
+        all_items = _earn_tab_reactions(all_items)
+        cache.set("earnings", all_items, ttl=3600)
     except Exception as e:
         log.warning(f"refresh_earnings 실패: {e}")
 
@@ -1735,6 +1740,94 @@ def _us_analyst(t: str) -> dict:
     return d or {}
 
 
+# ── 미국 종목 실적 (11-25) ─────────────────────────────────────────────────────
+def _earn_reaction(bars: list, day: str, hour: str) -> dict:
+    """실적 발표 주가 반응 — 장 후(amc): 발표일 종가 → 다음 거래일 종가, 장 전(bmo): 전 거래일 종가 → 발표일 종가,
+    모름: 전 거래일 종가 → 다음 거래일 종가(이틀 창). 5일 반응은 기준 종가 → 5거래일 뒤 종가."""
+    days = [str(b.get("time"))[:10] for b in bars]
+    if not days or day > days[-1]:
+        return {}
+    i = next((k for k, d in enumerate(days) if d >= day), None)   # 발표일(또는 그 뒤 첫 거래일)
+    if i is None:
+        return {}
+    on = days[i] == day
+    if hour == "amc" and on:
+        b, a = i, i + 1
+    elif hour == "bmo" and on:
+        b, a = i - 1, i
+    else:
+        b, a = i - 1, (i + 1 if on else i)
+    if b < 0 or a >= len(bars):
+        return {}
+    base = bars[b]["close"]
+    out = {"r1": round((bars[a]["close"] / base - 1) * 100, 2)}
+    if a + 4 < len(bars):
+        out["r5"] = round((bars[a + 4]["close"] / base - 1) * 100, 2)
+    return out
+
+
+@app.route("/api/earnings-stock/<ticker>")
+def earnings_stock_api(ticker):
+    """미국 종목 실적 한눈에 — 다음 발표일(남은 일수·장 전/후), 분기·연간 EPS 예상, 최근 4분기 서프라이즈와 발표 뒤 주가 반응,
+    요약(예상 상회 횟수·평균 반응). 6시간 캐시. 발표 결과는 events 표에도 쌓는다."""
+    t = _canon_us_ticker(ticker.strip())
+    if t.endswith((".KS", ".KQ")):
+        return jsonify({"ticker": t, "market": "KR"})
+    key = f"earn_stock_{t}"
+    hit = cache.get_fresh(key)
+    if hit is not None:
+        return jsonify(hit)
+    cal = df.fetch_finnhub_earnings_hist(t)
+    nq = df.fetch_nasdaq_eps(t)
+    today = date.today().isoformat()
+    nxt = next((x for x in cal if x["date"] >= today), None)
+    hours = {x["date"]: x["hour"] for x in cal}
+    hist = {x["date"]: {"date": x["date"], "period": x["period"], "eps": x["eps"], "est": x["est"], "pct": x["pct"]} for x in nq["surprise"]}
+    for x in cal:   # Finnhub에만 있는 최근 결과
+        if x["date"] < today and x["eps_act"] is not None and x["date"] not in hist and x["eps_est"]:
+            hist[x["date"]] = {"date": x["date"], "period": f"{x['year']} Q{x['quarter']}", "eps": x["eps_act"], "est": round(x["eps_est"], 2),
+                               "pct": round((x["eps_act"] / x["eps_est"] - 1) * 100, 2) if x["eps_est"] else None}
+    rows = sorted(hist.values(), key=lambda x: x["date"], reverse=True)[:8]
+    bars = _chart_rows(t, "2y", "1d", None)
+    for r in rows:
+        r["hour"] = hours.get(r["date"], "")
+        r.update(_earn_reaction(bars, r["date"], r["hour"]))
+    beats = [r for r in rows if r.get("pct") is not None and r["pct"] > 0]
+    reacts = [r["r1"] for r in rows if r.get("r1") is not None]
+    out = {"ticker": t, "market": "US", "next": None, "quarterly": nq["quarterly"], "yearly": nq["yearly"], "history": rows,
+           "summary": {"n": len([r for r in rows if r.get("pct") is not None]), "beats": len(beats),
+                       "avg_abs_move": round(sum(abs(x) for x in reacts) / len(reacts), 2) if reacts else None,
+                       "avg_move_beat": round(sum(r["r1"] for r in beats if r.get("r1") is not None) / max(1, len([r for r in beats if r.get("r1") is not None])), 2) if beats else None}}
+    if nxt:
+        out["next"] = {"date": nxt["date"], "hour": nxt["hour"], "days": (date.fromisoformat(nxt["date"]) - date.today()).days,
+                       "eps_est": nxt["eps_est"], "rev_est": nxt["rev_est"]}
+    try:   # 이벤트 기록 (이미 있으면 반응 값만 갱신)
+        evs = [("us_earn", t, r["date"], json.dumps({k: r.get(k) for k in ("period", "eps", "est", "pct", "hour", "r1", "r5")})) for r in rows]
+        if evs:
+            with _na_lock, closing(_na_db()) as con:
+                con.executemany("INSERT OR REPLACE INTO events VALUES (?,?,?,?)", evs)
+                con.commit()
+    except sqlite3.Error as e:
+        log.warning(f"실적 이벤트 저장 실패: {e}")
+    cache.set(key, out, ttl=6 * 3600 if (rows or nxt) else 1800)
+    return jsonify(out)
+
+
+@app.route("/api/earnings-soon")
+def earnings_soon_api():
+    """실적 발표가 가까운 미국 종목 {티커: {date, time, days}} — 이번 주·다음 주 캘린더(Nasdaq)에서 오늘 이후. D-n 배지용."""
+    today = date.today()
+    out = {}
+    for x in cache.get("earnings") or []:
+        try:
+            d = date.fromisoformat(x["date"])
+        except (ValueError, KeyError):
+            continue
+        if d >= today and x["symbol"] not in out:
+            out[x["symbol"].replace(".", "/")] = {"date": x["date"], "time": x.get("time"), "days": (d - today).days}
+    return jsonify(out)
+
+
 @app.route("/api/reports-feed")
 def reports_feed_api():
     """뉴스 탭 🏦 증권사 리포트 목록 — 텔레그램·네이버 리서치·한경을 합쳐. ?days=7&src=tg|naver|hk&cat=company|industry|market|economy&q="""
@@ -1852,6 +1945,25 @@ def stock_news_archive_api(ticker):
 @app.route("/api/reports")
 def reports():
     return jsonify(cache.get("reports") or [])
+
+
+def _earn_tab_reactions(items: list) -> list:
+    """실적발표 탭의 발표가 끝난 종목(시총 $10B 이상)에 주가 반응(r1)을 붙인다 — 일봉은 캐시된 것 재사용."""
+    today = date.today().isoformat()
+    out = []
+    n = 0
+    for x in items:
+        x = dict(x)
+        if x.get("eps_actual") and x["date"] <= today and (x.get("market_cap") or 0) >= 10 and n < 60:
+            n += 1
+            hour = "amc" if x.get("time") == "After Close" else "bmo" if x.get("time") == "Before Open" else ""
+            try:
+                x.update(_earn_reaction(_chart_rows(_canon_us_ticker(x["symbol"]), "3mo", "1d", None), x["date"], hour))
+                time.sleep(0.3)   # 야후 429 방지
+            except Exception:
+                pass
+        out.append(x)
+    return out
 
 
 @app.route("/api/earnings")

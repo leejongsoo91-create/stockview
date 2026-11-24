@@ -2695,6 +2695,20 @@ body.light-theme .rd-head input { color-scheme: light; }
 .an-now { position: absolute; top: -2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--text); border: 2px solid var(--bg-card); }
 .an-dist { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; background: var(--bg-input); }
 .an-dist i { display: block; } .an-dist .b { background: var(--green); } .an-dist .h { background: var(--muted); } .an-dist .s { background: var(--red); }
+/* 📅 실적 (11-25) — 차트 오른쪽 칸 · 실적 임박 배지 */
+#earnings-section { padding: 0 16px 8px; }
+.er-next { font-size: 12.5px; padding: 6px 8px; border-radius: 6px; background: var(--bg-input); margin: 4px 0; }
+.er-next.soon { border-left: 3px solid var(--fg-c2); }
+.er-next b { margin-right: 4px; } .er-next small, .er-fc small { color: var(--muted); margin-left: 4px; }
+.er-fc, .er-sum { font-size: 12px; margin: 4px 0; }
+.er-tbl { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 4px; }
+.er-tbl th { color: var(--muted); font-weight: 600; text-align: left; padding: 3px 2px; border-bottom: 1px solid var(--border); }
+.er-tbl td { padding: 3px 2px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.er-tbl .num { text-align: right; } .er-tbl small { color: var(--muted); }
+.er-tbl .up { color: var(--green); } .er-tbl .down { color: var(--red); }
+.er-note { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+.earn-dn { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; margin-left: 4px; border-radius: 4px; background: var(--bg-input); color: var(--fg-c3); vertical-align: 1px; }
+.earn-dn.hot { color: #fff; background: var(--fg-c2); }
 .an-leg { font-size: 11px; color: var(--muted); margin: 3px 0 8px; }
 #br-ch { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 12px; padding: 6px 10px; }
 .low-rel { opacity: .55; }   /* 미국 종목 뉴스 중 제목·요약에 종목 이름이 없는 기사 (11-24) */

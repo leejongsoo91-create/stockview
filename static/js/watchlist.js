@@ -287,7 +287,7 @@ async function renderWatchlist(opts = {}) {
                 </td>
                 <td class="td-ticker">${s.ticker}</td>
                 <td class="td-name">
-                  ${stockNameCell(s, kindBadgeHtml(s))}
+                  ${stockNameCell(s, kindBadgeHtml(s) + earnBadgeHtml(s.ticker))}
                 </td>
                 <td onclick="event.stopPropagation()">
                   <select class="wl-group-select" onchange="_wlOnGroupChange('${s.ticker}', this)">

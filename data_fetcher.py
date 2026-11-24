@@ -4657,6 +4657,9 @@ def fetch_earnings_calendar(date_str: str) -> list[dict]:
                 "last_year_eps":  row.get("lastYearEPS") or "—",
                 "market_cap":     round(_parse_usd(row.get("marketCap", "")) / 1e9, 3) if _parse_usd(row.get("marketCap", "")) else None,
                 "fiscal_quarter": row.get("fiscalQuarterEnding", ""),
+                # 11-25: 발표가 끝난 날짜에는 실제 EPS·서프라이즈 %가 온다
+                "eps_actual":     row.get("eps") or None,
+                "surprise":       _safe(row.get("surprise")) if row.get("surprise") not in (None, "", "N/A") else None,
             })
         result.sort(key=lambda x: x.get("market_cap") or 0, reverse=True)
         log.info(f"earnings {date_str}: {len(result)}개")
@@ -4664,6 +4667,51 @@ def fetch_earnings_calendar(date_str: str) -> list[dict]:
     except Exception as e:
         log.warning(f"fetch_earnings_calendar({date_str}): {e}")
         return []
+
+
+# ── 미국 종목 실적 (11-25) — 다음 발표일·EPS 예상·과거 서프라이즈 ─────────────────────────
+def fetch_finnhub_earnings_hist(symbol: str, years: int = 3) -> list[dict]:
+    """Finnhub 실적 캘린더(종목) — 과거·다음 발표 [{date, hour(bmo·amc·''), quarter, year, eps_est, eps_act, rev_est, rev_act}]."""
+    if not FINNHUB_KEY:
+        return []
+    today = datetime.now().date()
+    try:
+        r = requests.get("https://finnhub.io/api/v1/calendar/earnings",
+                         params={"symbol": symbol.replace("/", "."), "from": (today - timedelta(days=365 * years)).isoformat(),
+                                 "to": (today + timedelta(days=150)).isoformat(), "token": FINNHUB_KEY}, timeout=15)
+        r.raise_for_status()
+        rows = r.json().get("earningsCalendar") or []
+    except Exception as e:
+        log.warning(f"Finnhub 실적 캘린더 {symbol}: {e}")
+        return []
+    out = [{"date": x.get("date"), "hour": x.get("hour") or "", "quarter": x.get("quarter"), "year": x.get("year"),
+            "eps_est": x.get("epsEstimate"), "eps_act": x.get("epsActual"),
+            "rev_est": x.get("revenueEstimate"), "rev_act": x.get("revenueActual")} for x in rows if x.get("date")]
+    return sorted({x["date"]: x for x in out}.values(), key=lambda x: x["date"])
+
+
+def fetch_nasdaq_eps(ticker: str) -> dict:
+    """Nasdaq — {quarterly·yearly: [{period, mean, high, low, n, up, down}], surprise: [{date, period, eps, est, pct}]}."""
+    hdr = {**_NASDAQ_HDR, "Accept": "application/json"}
+    sym = ticker.replace("/", ".")
+    out = {"quarterly": [], "yearly": [], "surprise": []}
+    try:
+        d = (requests.get(f"https://api.nasdaq.com/api/analyst/{sym}/earnings-forecast", headers=hdr, timeout=12).json() or {}).get("data") or {}
+        for k, key in (("quarterly", "quarterlyForecast"), ("yearly", "yearlyForecast")):
+            for x in ((d.get(key) or {}).get("rows") or [])[:2]:
+                out[k].append({"period": x.get("fiscalEnd"), "mean": x.get("consensusEPSForecast"), "high": x.get("highEPSForecast"),
+                               "low": x.get("lowEPSForecast"), "n": x.get("noOfEstimates"), "up": x.get("up"), "down": x.get("down")})
+        d = (requests.get(f"https://api.nasdaq.com/api/company/{sym}/earnings-surprise", headers=hdr, timeout=12).json() or {}).get("data") or {}
+        for x in ((d.get("earningsSurpriseTable") or {}).get("rows") or []):
+            try:
+                m, dd, yy = (int(v) for v in str(x.get("dateReported")).split("/"))
+                out["surprise"].append({"date": f"{yy:04d}-{m:02d}-{dd:02d}", "period": x.get("fiscalQtrEnd"), "eps": x.get("eps"),
+                                        "est": _safe(x.get("consensusForecast")), "pct": _safe(x.get("percentageSurprise"))})
+            except (ValueError, TypeError):
+                continue
+    except Exception as e:
+        log.warning(f"Nasdaq EPS {ticker}: {e}")
+    return out
 
 
 # ── 경제 지표 캘린더 ──────────────────────────────────────────────────────────
