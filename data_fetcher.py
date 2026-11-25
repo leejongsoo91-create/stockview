@@ -3626,10 +3626,57 @@ def news_needs_tr(title: str) -> bool:
     return bool(title) and not _HANGUL.search(title) and re.search(r"[A-Za-z]{3}", title) is not None
 
 
+# 금융 기사 용어 사전 (11-26) — Microsoft 무료 번역이 틀리던 말(rout→'폭세', earnings beat→'실적 성향', ground stop→'지상 정지' 등).
+# 번역 요청 때 <mstrans:dictionary>로 감싸 이 뜻으로 옮기게 한다. (영어 정규식, 한글)
+_TR_GLOSSARY = [
+    (r"sell-?offs?", "매도세"), (r"routs?", "폭락"), (r"meltdown", "폭락"), (r"plunges?", "급락"), (r"tumbles?", "급락"),
+    (r"earnings beats?", "실적 예상 상회"), (r"beats? (?:earnings |profit |revenue )?(?:estimates|expectations|forecasts)", "예상 상회"),
+    (r"miss(?:es)? (?:earnings |profit |revenue )?(?:estimates|expectations|forecasts)", "예상 하회"),
+    (r"price targets?", "목표주가"), (r"downgrades?", "투자의견 하향"), (r"upgrades?", "투자의견 상향"),
+    (r"guidance", "실적 전망"), (r"buybacks?", "자사주 매입"), (r"share repurchases?", "자사주 매입"),
+    (r"rate cuts?", "금리 인하"), (r"rate hikes?", "금리 인상"), (r"all-time highs?", "사상 최고치"), (r"record highs?", "사상 최고치"),
+    (r"bull market", "강세장"), (r"bear market", "약세장"), (r"short squeeze", "숏 스퀴즈"), (r"short sellers?", "공매도 세력"),
+    (r"ground stops?", "운항 중단"), (r"(?:quant |top |biggest )?movers", "급등락 종목"), (r"chipmakers?", "반도체 기업"), (r"chip stocks", "반도체주"),
+    (r"Wall Street", "월가"), (r"Treasur(?:y|ies) yields?", "국채 금리"), (r"yields", "금리"), (r"tariffs?", "관세"),
+    (r"outperform", "시장 수익률 상회"), (r"underperform", "시장 수익률 하회"), (r"overweight", "비중 확대"), (r"underweight", "비중 축소"),
+    (r"profit warning", "실적 경고"), (r"layoffs?", "감원"), (r"stock split", "주식 분할"),
+]
+_TR_GLOSS_RE = re.compile(r"\b(" + "|".join(f"(?:{g})" for g, _ in _TR_GLOSSARY) + r")\b", re.I)
+_TR_GLOSS_ONE = [(re.compile(rf"^(?:{g})$", re.I), ko) for g, ko in _TR_GLOSSARY]
+_TR_VER = 2   # 2 = 용어 사전 적용 (11-26). 1로 번역된 제목 중 사전 단어가 있는 것은 다시 번역
+
+
+def _tr_mark(text: str) -> str:
+    def f(m):
+        w = m.group(1)
+        ko = next((k for r, k in _TR_GLOSS_ONE if r.match(w)), None)
+        return f'<mstrans:dictionary translation="{ko}">{w}</mstrans:dictionary>' if ko else w
+    return _TR_GLOSS_RE.sub(f, text)
+
+
+def _ko_jong(ch: str, jong: int) -> str:
+    c = ord(ch) - 0xAC00
+    return chr(0xAC00 + c - c % 28 + jong)
+
+
+def ko_headline(s: str) -> str:
+    """번역 제목을 기사 제목체로: '~했습니다/~합니다/~입니다.' → '~했다/~한다/~이다' (11-26, 말투가 섞여 어색하던 것)."""
+    if not s:
+        return s
+    s = re.sub(r"입니다(?=[\s.,;:!?)\]'\"…·\-–—]|$)", "이다", s)
+    s = re.sub(r"습니다(?=[\s.,;:!?)\]'\"…·\-–—]|$)", "다", s)
+    # '중요합니다'처럼 형용사는 '~하다' (동사 '발표합니다'는 아래에서 '발표한다')
+    s = re.sub(r"(중요|필요|가능|불가능|충분|불충분|유사|비슷|확실|불확실|분명|불분명|강력|부족|다양|유효|안전|위험|취약|탄탄|견조|활발|부진|신중|유리|불리|명확|모호|저렴|비싸|조용|치열|심각|미미|상당|유일|동일|적절|부적절|불안|불안정|안정|건강|타당|합리|우세|열세|선명|희박)합니다(?=[\s.,;:!?)\]'\"…·\-–—]|$)", r"\1하다", s)
+    # 받침 ㅂ + 니다 (합니다·됩니다·봅니다…) → 받침 ㄴ + 다 (한다·된다·본다)
+    s = re.sub(r"([가-힣])니다(?=[\s.,;:!?)\]'\"…·\-–—]|$)",
+               lambda m: (_ko_jong(m.group(1), 4) + "다") if (ord(m.group(1)) - 0xAC00) % 28 == 17 else m.group(0), s)
+    return s.rstrip(" .")
+
+
 def news_title_ko(title: str) -> str | None:
     with _tr_lock:
         v = _tr_load()["titles"].get(title)
-    return v[0] if v else None
+    return ko_headline(v[0]) if v else None
 
 
 def _azure_tr_cfg() -> tuple[str, str]:
@@ -3710,7 +3757,10 @@ def translate_news_titles(titles: list[str]) -> int:
     try:
         with _tr_lock:
             st = _tr_load()
+            # 새 제목 + 용어 사전 전에 번역한 제목 중 사전 단어가 든 것(한 번에 200개까지)
             todo = list(dict.fromkeys(t for t in titles if news_needs_tr(t) and t not in st["titles"]))
+            old = [t for t in dict.fromkeys(titles) if t in st["titles"] and len(st["titles"][t]) < 4 and _TR_GLOSS_RE.search(t)]
+            todo += old[:200]
         if not todo:
             return 0
         done = 0
@@ -3728,7 +3778,7 @@ def translate_news_titles(titles: list[str]) -> int:
                     log.warning(f"번역 {NEWS_TR_NAMES[p]}: 이번 달 상한 {NEWS_TR_LIMITS[p]:,}자 도달 — 다음 달까지 쉼")
                     break
                 try:
-                    out = fn(batch)
+                    out = fn([_tr_mark(t) for t in batch]) if p == "ms" else fn(batch)
                 except Exception as e:
                     msg = str(e)
                     # 키·권한 문제(401·403)는 6시간, 그 밖(429·5xx·연결)은 15분 뒤 다시
@@ -3744,10 +3794,10 @@ def translate_news_titles(titles: list[str]) -> int:
                     u[p] = u.get(p, 0) + chars
                     for en, ko in zip(batch, out):
                         if ko:
-                            st["titles"][en] = [ko, p, now]
+                            st["titles"][en] = [ko, p, now, _TR_VER]
                     st["log"].append([now, p, "ok", f"{len(batch)}건 {chars}자"])
                 done += len(batch)
-                todo = [t for t in todo if t not in st["titles"]]
+                todo = [t for t in todo if t not in st["titles"] or len(st["titles"][t]) < 4]
         with _tr_lock:
             _tr_save()
         if done:

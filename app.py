@@ -624,7 +624,7 @@ def _archive_fill_ko(titles: list[str]):
         return
     try:
         with _na_lock, closing(_na_db()) as con:
-            con.executemany("UPDATE news SET title_ko=? WHERE title=? AND title_ko IS NULL", pairs)
+            con.executemany("UPDATE news SET title_ko=? WHERE title=? AND (title_ko IS NULL OR title_ko != ?)", [(k, t, k) for k, t in pairs])
             con.commit()
     except sqlite3.Error as e:
         log.warning(f"뉴스 기록 한글 제목 채우기 실패: {e}")
@@ -639,12 +639,12 @@ def _archive_rows(sql: str, args: tuple) -> list[dict]:
         out = [dict(zip(cols, r)) for r in cur.fetchall()]
     for n in out:
         n["timestamp"] = n.pop("ts")
-        if not n.get("title_ko"):
-            ko = df.news_title_ko(n["title"]) if df.news_needs_tr(n.get("title", "")) else None   # 기록 뒤에 번역된 제목
-            if ko:
-                n["title_ko"] = ko
-            else:
-                n.pop("title_ko", None)
+        # 지금 번역(용어 사전으로 다시 번역된 것 포함)이 있으면 그것, 없으면 기록된 번역 — 둘 다 기사 제목체로 (11-26)
+        ko = (df.news_title_ko(n["title"]) if df.news_needs_tr(n.get("title", "")) else None) or n.get("title_ko")
+        if ko:
+            n["title_ko"] = df.ko_headline(ko)
+        else:
+            n.pop("title_ko", None)
     return out
 
 
@@ -1560,6 +1560,13 @@ def news():
         if ko:
             n["title_ko"] = ko
         merged.append(n)
+    # 번역은 집 서버만 한다(결정 007) — 작업 PC는 집 서버 홈 뉴스의 한글 제목을 받아 채운다 (11-26, 354건 중 16건만 한글이던 것)
+    if not df.NEWS_TR_ENABLED and any(df.news_needs_tr(n["title"]) and not n.get("title_ko") for n in merged):
+        home = _home_json("/api/news", {}, "news_home_ko", None) or []
+        home_ko = {h.get("title"): h.get("title_ko") for h in home if h.get("title_ko")}
+        for n in merged:
+            if not n.get("title_ko") and n["title"] in home_ko:
+                n["title_ko"] = home_ko[n["title"]]
     # 최신순 정렬
     merged.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
     for i, n in enumerate(merged, 1):
