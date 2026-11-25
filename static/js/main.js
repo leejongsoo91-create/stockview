@@ -8,6 +8,10 @@ function fmtPct(n){ const s = n >= 0 ? '+' : ''; return s + n.toFixed(2) + '%'; 
 function fmtVol(n){ if(n >= 1e9) return (n/1e9).toFixed(2)+'B'; if(n >= 1e6) return (n/1e6).toFixed(1)+'M'; return n.toLocaleString(); }
 function fmtCap(n){ if(n >= 1000) return '$'+(n/1000).toFixed(2)+'T'; return '$'+n.toFixed(0)+'B'; }
 function colorCls(n){ return n >= 0 ? 'up' : 'down'; }
+// 상승·하락 색 = 국내 증권사식 (11-26) — 차트 캔버스(항상 어두움)·SVG용. CSS는 var(--up)/var(--down)
+const C_UP = '#f04452', C_DN = '#3182f6';
+function cUp(a) { return `rgba(240,68,82,${a})`; }
+function cDn(a) { return `rgba(49,130,246,${a})`; }
 
 // 국내 종목(005930.KS 등)은 가격이 원, 시가총액이 원 단위 — 달러 함수(fmt$/fmtCap)를 쓰면
 // "$201,500.00", "$1838654600000.00T"처럼 나온다. 관심종목처럼 미국·국내가 섞이는 표에서 사용.
@@ -2392,7 +2396,7 @@ async function openMacroChart(tk, name) {
   if (!_mchartBars.length) { box.innerHTML = '<div class="br-empty">시세를 불러오지 못했어요</div>'; return; }
   box.innerHTML = '';
   const css = getComputedStyle(document.documentElement);
-  const up = css.getPropertyValue('--green').trim() || '#22c55e', dn = css.getPropertyValue('--red').trim() || '#ef4444';
+  const up = css.getPropertyValue('--up').trim() || C_UP, dn = css.getPropertyValue('--down').trim() || C_DN;
   _mchart = LightweightCharts.createChart(box, {
     autoSize: true,
     layout: { background: { color: 'transparent' }, textColor: css.getPropertyValue('--muted').trim() || '#888' },
@@ -2618,8 +2622,8 @@ function _renderNewsSide(list, base) {
   const kv = (label, v, m, click) => `<div class="nx-kv${click ? ' click' : ''}"${click ? ` onclick="${click}"` : ''}><span>${label}</span><span class="bar"><i style="width:${v / m * 100}%"></i></span><span>${v}</span></div>`;
   side.innerHTML =
     `<div class="nx-box"><div class="nx-h">뉴스 분위기</div>` +
-    (us.length ? `<div class="nx-mood"><i style="width:${c('positive') / tot * 100}%;background:var(--green)"></i><i style="width:${c('neutral') / tot * 100}%;background:var(--muted)"></i><i style="width:${c('negative') / tot * 100}%;background:var(--red)"></i></div>` +
-      `<div class="nx-kv"><span style="color:var(--green)">긍정 ${c('positive')}</span><span>중립 ${c('neutral')}</span><span style="color:var(--red)">부정 ${c('negative')}</span></div>` +
+    (us.length ? `<div class="nx-mood"><i style="width:${c('positive') / tot * 100}%;background:var(--up)"></i><i style="width:${c('neutral') / tot * 100}%;background:var(--muted)"></i><i style="width:${c('negative') / tot * 100}%;background:var(--down)"></i></div>` +
+      `<div class="nx-kv"><span style="color:var(--up)">긍정 ${c('positive')}</span><span>중립 ${c('neutral')}</span><span style="color:var(--down)">부정 ${c('negative')}</span></div>` +
       `<div class="nx-note">해외 기사 ${us.length}건의 영어 제목 기준 (국내 기사는 분석 안 함)</div>`
       : `<div class="nx-note">해외 기사가 없어 분위기를 계산하지 않았어요</div>`) + `</div>` +
     `<div class="nx-box"><div class="nx-h">분야별 기사</div>${cats.map(k => kv(NX_CATS[k], cnt[k], mc, `_setNewsCat('${k}')`)).join('')}</div>` +

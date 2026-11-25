@@ -217,7 +217,7 @@ function _drawReturnChart(rows) {
 
   const bars = data.map((r, i) => {
     const pct    = r.pnlPct;
-    const color  = pct >= 0 ? 'var(--green)' : 'var(--red)';
+    const color  = pct >= 0 ? 'var(--up)' : 'var(--down)';
     const w      = Math.round(Math.abs(pct) / maxAbs * (barW / 2));
     const xBase  = LABEL_W + barW / 2;
     const x      = pct >= 0 ? xBase : xBase - w;
@@ -339,7 +339,7 @@ function _renderHistorySvg(history, bench) {
   const fmt = v => v >= 1e8 ? (v / 1e8).toFixed(2) + '억' : v >= 1e4 ? Math.round(v / 1e4).toLocaleString('ko-KR') + '만' : fmtKrw(v);
   const curVal = history[history.length - 1].v;
   const isUp = curVal >= history[0].v;
-  const lineColor = isUp ? 'var(--green)' : 'var(--red)';
+  const lineColor = isUp ? 'var(--up)' : 'var(--down)';
 
   // X축 레이블 (첫/마지막 날짜)
   const fmtDate = ts => new Date(ts).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });

@@ -43,7 +43,7 @@ function _saveChartView() {
 function _barAmt(d) { return ((d.high + d.low + d.close) / 3) * (d.volume || 0); }
 function _volBarVal(d) { return _volBarMode === 'amt' ? _barAmt(d) : (d.volume || 0); }
 function _volPoint(d) {
-  return { time: d.time, value: _volBarVal(d), color: d.close >= d.open ? 'rgba(63,185,80,.5)' : 'rgba(248,81,73,.5)' };
+  return { time: d.time, value: _volBarVal(d), color: d.close >= d.open ? cUp(.5) : cDn(.5) };
 }
 function _fmtAmt(v, isKr) {
   if (!v) return '—';
@@ -342,15 +342,15 @@ function _createMainSeries() {
     return _lwChart.addLineSeries({ color: '#58a6ff', lineWidth: 2, crosshairMarkerVisible: true });
   }
   if (_chartType === 'bar') {
-    return _lwChart.addBarSeries({ upColor: '#3fb950', downColor: '#f85149', thinBars: false });
+    return _lwChart.addBarSeries({ upColor: C_UP, downColor: C_DN, thinBars: false });
   }
   return _lwChart.addCandlestickSeries({
-    upColor:         '#3fb950',
-    downColor:       '#f85149',
-    borderUpColor:   '#3fb950',
-    borderDownColor: '#f85149',
-    wickUpColor:     '#3fb950',
-    wickDownColor:   '#f85149',
+    upColor:         C_UP,
+    downColor:       C_DN,
+    borderUpColor:   C_UP,
+    borderDownColor: C_DN,
+    wickUpColor:     C_UP,
+    wickDownColor:   C_DN,
   });
 }
 
@@ -2076,8 +2076,8 @@ function _findCrossovers(line1, line2, times) {
     if (line1[i] == null || line2[i] == null || line1[i-1] == null || line2[i-1] == null) continue;
     const crossUp   = line1[i-1] <= line2[i-1] && line1[i] > line2[i];
     const crossDown = line1[i-1] >= line2[i-1] && line1[i] < line2[i];
-    if (crossUp)   markers.push({ time: times[i], position: 'belowBar', color: '#3fb950', shape: 'arrowUp',   size: 1 });
-    if (crossDown) markers.push({ time: times[i], position: 'aboveBar', color: '#f85149', shape: 'arrowDown', size: 1 });
+    if (crossUp)   markers.push({ time: times[i], position: 'belowBar', color: C_UP, shape: 'arrowUp',   size: 1 });
+    if (crossDown) markers.push({ time: times[i], position: 'aboveBar', color: C_DN, shape: 'arrowDown', size: 1 });
   }
   return markers;
 }
@@ -2260,7 +2260,7 @@ function _applyIndicators() {
     _macdSignal.setData(toD(sig));
     _macdHist.setData(hist.map((v, i) => v != null ? {
       time: times[i], value: +v.toFixed(4),
-      color: v >= 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)',
+      color: v >= 0 ? cUp(0.7) : cDn(0.7),
     } : null).filter(Boolean));
     // MACD × Signal 크로스오버 마커
     _macdLine.setMarkers(_findCrossovers(macd, sig, times));
@@ -2435,14 +2435,14 @@ function _applySignalMarkers() {
     if (s >= threshold) {
       markers.push({
         time: times[i], position: 'belowBar',
-        color: s >= 3 ? '#3fb950' : '#58a6ff',
+        color: s >= 3 ? C_UP : '#ffa64d',
         shape: 'arrowUp', size: s >= 3 ? 3 : 1.5,
         text: (s >= 3 ? '강력매수 ' : '매수 ') + price,
       });
     } else if (s <= -threshold) {
       markers.push({
         time: times[i], position: 'aboveBar',
-        color: s <= -3 ? '#f85149' : '#ffa64d',
+        color: s <= -3 ? C_DN : '#58a6ff',
         shape: 'arrowDown', size: s <= -3 ? 3 : 1.5,
         text: (s <= -3 ? '강력매도 ' : '매도 ') + price,
       });
@@ -2591,12 +2591,12 @@ function _renderSignalCard() {
                       : patName;
   }
 
-  const scoreColor = finalTotal > 0 ? 'var(--green)' : finalTotal < 0 ? 'var(--red)' : 'var(--muted)';
+  const scoreColor = finalTotal > 0 ? 'var(--up)' : finalTotal < 0 ? 'var(--down)' : 'var(--muted)';
   const scoreLabel = finalTotal >= 3 ? '강력 매수'  : finalTotal === 2  ? '매수'
                    : finalTotal <= -3 ? '강력 매도' : finalTotal === -2 ? '매도'
                    : finalTotal === 1 ? '약한 매수'  : finalTotal === -1 ? '약한 매도' : '중립';
 
-  const trendColor = trendUp ? 'var(--green)' : trendDown ? 'var(--red)' : 'var(--muted)';
+  const trendColor = trendUp ? 'var(--up)' : trendDown ? 'var(--down)' : 'var(--muted)';
   const trendLabel = trendUp ? '▲ 상승 추세' : trendDown ? '▼ 하락 추세' : '— 중립';
   const ma50Val    = lastMa50 != null ? lastMa50.toFixed(2) : '—';
   const trendRow   = `<div class="sc-row sc-trend-row">
@@ -2608,7 +2608,7 @@ function _renderSignalCard() {
   // 주봉 MA13 추세 행
   const wTrendArr  = _getWeeklyTrendArray(_lastOhlcv, 13);
   const wTrendNow  = wTrendArr[n - 1];
-  const wTrendColor = wTrendNow ===  1 ? 'var(--green)' : wTrendNow === -1 ? 'var(--red)' : 'var(--muted)';
+  const wTrendColor = wTrendNow ===  1 ? 'var(--up)' : wTrendNow === -1 ? 'var(--down)' : 'var(--muted)';
   const wTrendLabel = wTrendNow ===  1 ? '▲ 주봉 상승' : wTrendNow === -1 ? '▼ 주봉 하락' : '— 중립';
   const weeklyRow  = `<div class="sc-row sc-trend-row">
     <span class="sc-label">주봉 MA13</span>
@@ -2624,9 +2624,9 @@ function _renderSignalCard() {
   );
   const pbColor = bbBlocked ? '#ffa64d'
     : lastPb == null   ? 'var(--muted)'
-    : lastPb < 0.20    ? 'var(--green)'
+    : lastPb < 0.20    ? 'var(--up)'
     : lastPb < 0.35    ? 'var(--accent)'
-    : lastPb > 0.80    ? 'var(--red)'
+    : lastPb > 0.80    ? 'var(--down)'
     : lastPb > 0.65    ? '#ffa64d'
     : 'var(--muted)';
   const pbLabel = bbBlocked       ? '⚡ 신호 차단'
@@ -2654,7 +2654,7 @@ function _renderSignalCard() {
     // 추세 반대 신호는 회색으로 표시 (필터됨)
     const filtered = (trendUp && r.score < 0) || (trendDown && r.score > 0);
     const ic = filtered ? 'var(--muted)'
-             : r.score > 0 ? 'var(--green)' : r.score < 0 ? 'var(--red)' : 'var(--muted)';
+             : r.score > 0 ? 'var(--up)' : r.score < 0 ? 'var(--down)' : 'var(--muted)';
     const il = filtered
              ? (r.score > 0 ? '▲ 매수 (필터)' : '▼ 매도 (필터)')
              : r.score > 0 ? '▲ 매수' : r.score < 0 ? '▼ 매도' : '— 중립';
@@ -2666,8 +2666,8 @@ function _renderSignalCard() {
   }).join('');
 
   const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0); // DIV는 RSI 활성 시 포함
-  const scoreBg = finalTotal > 0 ? 'var(--green-bg)'
-                : finalTotal < 0 ? 'var(--red-bg)'
+  const scoreBg = finalTotal > 0 ? 'var(--up-bg)'
+                : finalTotal < 0 ? 'var(--down-bg)'
                 : 'rgba(139,148,158,0.08)';
   card.innerHTML = `
     <div class="sc-banner" style="background:${scoreBg};border-left-color:${scoreColor}">
@@ -2712,8 +2712,8 @@ function _createRSIChart() {
   // y축 0~100 고정을 위해 모든 RSI 시리즈에 autoscaleInfoProvider 적용
   const _fixedRsiScale = () => ({ priceRange: { minValue: 0, maxValue: 100 } });
   _rsiSeries = _rsiChart.addLineSeries({ color: '#e3b341', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, autoscaleInfoProvider: _fixedRsiScale });
-  _rsiOb     = _rsiChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: _fixedRsiScale });
-  _rsiOs     = _rsiChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: _fixedRsiScale });
+  _rsiOb     = _rsiChart.addLineSeries({ color: cDn(0.5),  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: _fixedRsiScale });
+  _rsiOs     = _rsiChart.addLineSeries({ color: cUp(0.5),  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: _fixedRsiScale });
 }
 
 function _createMACDChart() {
@@ -2730,7 +2730,7 @@ function _createMACDChart() {
     handleScale: false,
   });
   _macdHist   = _macdChart.addHistogramSeries({
-    color: 'rgba(63,185,80,0.7)', priceLineVisible: false, lastValueVisible: false,
+    color: cUp(0.7), priceLineVisible: false, lastValueVisible: false,
   });
   _macdLine   = _macdChart.addLineSeries({
     color: '#58a6ff', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,
@@ -2758,8 +2758,8 @@ function _createSTOChart() {
   const fixedScale = () => ({ priceRange: { minValue: 0, maxValue: 100 } });
   _stoK  = _stoChart.addLineSeries({ color: '#c9d1d9', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,  autoscaleInfoProvider: fixedScale });
   _stoD  = _stoChart.addLineSeries({ color: '#ffa64d', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,  autoscaleInfoProvider: fixedScale });
-  _stoOb = _stoChart.addLineSeries({ color: 'rgba(248,81,73,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: fixedScale });
-  _stoOs = _stoChart.addLineSeries({ color: 'rgba(63,185,80,0.5)',  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: fixedScale });
+  _stoOb = _stoChart.addLineSeries({ color: cDn(0.5),  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: fixedScale });
+  _stoOs = _stoChart.addLineSeries({ color: cUp(0.5),  lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: fixedScale });
   // 메인 차트와 시간축·크로스헤어 동기화
   _lwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
     if (range && _stoChart) _stoChart.timeScale().setVisibleLogicalRange(range);
@@ -2965,7 +2965,7 @@ function _guideSvg(ind) {
     const ci = cloud.a.findIndex((v, i) => v != null && cloud.b[i] != null) + 6;
     if (cloud.a[ci] != null) out.push(`<text x="${x(ci)}" y="${Math.min(y(cloud.a[ci]), y(cloud.b[ci])) - 8}" class="ind-guide-svg-label">구름</text>`);
   }
-  bars.forEach((b, i) => { const col = b.close >= b.open ? '#3fb950' : '#f85149';
+  bars.forEach((b, i) => { const col = b.close >= b.open ? C_UP : C_DN;
     out.push(`<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.high)}" y2="${y(b.low)}" stroke="${col}" opacity="${fade}"/>`,
       `<rect x="${x(i) - bw / 2}" y="${y(Math.max(b.open, b.close))}" width="${bw}" height="${Math.max(1, Math.abs(y(b.open) - y(b.close)))}" fill="${col}" opacity="${fade}"/>`); });
   if (ind.id === 'vwap') {   // VWAP: 첫 봉부터 누적 평균 단가
@@ -3023,13 +3023,13 @@ function _guideSvg(ind) {
       const mv = m.filter(v => v != null), sg = [...Array(m.length - mv.length).fill(null), ..._calcEMA(mv, 9)];
       const a = Math.min(...mv) - .5, b = Math.max(...mv) + .5;
       m.forEach((v, i) => { if (v == null || sg[i] == null) return; const h = v - sg[i];
-        out.push(`<rect x="${x(i) - bw / 2}" y="${Math.min(sy(h, a, b), sy(0, a, b))}" width="${bw}" height="${Math.abs(sy(h, a, b) - sy(0, a, b))}" fill="${h >= 0 ? '#3fb950' : '#f85149'}" opacity=".4"/>`); });
+        out.push(`<rect x="${x(i) - bw / 2}" y="${Math.min(sy(h, a, b), sy(0, a, b))}" width="${bw}" height="${Math.abs(sy(h, a, b) - sy(0, a, b))}" fill="${h >= 0 ? C_UP : C_DN}" opacity=".4"/>`); });
       out.push(band(0, a, b, '0선'), pl(m, a, b, ind.color), pl(sg, a, b, ind.color2));
     }
     if (ind.id === 'sto') { const s = _calcStochastic(bars);
       out.push(band(80, 0, 100, '80 과매수'), band(20, 0, 100, '20 과매도'), pl(s.k, 0, 100, ind.color), pl(s.d, 0, 100, ind.color2)); }
     if (ind.id === 'volma') { const vs = bars.map(b => b.volume), top = Math.max(...vs) * 1.1;
-      bars.forEach((b, i) => out.push(`<rect x="${x(i) - bw / 2}" y="${sy(b.volume, 0, top)}" width="${bw}" height="${subTop + subH - sy(b.volume, 0, top)}" fill="${b.close >= b.open ? '#3fb950' : '#f85149'}" opacity=".45"/>`));
+      bars.forEach((b, i) => out.push(`<rect x="${x(i) - bw / 2}" y="${sy(b.volume, 0, top)}" width="${bw}" height="${subTop + subH - sy(b.volume, 0, top)}" fill="${b.close >= b.open ? C_UP : C_DN}" opacity=".45"/>`));
       out.push(pl(_calcMA(vs, 20), 0, top, ind.color)); }
     if (ind.id === 'obv') { const o = _calcOBV(bars), a = Math.min(...o), b = Math.max(...o);
       out.push(pl(o, a - (b - a) * .05, b + (b - a) * .05, ind.color)); }

@@ -19,12 +19,12 @@ let _hmSignalMap  = {};  // 오늘의 신호 맵 (main.js loadDailySignalMap 재
 function _hmSigBorder(ticker) {
   const s = _hmSignalMap[ticker];
   if (!s) return null;
-  return s.direction === 'buy' ? '#3fb950' : '#f85149';
+  return s.direction === 'buy' ? C_UP : C_DN;
 }
 
 const _colorScale = d3.scaleLinear()
   .domain([-5, -2, -0.5, 0, 0.5, 2, 5])
-  .range(['#7f1d1d','#b91c1c','#dc2626','#374151','#16a34a','#15803d','#14532d'])
+  .range(['#1e3a8a','#1d4ed8','#3b82f6','#374151','#ef4444','#dc2626','#991b1b'])   // 국내식: 하락 파랑·상승 빨강 (11-26)
   .clamp(true);
 
 async function initHeatmap() {
@@ -470,7 +470,7 @@ function renderHeatmap() {
       const periodLabel = _hmPeriod === '1w' ? '1W' : _hmPeriod === '1m' ? '1M' : '1D';
       const sig = _hmSignalMap[d.data.ticker];
       const sigHtml = sig
-        ? `<br><span style="color:${sig.direction === 'buy' ? '#3fb950' : '#f85149'};font-size:11px;font-weight:700">
+        ? `<br><span style="color:${sig.direction === 'buy' ? C_UP : C_DN};font-size:11px;font-weight:700">
              ${sig.direction === 'buy' ? '▲매수' : '▼매도'} ${sig.term}
            </span>` : '';
       tooltip.style.display = 'block';
@@ -761,7 +761,7 @@ function renderKrHeatmap() {
         const pct = d.data.change_pct || 0;
         const sig = _hmSignalMap[d.data.ticker];
         const sigHtml = sig
-          ? `<br><span style="color:${sig.direction === 'buy' ? '#3fb950' : '#f85149'};font-size:11px;font-weight:700">
+          ? `<br><span style="color:${sig.direction === 'buy' ? C_UP : C_DN};font-size:11px;font-weight:700">
                ${sig.direction === 'buy' ? '▲매수' : '▼매도'} ${sig.term}
              </span>` : '';
         tooltip.innerHTML =
@@ -829,9 +829,9 @@ function _etfBrand(name) {
 }
 
 function _avgFill(avgChg, alpha) {
-  if (avgChg >=  0.5) return `rgba(22,163,74,${alpha})`;
-  if (avgChg >=  0.1) return `rgba(22,163,74,${alpha * 0.55})`;
-  if (avgChg <= -0.5) return `rgba(185,28,28,${alpha})`;
-  if (avgChg <= -0.1) return `rgba(185,28,28,${alpha * 0.55})`;
+  if (avgChg >=  0.5) return `rgba(220,38,38,${alpha})`;
+  if (avgChg >=  0.1) return `rgba(220,38,38,${alpha * 0.55})`;
+  if (avgChg <= -0.5) return `rgba(29,78,216,${alpha})`;
+  if (avgChg <= -0.1) return `rgba(29,78,216,${alpha * 0.55})`;
   return `rgba(55,65,81,${alpha})`;
 }
