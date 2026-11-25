@@ -2690,7 +2690,8 @@ function _resizeChartPanels() {
   const count   = (_activeInds.has('rsi') ? 1 : 0) + (_activeInds.has('macd') ? 1 : 0) + (_activeInds.has('sto') ? 1 : 0);
   const el      = document.getElementById('lw-chart');
   const topY    = el.getBoundingClientRect().top || 280;
-  const TOTAL_H = Math.max(window.innerHeight - topY - 24, 300);
+  // 💹 모의투자 탭에 옮겨 붙였을 때는 화면 높이 대신 정해진 높이 (11-26)
+  const TOTAL_H = el.closest('.pp-chart-slot') ? (window.innerWidth < 760 ? 320 : 430) : Math.max(window.innerHeight - topY - 24, 300);
   const mainH   = Math.max(TOTAL_H - count * (PANEL_H + PANEL_GAP), 200);
   const w       = el.clientWidth || 900;
   if (_lwChart) _lwChart.resize(w, mainH);

@@ -65,3 +65,4 @@ data/news_archive.sqlite
 data/dart_corp_codes.json
 data/news_translations.json
 data/news_translations.json.tmp
+data/paper.sqlite

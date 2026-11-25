@@ -158,3 +158,211 @@ def investor_daily(code: str) -> list[dict]:
             "inst": _i(x.get("orgn_ntby_qty"))}
            for x in ((j or {}).get("output") or []) if x.get("stck_bsop_date") and (x.get("prsn_ntby_qty") or x.get("frgn_ntby_qty"))]
     return sorted(out, key=lambda x: x["day"])
+
+
+# ── 모의투자용 시세 (11-26) ── 호가·현재가·시간외·휴장일. mkt: J(KRX)·NX(넥스트레이드)·UN(통합)
+def book(code: str, mkt: str = "UN") -> dict | None:
+    """호가 10단계 스냅숏 {asks:[(가격, 잔량)] 최우선부터, bids, total_ask, total_bid, price, prev_close(기준가), open, high, low}."""
+    j = get(_Q + "inquire-asking-price-exp-ccn", "FHKST01010200", {"FID_COND_MRKT_DIV_CODE": mkt, "FID_INPUT_ISCD": code})
+    if not j:
+        return None
+    o, o2 = j.get("output1") or {}, j.get("output2") or {}
+    asks = [(_i(o.get(f"askp{i}")), _i(o.get(f"askp_rsqn{i}"))) for i in range(1, 11)]
+    bids = [(_i(o.get(f"bidp{i}")), _i(o.get(f"bidp_rsqn{i}"))) for i in range(1, 11)]
+    return {"asks": [x for x in asks if x[0]], "bids": [x for x in bids if x[0]],
+            "total_ask": _i(o.get("total_askp_rsqn")), "total_bid": _i(o.get("total_bidp_rsqn")),
+            "price": _i(o2.get("stck_prpr")), "prev_close": _i(o2.get("stck_sdpr")), "open": _i(o2.get("stck_oprc")),
+            "high": _i(o2.get("stck_hgpr")), "low": _i(o2.get("stck_lwpr")), "hour": o.get("aspr_acpt_hour")}
+
+
+def price(code: str, mkt: str = "UN") -> dict | None:
+    """현재가 {price, prev_close, chg, rate, vol, open, high, low, upper, lower, name}."""
+    j = get(_Q + "inquire-price", "FHKST01010100", {"FID_COND_MRKT_DIV_CODE": mkt, "FID_INPUT_ISCD": code})
+    o = (j or {}).get("output") or {}
+    if not _i(o.get("stck_prpr")):      # 넥스트레이드에 없는 종목은 0으로 옴
+        return None
+    sign = -1 if o.get("prdy_vrss_sign") in ("4", "5") else 1
+    return {"price": _i(o.get("stck_prpr")), "prev_close": _i(o.get("stck_sdpr")), "chg": sign * abs(_i(o.get("prdy_vrss"))),
+            "rate": _f(o.get("prdy_ctrt")), "vol": _i(o.get("acml_vol")), "open": _i(o.get("stck_oprc")),
+            "high": _i(o.get("stck_hgpr")), "low": _i(o.get("stck_lwpr")), "upper": _i(o.get("stck_mxpr")), "lower": _i(o.get("stck_llam"))}
+
+
+def overtime(code: str) -> dict | None:
+    """시간외 단일가 현재 {price, vol, upper, lower} (체결 없으면 price 0)."""
+    j = get(_Q + "inquire-overtime-price", "FHPST02300000", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    o = (j or {}).get("output") or {}
+    if not o:
+        return None
+    return {"price": _i(o.get("ovtm_untp_prpr")), "vol": _i(o.get("ovtm_untp_vol")),
+            "upper": _i(o.get("ovtm_untp_mxpr")), "lower": _i(o.get("ovtm_untp_llam"))}
+
+
+def overtime_book(code: str) -> dict | None:
+    j = get(_Q + "inquire-overtime-asking-price", "FHPST02300400", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    o = (j or {}).get("output") or {}
+    if not o:
+        return None
+    asks = [(_i(o.get(f"ovtm_untp_askp{i}")), _i(o.get(f"ovtm_untp_askp_rsqn{i}"))) for i in range(1, 10)]
+    bids = [(_i(o.get(f"ovtm_untp_bidp{i}")), _i(o.get(f"ovtm_untp_bidp_rsqn{i}"))) for i in range(1, 10)]
+    return {"asks": [x for x in asks if x[0]], "bids": [x for x in bids if x[0]],
+            "total_ask": _i(o.get("ovtm_untp_total_askp_rsqn")), "total_bid": _i(o.get("ovtm_untp_total_bidp_rsqn"))}
+
+
+_holi: dict[str, bool] = {}
+
+
+def is_open_day(day: str) -> bool | None:
+    """day 'YYYY-MM-DD'가 국내 개장일인지 (KIS 휴장일 조회, 하루 한 번 몇 주치를 받아 둠). 모르면 None."""
+    if day in _holi:
+        return _holi[day]
+    j = get("/uapi/domestic-stock/v1/quotations/chk-holiday", "CTCA0903R", {"BASS_DT": day.replace("-", ""), "CTX_AREA_NK": "", "CTX_AREA_FK": ""})
+    for x in ((j or {}).get("output") or []):
+        if x.get("bass_dt"):
+            _holi[_day(x["bass_dt"])] = x.get("opnd_yn") == "Y"
+    return _holi.get(day)
+
+
+# ── 실시간 웹소켓 (11-26) ── 호가·체결을 받아 콜백으로 넘김. 키 하나에 연결 하나, 구독은 지금 3개까지(11-26 확인, 신규 계좌 제한으로 보임)
+WS_URL = "ws://ops.koreainvestment.com:21000/tryitout/H0STCNT0"
+# TR별 필드 위치 (KIS 공식 예제 open-trading-api의 columns 순서)
+_F_BOOK = {"code": 0, "hour": 1, "ask": 3, "bid": 13, "ask_q": 23, "bid_q": 33, "total_ask": 43, "total_bid": 44, "acml_vol": 53}
+_F_OBOOK = {"code": 0, "hour": 1, "ask": 3, "bid": 12, "ask_q": 21, "bid_q": 30, "total_ask": 39, "total_bid": 40, "n": 9}
+_F_TRADE = {"code": 0, "hour": 1, "price": 2, "sign": 3, "chg": 4, "rate": 5, "open": 7, "high": 8, "low": 9, "vol": 12,
+            "acml_vol": 13, "side": 21, "strength": 18}
+TR_BOOK = {"UN": "H0UNASP0", "J": "H0STASP0", "NX": "H0NXASP0", "OT": "H0STOAA0"}
+TR_TRADE = {"UN": "H0UNCNT0", "J": "H0STCNT0", "NX": "H0NXCNT0", "OT": "H0STOUP0"}
+_TR_VENUE = {v: k for k, v in {**TR_BOOK}.items()} | {v: k for k, v in TR_TRADE.items()}
+
+
+def _parse(tr: str, vals: list[str]) -> dict:
+    venue = _TR_VENUE.get(tr, "")
+    if tr in TR_BOOK.values():
+        f = _F_OBOOK if tr == "H0STOAA0" else _F_BOOK
+        n = f.get("n", 10)
+        g = lambda k, i=0: vals[f[k] + i] if f[k] + i < len(vals) else "0"
+        return {"type": "book", "venue": venue, "code": vals[0], "hour": g("hour"),
+                "asks": [(_i(g("ask", i)), _i(g("ask_q", i))) for i in range(n) if _i(g("ask", i))],
+                "bids": [(_i(g("bid", i)), _i(g("bid_q", i))) for i in range(n) if _i(g("bid", i))],
+                "total_ask": _i(g("total_ask")), "total_bid": _i(g("total_bid"))}
+    f = _F_TRADE
+    g = lambda k: vals[f[k]] if f[k] < len(vals) else "0"
+    sign = -1 if g("sign") in ("4", "5") else 1
+    return {"type": "trade", "venue": venue, "code": vals[0], "hour": g("hour"), "price": _i(g("price")),
+            "chg": sign * abs(_i(g("chg"))), "rate": _f(g("rate")), "open": _i(g("open")), "high": _i(g("high")), "low": _i(g("low")),
+            "vol": _i(g("vol")), "acml_vol": _i(g("acml_vol")), "side": g("side"), "strength": _f(g("strength"))}
+
+
+class Realtime:
+    """KIS 실시간 연결 하나 — want(set of (tr, code))를 맞춰 구독/해지, 받은 값은 on_data(dict)로."""
+
+    def __init__(self, on_data):
+        self.on_data = on_data
+        self.want: set[tuple[str, str]] = set()
+        self.have: set[tuple[str, str]] = set()
+        self.status = "꺼짐"
+        self._stop = False
+        self._ws = None
+        self._key = None
+        self._key_at = 0.0
+        self._lk = threading.Lock()
+
+    def set_want(self, pairs: set) -> None:
+        with self._lk:
+            self.want = set(pairs)
+
+    def _approval(self) -> str | None:
+        if self._key and time.time() - self._key_at < 12 * 3600:
+            return self._key
+        k = _keys()
+        if not k:
+            return None
+        try:
+            j = requests.post(REAL_BASE + "/oauth2/Approval", json={"grant_type": "client_credentials", "appkey": k[0], "secretkey": k[1]},
+                              timeout=15).json()
+        except Exception as e:
+            log.warning(f"KIS 실시간 승인키 실패: {e}")
+            return None
+        self._key, self._key_at = j.get("approval_key"), time.time()
+        return self._key
+
+    def _send(self, tr: str, code: str, on: bool) -> None:
+        self._ws.send(json.dumps({"header": {"approval_key": self._key, "custtype": "P", "tr_type": "1" if on else "2",
+                                             "content-type": "utf-8"}, "body": {"input": {"tr_id": tr, "tr_key": code}}}))
+
+    def run(self) -> None:
+        import simple_websocket
+        back = 2
+        while not self._stop:
+            if not self.want:
+                self.status = "대기 (보는 종목 없음)"
+                time.sleep(1)
+                continue
+            if not self._approval():
+                self.status = "승인키 실패"
+                time.sleep(60)
+                continue
+            try:
+                self._ws = simple_websocket.Client.connect(WS_URL)
+                self.have = set()
+                self.status = "연결됨"
+                back = 2
+                while not self._stop:
+                    with self._lk:
+                        want = set(self.want)
+                    for tr, code in sorted(self.have - want):
+                        self._send(tr, code, False)
+                        self.have.discard((tr, code))
+                    for tr, code in sorted(want - self.have):
+                        self._send(tr, code, True)
+                        self.have.add((tr, code))
+                    if not want:
+                        break
+                    msg = self._ws.receive(timeout=1)
+                    if msg is None:
+                        continue
+                    if isinstance(msg, bytes):
+                        msg = msg.decode("utf-8", "replace")
+                    if msg[:1] in ("0", "1"):          # 0|TR|건수|값^값...  (1이면 암호화 — 체결통보용, 여기선 안 씀)
+                        parts = msg.split("|", 3)
+                        if len(parts) == 4 and parts[0] == "0":
+                            tr, cnt, body = parts[1], int(parts[2] or 1), parts[3].split("^")
+                            per = len(body) // max(cnt, 1)
+                            for i in range(cnt):
+                                try:
+                                    self.on_data(_parse(tr, body[i * per:(i + 1) * per]))
+                                except Exception as e:
+                                    log.warning(f"KIS 실시간 처리 오류 {tr}: {e}")
+                        continue
+                    try:
+                        j = json.loads(msg)
+                    except ValueError:
+                        continue
+                    h = j.get("header") or {}
+                    if h.get("tr_id") == "PINGPONG":
+                        self._ws.send(msg)
+                        continue
+                    b = j.get("body") or {}
+                    if b.get("rt_cd") == "1":
+                        log.info(f"KIS 실시간 {h.get('tr_id')} {h.get('tr_key')}: {b.get('msg1')}")
+                        if "MAX SUBSCRIBE" in str(b.get("msg1")):
+                            self.have.discard((h.get("tr_id"), h.get("tr_key")))
+                            with self._lk:
+                                self.want.discard((h.get("tr_id"), h.get("tr_key")))
+                            self.status = "구독 한도 초과"
+            except Exception as e:
+                self.status = f"끊김 — {str(e)[:60]}"
+                log.info(f"KIS 실시간 끊김: {e}")
+            finally:
+                try:
+                    if self._ws:
+                        self._ws.close()
+                except Exception:
+                    pass
+                self._ws = None
+                self.have = set()
+            if not self._stop and self.want:
+                time.sleep(back)
+                back = min(back * 2, 60)
+
+    def stop(self) -> None:
+        self._stop = True

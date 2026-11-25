@@ -19,6 +19,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from cache import Cache
 import data_fetcher as df
 import kis
+import paper
+from collections import deque
 
 PE_EPS_FILE  = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
 
@@ -1294,6 +1296,7 @@ def initial_load():
     # emit 큐 워커 시작 (socketio 관리 스레드에서 emit 처리)
     socketio.start_background_task(_emit_worker)
     socketio.start_background_task(_rt_loop)   # 화면 종목·지수 10초 실시간 (장중만 요청)
+    threading.Thread(target=_paper_loop, daemon=True, name="paper").start()   # 💹 모의투자 시세·체결 (11-26)
 
     # 백그라운드 갱신 스레드 시작
     # 느린 서버(0.1 vCPU)에서 시작 직후 한꺼번에 몰리지 않도록 작업을 몇 초씩 나눠 시작한다.
@@ -1975,6 +1978,285 @@ def kr_flow_api(code):
         out["investor"] = {"day": inv[-1]["day"], "d1": tot(1), "d5": tot(5), "d20": tot(20), "n": len(inv)}
     cache.set(key, out, ttl=6 * 3600 if len(out) > 2 else 600)
     return jsonify(out)
+
+
+# ── 💹 모의투자 (11-26, E1) ──────────────────────────────────────────────────
+# 사이트 자체 가상계좌(paper.py) + KIS 실시간 호가·체결(조회만). 증권사로 주문은 나가지 않는다.
+# 보는 종목 하나만 실시간(웹소켓은 STOCKVIEW_KIS_WS=1인 서버만 — 키 하나에 연결 하나라 집 서버만 켬, 나머지는 1.5초 조회),
+# 다른 종목의 미체결 주문은 10초마다 현재가로 확인. 결정 docs/decisions/009.
+PAPER = paper.Paper()
+_pp_lock = threading.Lock()
+_pp_focus = {"code": None, "name": "", "session": None, "at": 0.0}
+_pp_q: dict[str, dict] = {}          # 종목 → {book, trade, ticks(deque), venue}
+_PP_WS = os.environ.get("STOCKVIEW_KIS_WS", "").strip() == "1"
+_pp_rt = None
+
+
+def _pp_emit(event, data):
+    _emit_queue.put((event, data))
+
+
+PAPER.on_fill = lambda f: (_pp_emit("paper_fill", f), _pp_emit("paper_acct", PAPER.state()))
+
+
+def _pp_open_day() -> bool:
+    d = paper.now_kst().strftime("%Y-%m-%d")
+    v = kis.is_open_day(d) if kis.enabled() else None
+    return paper.now_kst().weekday() < 5 if v is None else v
+
+
+def _pp_feed_venue(session: str | None) -> str:
+    """세션 → 시세 출처: 넥스트레이드 NX · 시간외 단일가 OT · 그 밖 통합 UN."""
+    if not session or session not in paper.SESSIONS:
+        return "UN"
+    if session == "single":
+        return "OT"
+    return "NX" if paper.SESSIONS[session][4] == "NX" else "UN"
+
+
+def _pp_default_session(now=None) -> str | None:
+    """지금 고를 세션 기본값: 정규장 > 동시호가 > 시간외 종가·단일가 > 넥스트레이드."""
+    op = paper.open_sessions(now or paper.now_kst(), _pp_open_day())
+    for k in ("regular", "auc_open", "auc_close", "pre_close", "post_close", "single", "nxt_pre", "nxt_after"):
+        if k in op:
+            return k
+    return None
+
+
+def _pp_on_data(d: dict) -> None:
+    """실시간·조회 시세 한 건 → 캐시·체결 계산·화면 전송."""
+    code, venue = d.get("code"), d.get("venue")
+    if not code:
+        return
+    q = _pp_q.setdefault(code, {"ticks": deque(maxlen=40)})
+    if d["type"] == "book":
+        q["book"] = dict(d, at=time.time())
+        if venue in ("UN", "NX"):
+            PAPER.on_book(code, venue, d["asks"], d["bids"])
+        _pp_emit("paper_book", q["book"])
+    else:
+        prev = q.get("trade") or {}
+        q["trade"] = dict(d, at=time.time())
+        if d.get("price"):
+            if venue == "OT":
+                PAPER.on_trade(code, "J", d["price"], d.get("vol") or 0, "single")
+            elif venue in ("UN", "NX"):
+                PAPER.on_trade(code, venue, d["price"], d.get("vol") or 0, "cont")
+            if d.get("vol") and (d.get("acml_vol") != prev.get("acml_vol") or d.get("hour") != prev.get("hour")):
+                q["ticks"].appendleft({k: d.get(k) for k in ("hour", "price", "chg", "rate", "vol", "side", "venue")})
+        _pp_emit("paper_tick", q["trade"])
+
+
+def _pp_rest_focus(code: str, venue: str) -> None:
+    """웹소켓을 안 쓰는 서버: 보는 종목 호가·현재가를 조회해 실시간처럼 넘긴다."""
+    if venue == "OT":
+        b, t = kis.overtime_book(code), kis.overtime(code)
+        if b:
+            _pp_on_data(dict(b, type="book", venue="OT", code=code))
+        if t and t.get("price"):
+            prev = (_pp_q.get(code) or {}).get("trade") or {}
+            dv = t["vol"] - (prev.get("acml_vol") or t["vol"]) if prev.get("venue") == "OT" else 0
+            _pp_on_data({"type": "trade", "venue": "OT", "code": code, "price": t["price"], "vol": max(dv, 0), "acml_vol": t["vol"],
+                         "hour": paper.now_kst().strftime("%H%M%S")})
+        return
+    b = kis.book(code, venue)
+    if b:
+        _pp_on_data({"type": "book", "venue": venue, "code": code, "asks": b["asks"], "bids": b["bids"],
+                     "total_ask": b["total_ask"], "total_bid": b["total_bid"], "hour": b.get("hour")})
+    t = kis.price(code, venue)
+    if t:
+        prev = (_pp_q.get(code) or {}).get("trade") or {}
+        dv = t["vol"] - prev["acml_vol"] if prev.get("acml_vol") and prev.get("venue") == venue else 0
+        _pp_on_data({"type": "trade", "venue": venue, "code": code, "price": t["price"], "chg": t["chg"], "rate": t["rate"],
+                     "open": t["open"], "high": t["high"], "low": t["low"], "vol": max(dv, 0), "acml_vol": t["vol"],
+                     "side": "", "hour": paper.now_kst().strftime("%H%M%S")})
+
+
+def _paper_loop():
+    """1초마다: 보는 종목 시세(웹소켓 구독 맞추기 또는 조회), 다른 종목 미체결 확인(10초), 동시호가·단일가 체결, 세션 종료 취소, 평가 기록."""
+    global _pp_rt
+    time.sleep(20)
+    if not kis.enabled():
+        log.info("모의투자: KIS 키 없음 — 시세 없이 계좌 조회만")
+        return
+    if _PP_WS:
+        _pp_rt = kis.Realtime(_pp_on_data)
+        threading.Thread(target=_pp_rt.run, daemon=True, name="kis-ws").start()
+    last = {"focus": 0.0, "others": 0.0, "expire": 0.0, "equity": 0.0, "single": 0.0}
+    ot_vol: dict[str, int] = {}
+    while True:
+        try:
+            now = paper.now_kst()
+            t = time.time()
+            open_day = _pp_open_day()
+            op = paper.open_sessions(now, open_day)
+            with _pp_lock:
+                f = dict(_pp_focus)
+            code = f["code"] if t - f["at"] < 120 else None      # 2분 동안 화면이 안 보면 멈춤
+            sess = f["session"] if f["session"] in op else _pp_default_session(now)
+            venue = _pp_feed_venue(sess)
+            if _pp_rt:
+                want = {(kis.TR_BOOK[venue], code), (kis.TR_TRADE[venue], code)} if code and op else set()
+                _pp_rt.set_want(want)
+                if code and op and t - last["focus"] > 30:       # 웹소켓이어도 30초마다 한 번 조회(놓친 값 보정)
+                    last["focus"] = t
+                    _pp_rest_focus(code, venue)
+            elif code and t - last["focus"] >= (1.5 if op else 30):
+                last["focus"] = t
+                _pp_rest_focus(code, venue)
+            # 다른 종목 미체결 (연속 매매) — 10초마다 현재가로
+            if t - last["others"] >= 10:
+                last["others"] = t
+                for o_code in PAPER.open_codes() - ({code} if code and op else set()):
+                    kinds = {paper.SESSIONS[o["session"]][4] for o in PAPER.open_orders(o_code) if paper.SESSIONS.get(o["session"], (0, 0, 0, ""))[3] == "cont"}
+                    for v in kinds:
+                        pr = kis.price(o_code, v)
+                        if pr:
+                            PAPER.on_trade(o_code, v, pr["price"], 0, "cont")
+                            PAPER.on_book(o_code, v, [], [], pr["price"])
+            # 동시호가: 9시 시가·15시 30분 종가로 (5분 동안 시도)
+            m = now.hour * 60 + now.minute
+            for kind, lo, field in (("auc_open", 540, "open"), ("auc_close", 930, "price")):
+                if lo <= m < lo + 5:
+                    for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] == kind}:
+                        pr = kis.price(o_code, "J")
+                        if pr and pr.get(field):
+                            PAPER.on_trade(o_code, "J", pr[field], 0, "open" if kind == "auc_open" else "close")
+            # 시간외 단일가: 20초마다 체결량이 늘었으면 그 가격으로
+            if "single" in op or (m < 18 * 60 + 5 and m >= 16 * 60):
+                if t - last["single"] >= 20:
+                    last["single"] = t
+                    for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] == "single"}:
+                        ot = kis.overtime(o_code)
+                        if ot and ot["price"] and ot["vol"] > ot_vol.get(o_code, 0):
+                            if o_code in ot_vol:
+                                PAPER.on_trade(o_code, "J", ot["price"], ot["vol"] - ot_vol[o_code], "single")
+                            ot_vol[o_code] = ot["vol"]
+            if t - last["expire"] >= 30:
+                last["expire"] = t
+                if PAPER.expire(now, open_day):
+                    _pp_emit("paper_acct", PAPER.state())
+            if op and t - last["equity"] >= 300:
+                last["equity"] = t
+                PAPER.snapshot_equity()
+        except Exception as e:
+            log.warning(f"모의투자 루프 오류: {e}")
+        time.sleep(1)
+
+
+def _pp_post_ok() -> bool:
+    """주문·리셋은 우리 화면에서만 (다른 사이트가 몰래 보내는 요청 방지 — 사용자 정의 헤더는 다른 출처에서 못 붙임)."""
+    return request.headers.get("X-StockView") == "paper"
+
+
+def _pp_sessions_now() -> list[dict]:
+    op = paper.open_sessions(paper.now_kst(), _pp_open_day())
+    return [{"id": k, "name": paper.SESSIONS[k][0], "kind": paper.SESSIONS[k][3], "end": paper.SESSIONS[k][2]} for k in op]
+
+
+@socketio.on("paper_watch")
+def _on_paper_watch(data):
+    d = data or {}
+    code = df.kr_code(str(d.get("code") or "")) or None
+    with _pp_lock:
+        _pp_focus.update(code=code, name=str(d.get("name") or "")[:40], session=d.get("session") or None, at=time.time())
+
+
+@app.route("/api/paper/state")
+def paper_state_api():
+    st = PAPER.state()
+    st.update(sessions=_pp_sessions_now(), default_session=_pp_default_session(), now=paper.now_kst().strftime("%Y-%m-%d %H:%M:%S"),
+              all_sessions=[{"id": k, "name": v[0], "start": v[1], "end": v[2], "kind": v[3]} for k, v in paper.SESSIONS.items()],
+              feed="실시간" if _pp_rt else "1.5초 조회", feed_status=_pp_rt.status if _pp_rt else ("KIS 연결" if kis.enabled() else "KIS 키 없음"))
+    return jsonify(st)
+
+
+@app.route("/api/paper/quote/<code>")
+def paper_quote_api(code):
+    """종목 첫 화면용 스냅숏: 현재가·호가·최근 체결 + 넥스트레이드 거래 여부. 이 종목을 '보는 종목'으로."""
+    c = df.kr_code(code)
+    sess = request.args.get("session") or None
+    with _pp_lock:
+        _pp_focus.update(code=c, name=request.args.get("name", "")[:40], session=sess, at=time.time())
+    if not kis.enabled():
+        return jsonify({"code": c, "error": "KIS 키 없음"})
+    q = _pp_q.get(c) or {}
+    venue = _pp_feed_venue(sess if sess in paper.SESSIONS else _pp_default_session())
+    if not q.get("book") or time.time() - q["book"].get("at", 0) > 10 or q["book"].get("venue") != venue:
+        _pp_rest_focus(c, venue)
+        q = _pp_q.get(c) or {}
+    pr = kis.price(c, "J") or {}
+    nx_key = f"pp_nx_{c}"
+    nx = cache.get_fresh(nx_key)
+    if nx is None:
+        nx = bool(kis.price(c, "NX"))
+        cache.set(nx_key, nx, ttl=12 * 3600)
+    return jsonify({"code": c, "venue": venue, "book": q.get("book"), "trade": q.get("trade"), "ticks": list(q.get("ticks") or []),
+                    "price": pr, "nxt": nx})
+
+
+@app.route("/api/paper/order", methods=["POST"])
+def paper_order_api():
+    if not _pp_post_ok():
+        return jsonify({"error": "허용되지 않은 요청"}), 403
+    d = request.get_json(silent=True) or {}
+    c = df.kr_code(str(d.get("code") or ""))
+    sess = d.get("session") or _pp_default_session()
+    if not c or not sess:
+        return jsonify({"error": "지금은 주문 시간이 아니에요" if c else "종목을 고르세요"}), 400
+    kind = paper.SESSIONS.get(sess, ("", "", "", ""))[3]
+    venue = _pp_feed_venue(sess)
+    pr = kis.price(c, "J") or {}
+    q = _pp_q.get(c) or {}
+    if venue != "OT" and (not q.get("book") or time.time() - q["book"].get("at", 0) > 5 or q["book"].get("venue") != venue):
+        _pp_rest_focus(c, venue)
+        q = _pp_q.get(c) or {}
+    book = q.get("book") or {}
+    quote = {"price": (q.get("trade") or {}).get("price") or pr.get("price"), "prev_close": pr.get("prev_close"),
+             "close": pr.get("price"), "upper": pr.get("upper"), "lower": pr.get("lower"),
+             "asks": book.get("asks") or [], "bids": book.get("bids") or []}
+    if venue == "NX" and not cache.get_fresh(f"pp_nx_{c}") and not kis.price(c, "NX"):
+        return jsonify({"error": "넥스트레이드에서 거래하지 않는 종목이에요"}), 400
+    try:
+        o = PAPER.place(c, str(d.get("name") or c)[:40], str(d.get("side")), str(d.get("otype") or "limit"),
+                        d.get("price"), int(d.get("qty") or 0), sess, quote, open_day=_pp_open_day())
+    except (paper.PaperError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    st = PAPER.state()
+    _pp_emit("paper_acct", st)
+    return jsonify({"order": o, "state": st})
+
+
+@app.route("/api/paper/cancel", methods=["POST"])
+def paper_cancel_api():
+    if not _pp_post_ok():
+        return jsonify({"error": "허용되지 않은 요청"}), 403
+    try:
+        o = PAPER.cancel(int((request.get_json(silent=True) or {}).get("id") or 0))
+    except (paper.PaperError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    st = PAPER.state()
+    _pp_emit("paper_acct", st)
+    return jsonify({"order": o, "state": st})
+
+
+@app.route("/api/paper/reset", methods=["POST"])
+def paper_reset_api():
+    """지금 회차를 끝내고(결과는 회차 기록에 남김) 새 시작 금액으로 새 회차."""
+    if not _pp_post_ok():
+        return jsonify({"error": "허용되지 않은 요청"}), 403
+    try:
+        PAPER.new_round(int((request.get_json(silent=True) or {}).get("amount") or 0))
+    except (paper.PaperError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    st = PAPER.state()
+    _pp_emit("paper_acct", st)
+    return jsonify({"state": st, "rounds": PAPER.rounds()})
+
+
+@app.route("/api/paper/rounds")
+def paper_rounds_api():
+    return jsonify(PAPER.rounds())
 
 
 def _macro_item(hist: list, freq: str, yoy: bool = False) -> dict:
