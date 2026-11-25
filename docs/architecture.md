@@ -29,6 +29,7 @@
 |------|------|------|
 | `app.py` (~1,290줄) | 공통 | Flask 라우트, APScheduler, socketio 큐 emit, 캐시 병합 헬퍼 |
 | `data_fetcher.py` (~3,590줄) | 공통 | 모든 외부 수집·파싱·신호 계산·음성 브리핑. `# ── 섹션명 ──` 헤더로 구분, **모듈 분리 금지** |
+| `kis.py` | KR | 한국투자증권 KIS Open API **조회 전용**(11-26) — 토큰 파일 캐시(`api/kis_token_real.json`), 초당 약 3건이라 0.35초 간격 줄 세우기. 공매도·신용잔고·투자자별. 주문 함수 없음 |
 | `cache.py` | 공통 | Thread-Safe TTL 캐시 (stale-while-revalidate, 200회마다 방치 항목 정리) |
 | `templates/index.html` | 공통 | SPA 단일 HTML (9탭) |
 | `static/js/main.js` | 공통 | 뷰 전환, 홈, 뉴스, 소켓, 공용 헬퍼(`signalBadgeHtml`, `makeNotesStore`, CSV 등) |
@@ -88,6 +89,7 @@
 | 차트·분석 | `/api/chart/<ticker>`, `/api/chart-warmup/<ticker>`(일봉 화면 기간 앞쪽 봉 최대 460개 — 긴 이평선·파란점선 계산 전용), `/api/stock-analysis/<ticker>`, `/api/financials/<ticker>` |
 | 뉴스·공시 | `/api/news`(항목에 `category`, 번역됐으면 `title_ko`), `/api/news/translation`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>` |
 | Brief·신호 | `/api/brief`, `/api/daily-signals`, `/api/volume-surges`, `/api/candle-patterns`, `/api/rsi-divergence`, `/api/52w-movers`, `/api/earnings-signals`, `/api/fear-greed`, `/api/voice-briefing`, `/api/voice-briefing/audio/<file>` |
+| 수급 | `/api/flow-stock/<ticker>`(미국), `/api/kr-flow/<code>`(국내, KIS 공매도·신용·투자자별, 6시간 캐시, 키 없는 서버는 집 서버 값) |
 | 캘린더 | `/api/earnings`, `/api/economic-calendar` |
 | 운영 | `/api/cache/status` |
 
@@ -103,6 +105,7 @@
 | Yahoo Finance | JSON 배치 API(`v7/quote`, `quoteSummary`)는 크럼 없이 401 → HTML 스크래핑·v8 chart만 사용. 병렬 과다 시 429 → 동시성 5 + 지연, 실패율 50%↑면 캐시 60초 |
 | 네이버 금융 | 페이지마다 인코딩이 다름(EUC-KR / UTF-8 혼재) → 새 페이지는 `Content-Type` 먼저 확인. 옛 HTML 페이지가 계속 폐기되는 중 → `m.stock.naver.com/api/...` JSON API 우선 |
 | 국내 일봉 | 야후 v8 chart는 최신 거래일 봉 종가가 하루 가까이 비어 있음 → `fetch_ohlcv`가 야후 뒤에 야후 meta(regularMarketPrice·DayHigh·DayLow·Volume)의 KRX 값으로 최신 1봉 보충(`_kr_latest_bar_rt`, 11-17 — 네이버 실시간 값은 15:30 이후 넥스트레이드 가격이 섞여 폐기). **장 마감 몇 시간 뒤엔 meta 고가·저가·거래량이 0** → 종가만 meta, 시가·고가·저가는 네이버 **분봉 중 09:00~15:30만**(그 밖은 넥스트레이드), 거래량은 네이버 일봉 `accumulatedTradingVolume`(KRX 정규장 거래량과 같음) — `_kr_naver_day_bar`, 11-18. 야후 분봉은 15:00까지만 있어 15시대 고가·저가를 놓쳐 쓰지 않음. 네이버 차트 API(`api.stock.naver.com/chart/domestic`)는 고가·저가·종가에 넥스트레이드 애프터마켓 가격이 섞여 야후 실패 시에만 사용 (11-14) |
+| KIS Open API | 초당 약 3건(넘으면 `EGW00201`), 토큰 재발급 1분 1번 → 토큰 파일 재사용. 키는 주문 가능 키라 `api/kis.txt` 권한 600, 조회만 씀 |
 | KRX KIND | 07-12에 EUC-KR → UTF-8로 바뀐 전례 |
 | SEC EDGAR | User-Agent에 이메일 형식 문자열 필수(없으면 403). `fy`/`fp` 라벨이 불안정 → 기간 종료일(`end`)로 그룹핑 |
 | RSS | 피드가 자주 죽음(404/403). 국내 RSS는 커스텀 User-Agent 필요한 곳 많음 |

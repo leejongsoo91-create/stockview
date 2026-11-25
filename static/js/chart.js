@@ -3684,7 +3684,7 @@ function _krEarningsHtml(d) {
 async function _loadFlowStock(ticker) {
   const sec = document.getElementById('flow-section');
   if (!sec) return;
-  if (_isKrStock(ticker)) { sec.innerHTML = ''; return; }   // 국내 수급은 아래 '수급 동향'(네이버)·KRX 공매도는 승인 후
+  if (_isKrStock(ticker)) return _loadKrFlow(ticker, sec);   // 국내: KIS 공매도·신용·투자자별 (11-26)
   let d = null;
   try { d = await api(`/api/flow-stock/${encTk(ticker)}`); } catch {}
   if (_currentTicker && _currentTicker !== ticker) return;
@@ -3706,7 +3706,44 @@ async function _loadFlowStock(ticker) {
   if (!cells.length && !insHtml) { sec.innerHTML = ''; return; }
   sec.innerHTML = `<div class="info-section-title" style="margin-top:10px">🧭 수급·내부자</div>
     <div class="br-summary flow-grid">${cells.join('')}</div>${insHtml}
-    <div class="er-note">공매도 잔고·기관: Nasdaq(2주·분기마다) · 일별 공매도: FINRA(시장조성 포함이라 평소 대비로 봄) · 내부자: Finnhub(SEC Form 4) — 공매도 증가는 빨강</div>`;
+    <div class="er-note">공매도 잔고·기관: Nasdaq(2주·분기마다) · 일별 공매도: FINRA(시장조성 포함이라 평소 대비로 봄) · 내부자: Finnhub(SEC Form 4) — 공매도 증가(주가에 부담)는 파랑</div>`;
+}
+
+// 🧭 국내 수급 (11-26, 한국투자증권 KIS) — 공매도 비율(20일 평균 대비)·신용 융자 잔고(빚내서 산 주식)·투자자별 순매수 합계
+async function _loadKrFlow(ticker, sec) {
+  let d = null;
+  try { d = await api(`/api/kr-flow/${encodeURIComponent(ticker)}`); } catch {}
+  if (_currentTicker && _currentTicker !== ticker) return;
+  if (!d || (!d.short && !d.credit && !d.investor)) { sec.innerHTML = ''; return; }
+  const md = s => (s || '').slice(5).replace('-', '/');
+  const man = v => { const a = Math.abs(v); return a >= 1e4 ? (a / 1e4).toLocaleString('ko-KR', { maximumFractionDigits: a >= 1e6 ? 0 : 1 }) + '만' : a.toLocaleString('ko-KR'); };
+  const sgn = v => v == null ? '—' : `<span class="${v > 0 ? 'up' : v < 0 ? 'down' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${man(v)}</span>`;
+  const bars = (vals, hiLast) => { const mx = Math.max(...vals), mn = hiLast === 'rel' ? Math.min(...vals) * 0.9 : 0;
+    return `<div class="kf-bars">${vals.map((v, i) => `<i style="height:${Math.max(3, (v - mn) / ((mx - mn) || 1) * 100)}%"${i === vals.length - 1 ? ' class="on"' : ''}></i>`).join('')}</div>`; };
+  const blocks = [];
+  const sh = d.short;
+  if (sh) {
+    const x = sh.x, word = x == null ? '' : x >= 2 ? '훨씬 많음' : x >= 1.2 ? '조금 많음' : x <= 0.8 ? '적음' : '비슷함';
+    blocks.push(`<div class="kf-box"><small>공매도 비율 (${md(sh.day)}, 그날 거래량 중)</small>
+      <div class="kf-big"><b class="${x >= 2 ? 'down' : ''}">${sh.ratio}%</b>${sh.avg20 != null ? `<span class="kf-chip">20일 평균 ${sh.avg20}% · ${x}배</span>` : ''}</div>
+      ${bars(sh.hist.map(h => h[1]))}<div class="kf-axis"><span>${md(sh.hist[0][0])}</span><span>${md(sh.day)}</span></div>
+      ${word ? `<div class="kf-note">평소보다 <b>${word}</b> · 2배 이상이면 하락에 거는 물량이 몰린다는 신호</div>` : ''}</div>`);
+  }
+  const cr = d.credit;
+  if (cr) {
+    blocks.push(`<div class="kf-box"><small>신용 융자 잔고 (${md(cr.day)}, 빚내서 산 주식)</small>
+      <div class="kf-big"><b>${man(cr.remain)}주</b>${cr.rate != null ? `<span class="kf-chip">상장주식의 ${cr.rate}%</span>` : ''}</div>
+      ${bars(cr.hist.map(h => h[1]), 'rel')}<div class="kf-axis"><span>${md(cr.since)}</span><span>${md(cr.day)}</span></div>
+      ${cr.chg != null ? `<div class="kf-note">${md(cr.since)}보다 <b>${cr.chg > 0 ? '+' : ''}${cr.chg}%</b> — ${cr.chg >= 10 ? '빚내서 산 물량이 늘어 급락 때 반대매매가 나올 수 있음' : cr.chg <= -10 ? '빚내서 산 물량이 줄어 반대매매 부담이 작아짐' : '큰 변화 없음'}</div>` : ''}</div>`);
+  }
+  const iv = d.investor;
+  const invHtml = iv ? `<table class="er-tbl kf-inv"><thead><tr><th>순매수 (주)</th><th class="num">${md(iv.day)}</th><th class="num">5일</th><th class="num">20일</th></tr></thead><tbody>
+      ${[['개인', 'ind', 'inv-i'], ['외국인', 'frg', 'inv-f'], ['기관', 'inst', 'inv-o']].map(([n, k, c]) =>
+        `<tr><td class="${c}">${n}</td><td class="num">${sgn(iv.d1[k])}</td><td class="num">${sgn(iv.d5[k])}</td><td class="num">${sgn(iv.d20[k])}</td></tr>`).join('')}
+    </tbody></table>` : '';
+  sec.innerHTML = `<div class="info-section-title" style="margin-top:10px">🧭 수급·공매도·신용</div>
+    <div class="kf-grid">${blocks.join('')}</div>${invHtml}
+    <div class="er-note">한국투자증권 Open API · 6시간마다 갱신 · 신용잔고는 결제일 기준이라 2거래일 늦음</div>`;
 }
 
 // 🏦 증권사 리포트 (11-24) — 최근 180일 이 종목 글 + 요약(증권사별 최근 목표가 평균·현재가 대비 상승 여력·의견)

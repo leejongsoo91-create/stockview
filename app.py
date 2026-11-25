@@ -18,6 +18,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from cache import Cache
 import data_fetcher as df
+import kis
 
 PE_EPS_FILE  = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
 
@@ -1930,6 +1931,42 @@ def flow_stock_api(ticker):
     inst = base.get("institutional") or {}
     if si and inst.get("shares_out"):
         out["si_pct_out"] = round(si[0]["interest"] / (inst["shares_out"] * 1e6) * 100, 2)
+    return jsonify(out)
+
+
+@app.route("/api/kr-flow/<code>")
+def kr_flow_api(code):
+    """국내 종목 수급 (11-26, KIS) — 공매도 비율(20일 평균 대비)·신용 융자 잔고·투자자별 순매수 합계. 6시간 캐시.
+    KIS 키(api/kis.txt)가 없는 서버는 집 서버 값을 받아 온다."""
+    c = df.kr_code(code)
+    key = f"kr_flow_{c}"
+    hit = cache.get_fresh(key)
+    if hit is not None:
+        return jsonify(hit)
+    if not kis.enabled():
+        home = _home_json(f"/api/kr-flow/{c}", {}, f"kr_flow_home_{c}", "code")
+        return jsonify(home or {"code": c})
+    sh, cr, inv = kis.short_daily(c), kis.credit_daily(c), kis.investor_daily(c)
+    out = {"code": c, "at": int(time.time())}
+    r = [x for x in sh if x["ratio"] is not None and x["vol"]]
+    if r:
+        prev = [x["ratio"] for x in r[-21:-1]]
+        avg = sum(prev) / len(prev) if prev else None
+        last = r[-1]
+        out["short"] = {"day": last["day"], "ratio": last["ratio"], "short": last["short"],
+                        "avg20": round(avg, 2) if avg else None, "x": round(last["ratio"] / avg, 2) if avg else None,
+                        "hist": [[x["day"], x["ratio"]] for x in r[-40:]]}
+    if cr:
+        last, first = cr[-1], cr[0]
+        out["credit"] = {"day": last["day"], "remain": last["remain"], "rate": last["rate"],
+                         "chg": round((last["remain"] / first["remain"] - 1) * 100, 1) if first["remain"] else None,
+                         "since": first["day"], "hist": [[x["day"], x["remain"]] for x in cr]}
+    if inv:
+        def tot(n):
+            xs = inv[-n:]
+            return {"ind": sum(x["ind"] for x in xs), "frg": sum(x["frg"] for x in xs), "inst": sum(x["inst"] for x in xs)}
+        out["investor"] = {"day": inv[-1]["day"], "d1": tot(1), "d5": tot(5), "d20": tot(20), "n": len(inv)}
+    cache.set(key, out, ttl=6 * 3600 if len(out) > 2 else 600)
     return jsonify(out)
 
 
