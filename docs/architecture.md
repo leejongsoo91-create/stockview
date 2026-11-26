@@ -30,7 +30,7 @@
 | `app.py` (~1,290줄) | 공통 | Flask 라우트, APScheduler, socketio 큐 emit, 캐시 병합 헬퍼 |
 | `data_fetcher.py` (~3,590줄) | 공통 | 모든 외부 수집·파싱·신호 계산·음성 브리핑. `# ── 섹션명 ──` 헤더로 구분, **모듈 분리 금지** |
 | `kis.py` | KR | 한국투자증권 KIS Open API **조회 전용**(11-26) — 토큰 파일 캐시(`api/kis_token_real.json`), 초당 약 3건이라 0.35초 간격 줄 세우기. 공매도·신용잔고·투자자별. 주문 함수 없음 |
-| `paper.py` | KR | 💹 모의투자 가상계좌(11-26) — 세션·호가 단위·체결 계산·회차·평가. `data/paper.sqlite`. 결정 009 |
+| `paper.py` | KR | 💹 모의투자 가상계좌(11-26) — 세션·통합 주문(시간대 자동 `auto_session`)·호가 단위·체결 계산·회차·평가. `data/paper.sqlite`. 결정 009 |
 | `cache.py` | 공통 | Thread-Safe TTL 캐시 (stale-while-revalidate, 200회마다 방치 항목 정리) |
 | `templates/index.html` | 공통 | SPA 단일 HTML (10탭, 💹 모의투자 11-26) |
 | `static/js/main.js` | 공통 | 뷰 전환, 홈, 뉴스, 소켓, 공용 헬퍼(`signalBadgeHtml`, `makeNotesStore`, CSV 등) |
@@ -40,7 +40,7 @@
 | `static/js/brief.js` | US+KR | Brief 탭 (추천·스캐너·음성 브리핑) |
 | `static/js/watchlist.js` / `portfolio.js` | 공통 | localStorage 기반 관심종목 / 손익 |
 | `static/js/earnings.js` | US | 실적 캘린더 |
-| `static/js/paper.js` | KR | 💹 모의투자 탭 — 호가창·체결·주문·계좌·회차. 차트 탭의 차트 DOM을 옮겨 붙였다가 나갈 때 되돌림 |
+| `static/js/paper.js` | KR | 💹 모의투자 모드 — 헤더 ON/OFF 스위치, 켜면 차트 탭 옆 호가·주문(차트 클릭 = 주문 가격, 평균 단가·대기 주문 선), 휴대폰은 아래 시트. 💹 탭은 계좌·회차. chart.js `loadChart`가 `paperOnChart`, 차트 클릭이 `_ppChartClick` 호출 |
 | `static/css/style.css` | 공통 | 다크/라이트 테마 전체 (섹션 순서 규칙은 `.claude/rules/css.md`) |
 | `scripts/*.py` | — | 수동 실행 도구 (수집·백테스트). **app.py에서 import 금지** |
 | `data/kr_stocks.json` | KR | 국내주식 기본 데이터 4,318종목(주식·ETF·ETN, 11-09 생성). `scripts/fetch_kr_stocks.py`(약 2~3분, `--dry-run`은 비교만)로 재생성 — 목록·시총 네이버 `marketValue`, 업종 네이버 `industry`, PER/EPS `integration`, 52주 Yahoo. 종목코드는 영문 섞인 신규 코드(`0126Z0`) 포함 → 코드 추출은 `df.kr_code()` |
@@ -92,14 +92,14 @@
 | 뉴스·공시 | `/api/news`(항목에 `category`, 번역됐으면 `title_ko`), `/api/news/translation`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>` |
 | Brief·신호 | `/api/brief`, `/api/daily-signals`, `/api/volume-surges`, `/api/candle-patterns`, `/api/rsi-divergence`, `/api/52w-movers`, `/api/earnings-signals`, `/api/fear-greed`, `/api/voice-briefing`, `/api/voice-briefing/audio/<file>` |
 | 수급 | `/api/flow-stock/<ticker>`(미국), `/api/kr-flow/<code>`(국내, KIS 공매도·신용·투자자별, 6시간 캐시, 키 없는 서버는 집 서버 값) |
-| 모의투자 | `/api/paper/state`, `/api/paper/quote/<code>`, `/api/paper/rounds`, POST `/api/paper/order`·`cancel`·`reset`(헤더 `X-StockView: paper` 필수). 소켓: 보내기 `paper_watch`, 받기 `paper_book`·`paper_tick`·`paper_fill`·`paper_acct`. 환경변수 `STOCKVIEW_KIS_WS=1`(웹소켓, 한 서버만), 시험용 `STOCKVIEW_PAPER_NOW`·`STOCKVIEW_PAPER_DB` |
+| 모의투자 | `/api/paper/state`, `/api/paper/quote/<code>`, `/api/paper/rounds`, POST `/api/paper/order`(세션 생략 = 통합 주문 auto)·`cancel`·`reset`(헤더 `X-StockView: paper` 필수). quote에 `phase`(지금 장·끝나는 시각·안내). 소켓: 보내기 `paper_watch`, 받기 `paper_book`·`paper_tick`·`paper_fill`·`paper_acct`. 환경변수 `STOCKVIEW_KIS_WS=1`(웹소켓, 한 서버만), 시험용 `STOCKVIEW_PAPER_NOW`·`STOCKVIEW_PAPER_DB` |
 | 캘린더 | `/api/earnings`, `/api/economic-calendar` |
 | 운영 | `/api/cache/status` |
 
 신호 계열(`daily-signals`, `volume-surges`, `candle-patterns`, `rsi-divergence`, `52w-movers`, `earnings-signals`)은 전부 `daily_signals` 캐시 하나에서 파생된다.
 
 ## 5. 브라우저 저장소 (localStorage)
-`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `PPT`(모의투자 마지막 종목) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
+`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
 
 ## 6. 외부 데이터 소스 주의사항
 

@@ -17,6 +17,7 @@
       <input type="text" id="global-search" class="global-search-input" placeholder="🔍 종목 검색…" autocomplete="off" title="단축키: / 로 검색창 포커스, 숫자 1~9로 탭 전환" aria-label="종목 검색">
       <div id="global-search-dropdown" class="global-search-dropdown"></div>
     </div>
+    <button type="button" id="pp-mode-btn" class="pp-mode-btn" data-pp-mode aria-pressed="false" title="모의투자 모드 — 켜면 국내 종목 차트에서 바로 가상 주문">💹 <span class="pp-mode-txt">모의투자</span> <b>OFF</b></button>
     <button id="theme-btn" class="theme-btn" onclick="toggleTheme()" title="라이트/다크 테마 전환" aria-label="라이트/다크 테마 전환">🌙</button>
     <span id="last-updated" class="last-updated"></span>
   </header>
@@ -576,6 +577,60 @@
             <div id="sto-chart"></div>
           </div>
         </div>
+        <!-- 💹 모의투자 모드 ON: 차트 옆 호가·주문 (11-26) -->
+        <section id="pp-dock" class="pp-dock" hidden aria-label="모의투자 주문">
+          <div class="pp-dock-hd">
+            <div id="pp-price-now" class="pp-price-now"></div>
+            <span id="pp-live" class="pp-live off">장 닫힘</span>
+            <button type="button" class="pp-dock-x" id="pp-sheet-close" aria-label="주문창 닫기">✕</button>
+          </div>
+          <div id="pp-phase-note" class="pp-note"></div>
+          <div id="pp-dock-us" class="pp-muted pp-pad" hidden>미국 종목은 아직 모의투자를 할 수 없어요 — 국내 종목 차트를 열어 주세요</div>
+          <div id="pp-dock-main" class="pp-dock-grid">
+            <section class="pp-card pp-book-card" aria-label="호가창">
+              <div class="pp-card-hd"><b>호가</b><span class="pp-muted">누르면 주문 가격에</span></div>
+              <div id="pp-book"></div>
+            </section>
+            <section class="pp-card pp-order" aria-label="주문">
+              <div id="pp-side" class="pp-side">
+                <button type="button" data-side="buy" class="on">매수</button>
+                <button type="button" data-side="sell">매도</button>
+              </div>
+              <div class="pp-order-body">
+                <div id="pp-otype" class="pp-otype">
+                  <button type="button" data-ot="limit" class="on">지정가</button>
+                  <button type="button" data-ot="market">시장가</button>
+                </div>
+                <div id="pp-fixed-note" class="pp-note"></div>
+                <label class="pp-lbl" for="pp-price">가격 (원)</label>
+                <div id="pp-price-wrap" class="pp-price-wrap">
+                  <button type="button" id="pp-price-dn" aria-label="한 호가 내리기">−</button>
+                  <input id="pp-price" type="text" inputmode="numeric" autocomplete="off">
+                  <button type="button" id="pp-price-up" aria-label="한 호가 올리기">+</button>
+                </div>
+                <label class="pp-lbl" for="pp-qty">수량 (주)</label>
+                <input id="pp-qty" class="pp-qty" type="text" inputmode="numeric" value="1" autocomplete="off">
+                <div id="pp-pcts" class="pp-pcts">
+                  <button type="button" data-p="10">10%</button><button type="button" data-p="25">25%</button>
+                  <button type="button" data-p="50">50%</button><button type="button" data-p="100">최대</button>
+                </div>
+                <dl class="pp-calc">
+                  <div><dt id="pp-avail-k">주문 가능 금액</dt><dd id="pp-avail">—</dd></div>
+                  <div><dt>주문 금액</dt><dd id="pp-amt">—</dd></div>
+                  <div><dt>예상 수수료·세금</dt><dd id="pp-fee">—</dd></div>
+                </dl>
+                <button type="button" id="pp-submit" class="pp-submit buy">매수</button>
+                <p class="pp-muted pp-small">누르면 확인창이 뜨고, 이 사이트의 가상 계좌로만 체결돼요. 증권사로 주문이 나가지 않아요.</p>
+              </div>
+            </section>
+          </div>
+          <div id="pp-here" class="pp-here"></div>
+          <details class="pp-card pp-ticks-card">
+            <summary class="pp-card-hd"><b>실시간 체결</b><span id="pp-strength" class="pp-muted"></span></summary>
+            <div class="pp-tick pp-tick-hd"><span>시각</span><span>체결가</span><span>전일 대비</span><span>수량</span></div>
+            <div id="pp-ticks-body" class="pp-ticks-body"></div>
+          </details>
+        </section>
         <aside class="chart-sidebar">
           <div id="chart-draw-list-card" style="display:none">
             <div class="info-section-title">✏️ 그린 선 <button id="draw-clear-all-btn" class="draw-clear-all-btn" onclick="clearAllDrawings()">전체 삭제</button></div>
@@ -597,6 +652,11 @@
           <!-- 종합 진단: 맨 아래·기본 접힘 (11-23) -->
           <div id="stock-analysis-card" style="display:none"></div>
         </aside>
+      </div>
+      <div id="pp-mbar" class="pp-mbar" hidden>
+        <span id="pp-mbar-price" class="pp-mbar-price"></span>
+        <button type="button" data-open="buy" class="pp-mbar-buy">매수</button>
+        <button type="button" data-open="sell" class="pp-mbar-sell">매도</button>
       </div>
     </div>
 
@@ -1009,71 +1069,20 @@
       <div class="pp-band">
         <b>모의투자 — 실제 돈이 아닙니다</b>
         <span id="pp-round-label" class="pp-band-sub"></span>
-        <span id="pp-live" class="pp-live off">장 닫힘</span>
         <span class="pp-band-btns">
           <button type="button" id="pp-rounds-btn">📋 회차 기록</button>
           <button type="button" id="pp-reset-btn">↺ 리셋</button>
         </span>
       </div>
-      <div class="pp-head">
-        <div id="pp-search" class="pp-search">
-          <label for="pp-input" class="pp-lbl">종목 검색</label>
-          <input id="pp-input" type="text" placeholder="종목명 또는 코드" autocomplete="off">
-          <div id="pp-dd" class="global-search-dropdown pp-dd" hidden></div>
-        </div>
-        <div class="pp-title">
-          <div id="pp-name" class="pp-name">—</div>
-          <div id="pp-price-now" class="pp-price-now"></div>
-        </div>
-        <div id="pp-ohlc" class="pp-ohlc"></div>
-      </div>
-      <div id="pp-sessions" class="pp-sessions" role="group" aria-label="거래 시간 선택"></div>
-      <div class="pp-grid">
-        <section class="pp-card pp-book-card" aria-label="호가창">
-          <div class="pp-card-hd"><b>호가 10단계</b><span class="pp-muted">누르면 주문 가격에</span></div>
-          <div id="pp-book"></div>
-        </section>
-        <div class="pp-mid">
-          <div id="pp-chart-slot" class="pp-chart-slot"></div>
-          <section class="pp-card" aria-label="실시간 체결">
-            <div class="pp-card-hd"><b>실시간 체결</b><span id="pp-strength" class="pp-muted"></span></div>
-            <div class="pp-tick pp-tick-hd"><span>시각</span><span>체결가</span><span>전일 대비</span><span>수량</span></div>
-            <div id="pp-ticks-body" class="pp-ticks-body"></div>
-          </section>
-        </div>
-        <section class="pp-card pp-order" aria-label="주문">
-          <div id="pp-side" class="pp-side">
-            <button type="button" data-side="buy" class="on">매수</button>
-            <button type="button" data-side="sell">매도</button>
+      <section class="pp-card pp-howto">
+        <div class="pp-howto-row">
+          <button type="button" class="pp-mode-btn pp-mode-big" data-pp-mode aria-pressed="false">💹 모의투자 <b>OFF</b></button>
+          <div>
+            <b>켜 두면 국내 종목 차트를 열 때마다 옆에 호가·주문창이 붙어요.</b>
+            <p class="pp-muted pp-small">차트를 누르면 그 가격이 주문 가격에 들어가요 · 시간대(NXT 프리·정규장·동시호가·시간외·NXT 애프터)는 자동 · 안 된 지정가는 그날 장이 끝날 때까지 다음 시간대로 이어져요 (NXT 종목 20:00, 그 밖 18:00)</p>
           </div>
-          <div class="pp-order-body">
-            <div id="pp-otype" class="pp-otype">
-              <button type="button" data-ot="limit" class="on">지정가</button>
-              <button type="button" data-ot="market">시장가</button>
-            </div>
-            <div id="pp-fixed-note" class="pp-note"></div>
-            <label class="pp-lbl" for="pp-price">가격 (원)</label>
-            <div id="pp-price-wrap" class="pp-price-wrap">
-              <button type="button" id="pp-price-dn" aria-label="한 호가 내리기">−</button>
-              <input id="pp-price" type="text" inputmode="numeric" autocomplete="off">
-              <button type="button" id="pp-price-up" aria-label="한 호가 올리기">+</button>
-            </div>
-            <label class="pp-lbl" for="pp-qty">수량 (주)</label>
-            <input id="pp-qty" class="pp-qty" type="text" inputmode="numeric" value="1" autocomplete="off">
-            <div id="pp-pcts" class="pp-pcts">
-              <button type="button" data-p="10">10%</button><button type="button" data-p="25">25%</button>
-              <button type="button" data-p="50">50%</button><button type="button" data-p="100">최대</button>
-            </div>
-            <dl class="pp-calc">
-              <div><dt id="pp-avail-k">주문 가능 금액</dt><dd id="pp-avail">—</dd></div>
-              <div><dt>주문 금액</dt><dd id="pp-amt">—</dd></div>
-              <div><dt>예상 수수료·세금</dt><dd id="pp-fee">—</dd></div>
-            </dl>
-            <button type="button" id="pp-submit" class="pp-submit buy">매수</button>
-            <p class="pp-muted pp-small">누르면 확인창이 뜨고, 이 사이트의 가상 계좌로만 체결돼요. 증권사로 주문이 나가지 않아요.</p>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
       <section class="pp-card pp-acct" aria-label="내 모의계좌">
         <div id="pp-acct-sum" class="pp-acct-sum"></div>
         <div id="pp-acct-tabs" class="pp-acct-tabs" role="tablist">
@@ -1083,7 +1092,8 @@
         </div>
         <div id="pp-acct-body" class="pp-tbl-wrap"></div>
       </section>
-      <div id="pp-reset-modal" class="pp-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pp-reset-title">
+    </div>
+    <div id="pp-reset-modal" class="pp-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pp-reset-title">
         <div class="pp-modal-box">
           <h3 id="pp-reset-title">리셋</h3>
           <p id="pp-reset-desc" class="pp-muted"></p>
@@ -1104,8 +1114,7 @@
           <div class="pp-modal-btns"><button type="button" data-close>닫기</button></div>
         </div>
       </div>
-      <div id="pp-toasts" class="pp-toasts" aria-live="polite"></div>
-    </div>
+    <div id="pp-toasts" class="pp-toasts" aria-live="polite"></div>
 
     <div id="view-earnings" class="view">
       <div class="earnings-header">

@@ -2014,6 +2014,34 @@ def _pp_feed_venue(session: str | None) -> str:
     return "NX" if paper.SESSIONS[session][4] == "NX" else "UN"
 
 
+def _pp_nxt(code: str) -> bool:
+    """넥스트레이드에서 거래하는 종목인지 (12시간 캐시)."""
+    k = f"pp_nx_{code}"
+    v = cache.get_fresh(k)
+    if v is None:
+        v = bool(kis.price(code, "NX")) if kis.enabled() else False
+        cache.set(k, v, ttl=12 * 3600)
+    return bool(v)
+
+
+def _pp_auto(code: str, now=None) -> str | None:
+    """이 종목의 통합 주문이 지금 들어갈 세션."""
+    return paper.auto_session(now or paper.now_kst(), _pp_nxt(code), _pp_open_day())
+
+
+def _pp_phase(code: str) -> dict:
+    """화면 위 '지금 장' 표시: 지금 세션·끝나는 시각·다음 안내."""
+    now = paper.now_kst()
+    nx = _pp_nxt(code)
+    s = paper.auto_session(now, nx, _pp_open_day())
+    if not s:
+        return {"id": None, "nxt": nx, "name": "장 닫힘", "note": paper.next_open_text(now, nx) if _pp_open_day() else "오늘은 휴장"}
+    v = paper.SESSIONS[s]
+    note = {"close_prev": "시장가는 전일 종가로 바로 체결 · 지정가는 9시 시가 동시호가로", "close_today": "시장가는 오늘 종가로 바로 체결 · 지정가는 16시 단일가로",
+            "auc_open": "9시 시가로 한 번에 체결", "auc_close": "15:30 종가로 한 번에 체결", "single": "10분마다 한 가격으로 체결 · 지정가만"}.get(v[3], "")
+    return {"id": s, "nxt": nx, "name": v[0], "kind": v[3], "end": v[2], "note": note}
+
+
 def _pp_default_session(now=None) -> str | None:
     """지금 고를 세션 기본값: 정규장 > 동시호가 > 시간외 종가·단일가 > 넥스트레이드."""
     op = paper.open_sessions(now or paper.now_kst(), _pp_open_day())
@@ -2082,7 +2110,7 @@ def _paper_loop():
     if _PP_WS:
         _pp_rt = kis.Realtime(_pp_on_data)
         threading.Thread(target=_pp_rt.run, daemon=True, name="kis-ws").start()
-    last = {"focus": 0.0, "others": 0.0, "expire": 0.0, "equity": 0.0, "single": 0.0}
+    last = {"focus": 0.0, "others": 0.0, "expire": 0.0, "equity": 0.0, "single": 0.0, "acct": 0.0, "held": 0.0}
     ot_vol: dict[str, int] = {}
     while True:
         try:
@@ -2093,7 +2121,7 @@ def _paper_loop():
             with _pp_lock:
                 f = dict(_pp_focus)
             code = f["code"] if t - f["at"] < 120 else None      # 2분 동안 화면이 안 보면 멈춤
-            sess = f["session"] if f["session"] in op else _pp_default_session(now)
+            sess = f["session"] if f["session"] in op else (_pp_auto(code, now) if code else None)
             venue = _pp_feed_venue(sess)
             if _pp_rt:
                 want = {(kis.TR_BOOK[venue], code), (kis.TR_TRADE[venue], code)} if code and op else set()
@@ -2108,17 +2136,27 @@ def _paper_loop():
             if t - last["others"] >= 10:
                 last["others"] = t
                 for o_code in PAPER.open_codes() - ({code} if code and op else set()):
-                    kinds = {paper.SESSIONS[o["session"]][4] for o in PAPER.open_orders(o_code) if paper.SESSIONS.get(o["session"], (0, 0, 0, ""))[3] == "cont"}
+                    effs = [paper.SESSIONS.get(PAPER.eff_session(o, now, open_day)) for o in PAPER.open_orders(o_code)]
+                    kinds = {s[4] for s in effs if s and s[3] == "cont"}
                     for v in kinds:
                         pr = kis.price(o_code, v)
                         if pr:
                             PAPER.on_trade(o_code, v, pr["price"], 0, "cont")
                             PAPER.on_book(o_code, v, [], [], pr["price"])
+            # 보유만 하고 주문은 없는 종목 — 30초마다 현재가만 받아 평가액에 반영
+            if op and t - last["held"] >= 30:
+                last["held"] = t
+                skip = PAPER.open_codes() | ({code} if code else set())
+                for h_code in {p["code"] for p in PAPER.state().get("positions") or []} - skip:
+                    fv = _pp_feed_venue(_pp_auto(h_code, now) or "regular")
+                    pr = (kis.price(h_code, fv) if fv in ("UN", "NX", "J") else None) or kis.price(h_code, "J")
+                    if pr and pr.get("price"):
+                        PAPER.last_price[h_code] = int(pr["price"])
             # 동시호가: 9시 시가·15시 30분 종가로 (5분 동안 시도)
             m = now.hour * 60 + now.minute
             for kind, lo, field in (("auc_open", 540, "open"), ("auc_close", 930, "price")):
                 if lo <= m < lo + 5:
-                    for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] == kind}:
+                    for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] in (kind, paper.AUTO)}:
                         pr = kis.price(o_code, "J")
                         if pr and pr.get(field):
                             PAPER.on_trade(o_code, "J", pr[field], 0, "open" if kind == "auc_open" else "close")
@@ -2126,7 +2164,7 @@ def _paper_loop():
             if "single" in op or (m < 18 * 60 + 5 and m >= 16 * 60):
                 if t - last["single"] >= 20:
                     last["single"] = t
-                    for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] == "single"}:
+                    for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] == "single" or (o["session"] == paper.AUTO and not o["nxt"])}:
                         ot = kis.overtime(o_code)
                         if ot and ot["price"] and ot["vol"] > ot_vol.get(o_code, 0):
                             if o_code in ot_vol:
@@ -2136,6 +2174,11 @@ def _paper_loop():
                 last["expire"] = t
                 if PAPER.expire(now, open_day):
                     _pp_emit("paper_acct", PAPER.state())
+            if op and t - last["acct"] >= 5:                 # 보유 종목 평가액이 시세를 따라가게 5초마다 계좌 보내기
+                last["acct"] = t
+                st = PAPER.state()
+                if st.get("positions"):
+                    _pp_emit("paper_acct", st)
             if op and t - last["equity"] >= 300:
                 last["equity"] = t
                 PAPER.snapshot_equity()
@@ -2181,18 +2224,13 @@ def paper_quote_api(code):
     if not kis.enabled():
         return jsonify({"code": c, "error": "KIS 키 없음"})
     q = _pp_q.get(c) or {}
-    venue = _pp_feed_venue(sess if sess in paper.SESSIONS else _pp_default_session())
+    venue = _pp_feed_venue(sess if sess in paper.SESSIONS else _pp_auto(c))
     if not q.get("book") or time.time() - q["book"].get("at", 0) > 10 or q["book"].get("venue") != venue:
         _pp_rest_focus(c, venue)
         q = _pp_q.get(c) or {}
     pr = kis.price(c, "J") or {}
-    nx_key = f"pp_nx_{c}"
-    nx = cache.get_fresh(nx_key)
-    if nx is None:
-        nx = bool(kis.price(c, "NX"))
-        cache.set(nx_key, nx, ttl=12 * 3600)
     return jsonify({"code": c, "venue": venue, "book": q.get("book"), "trade": q.get("trade"), "ticks": list(q.get("ticks") or []),
-                    "price": pr, "nxt": nx})
+                    "price": pr, "nxt": _pp_nxt(c), "phase": _pp_phase(c)})
 
 
 @app.route("/api/paper/order", methods=["POST"])
@@ -2201,11 +2239,12 @@ def paper_order_api():
         return jsonify({"error": "허용되지 않은 요청"}), 403
     d = request.get_json(silent=True) or {}
     c = df.kr_code(str(d.get("code") or ""))
-    sess = d.get("session") or _pp_default_session()
-    if not c or not sess:
-        return jsonify({"error": "지금은 주문 시간이 아니에요" if c else "종목을 고르세요"}), 400
-    kind = paper.SESSIONS.get(sess, ("", "", "", ""))[3]
-    venue = _pp_feed_venue(sess)
+    sess = d.get("session") or paper.AUTO
+    if not c:
+        return jsonify({"error": "종목을 고르세요"}), 400
+    nx = _pp_nxt(c)
+    eff = _pp_auto(c) if sess == paper.AUTO else sess
+    venue = _pp_feed_venue(eff)
     pr = kis.price(c, "J") or {}
     q = _pp_q.get(c) or {}
     if venue != "OT" and (not q.get("book") or time.time() - q["book"].get("at", 0) > 5 or q["book"].get("venue") != venue):
@@ -2215,11 +2254,12 @@ def paper_order_api():
     quote = {"price": (q.get("trade") or {}).get("price") or pr.get("price"), "prev_close": pr.get("prev_close"),
              "close": pr.get("price"), "upper": pr.get("upper"), "lower": pr.get("lower"),
              "asks": book.get("asks") or [], "bids": book.get("bids") or []}
-    if venue == "NX" and not cache.get_fresh(f"pp_nx_{c}") and not kis.price(c, "NX"):
+    if venue == "NX" and not nx:
         return jsonify({"error": "넥스트레이드에서 거래하지 않는 종목이에요"}), 400
     try:
-        o = PAPER.place(c, str(d.get("name") or c)[:40], str(d.get("side")), str(d.get("otype") or "limit"),
-                        d.get("price"), int(d.get("qty") or 0), sess, quote, open_day=_pp_open_day())
+        nm = str(d.get("name") or "").strip() or next((x.get("name") for x in (cache.get("kr_stocks") or []) if x.get("code") == c), "") or c
+        o = PAPER.place(c, nm[:40], str(d.get("side")), str(d.get("otype") or "limit"),
+                        d.get("price"), int(d.get("qty") or 0), sess, quote, open_day=_pp_open_day(), nxt=nx)
     except (paper.PaperError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
     st = PAPER.state()

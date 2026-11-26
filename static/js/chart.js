@@ -380,6 +380,7 @@ function _setChartType(type) {
   else _applyIndicators();   // 신호 화살표 다시 붙임
   if (range) _lwChart.timeScale().setVisibleLogicalRange(range);
   _redrawDrawings();
+  if (typeof _ppLines === 'function') _ppLines();   // 💹 평균 단가·대기 주문 선도 새 시리즈로
 }
 
 // 세로 범위: auto/log/pct는 캔들(메인 시리즈)만으로 눈금을 잡아 캔들이 화면을 채운다 — 멀리 있는
@@ -634,6 +635,8 @@ function _bindChartZoomEvents() {
       const hit = _hitTestDrawings(endX, endY);
       _selectedDrawId = hit ? hit.id : null;
       _redrawDrawings();
+      // 💹 모의투자 모드: 그림이 아닌 곳을 누르면 그 가격이 주문 가격으로 (11-26)
+      if (!hit && typeof window._ppChartClick === 'function') window._ppChartClick(_yToPrice(endY));
 
       // 터치 더블탭 — 마우스 dblclick과 동일하게 전체보기 복귀(더블클릭이 없는 터치용 대체 제스처)
       if (e.pointerType === 'touch') {
@@ -1552,6 +1555,7 @@ async function loadChart(ticker) {
   if (_compareMode) _exitCompare();   // 새 종목 로드 시 비교 모드 종료
   _currentTicker = ticker;
   document.getElementById('chart-input').value = ticker;
+  if (typeof paperOnChart === 'function') paperOnChart(ticker);   // 💹 모의투자 모드: 차트 옆 주문창 종목 바꾸기 (11-26)
 
   // 헤더 초기화
   const _idxNm = _isIndex(ticker) ? _indexNameOf(ticker) : null;
@@ -2690,8 +2694,7 @@ function _resizeChartPanels() {
   const count   = (_activeInds.has('rsi') ? 1 : 0) + (_activeInds.has('macd') ? 1 : 0) + (_activeInds.has('sto') ? 1 : 0);
   const el      = document.getElementById('lw-chart');
   const topY    = el.getBoundingClientRect().top || 280;
-  // 💹 모의투자 탭에 옮겨 붙였을 때는 화면 높이 대신 정해진 높이 (11-26)
-  const TOTAL_H = el.closest('.pp-chart-slot') ? (window.innerWidth < 760 ? 320 : 430) : Math.max(window.innerHeight - topY - 24, 300);
+  const TOTAL_H = Math.max(window.innerHeight - topY - 24, 300);
   const mainH   = Math.max(TOTAL_H - count * (PANEL_H + PANEL_GAP), 200);
   const w       = el.clientWidth || 900;
   if (_lwChart) _lwChart.resize(w, mainH);

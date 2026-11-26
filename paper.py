@@ -12,6 +12,13 @@
 - 장전 시간외(08:30~08:40)는 전일 종가, 장후 시간외(15:40~16:00)는 오늘 종가로 바로 체결.
 - 시간외 단일가(16:00~18:00, 10분마다): 실제 시간외 체결이 나올 때 그 가격으로, 지정가 조건 맞으면 체결.
 - 세션이 끝나면 남은 수량은 자동 취소(당일 주문).
+
+통합 주문 (session="auto", 11-26 — 증권사 앱처럼 시간대를 고르지 않음):
+- 주문할 때·체결을 볼 때마다 지금 시각·종목(넥스트레이드 거래 여부)으로 들어갈 세션을 고른다 (auto_session).
+  NXT 종목: 08:00~08:50 NXT 프리 → 08:50~09:00 시가 동시호가 → 정규장 → 15:20~15:30 종가 동시호가 → 15:30~20:00 NXT 애프터.
+  그 밖 종목: 08:30~08:40 시장가는 전일 종가 → 시가 동시호가 → 정규장 → 종가 동시호가 → 15:40~16:00 시장가는 오늘 종가 → 16:00~18:00 단일가.
+- 미체결 지정가는 다음 시간대로 이어진다(9시 전 주문은 시가 동시호가, 15:30 전 주문은 종가 동시호가에도 참여).
+  그날 마지막 장(NXT 종목 20:00, 그 밖 18:00)이 끝나면 취소.
 """
 import os
 import sqlite3
@@ -66,6 +73,42 @@ def open_sessions(now: datetime, open_day: bool = True) -> list[str]:
     return [k for k, v in SESSIONS.items() if _hm(v[1]) <= m < _hm(v[2])]
 
 
+AUTO = "auto"
+AUTO_NAME = "통합 주문 (시간대 자동)"
+
+
+def auto_session(now: datetime, nxt: bool, open_day: bool = True) -> str | None:
+    """통합 주문이 지금 들어갈 세션 id. 없으면 None (그 종목은 지금 거래 시간이 아님)."""
+    op = open_sessions(now, open_day)
+    if nxt and "nxt_pre" in op:
+        return "nxt_pre"
+    for k in ("regular", "auc_open", "auc_close"):
+        if k in op:
+            return k
+    if nxt and "nxt_after" in op:
+        return "nxt_after"
+    for k in ("pre_close", "post_close", "single"):
+        if k in op:
+            return k
+    return None
+
+
+def auto_last_end(nxt: bool) -> int:
+    """통합 주문이 그날 살아 있는 마지막 시각(분) — 이후 취소. 단일가는 마지막 체결 반영 여유 5분."""
+    return _hm("20:00") if nxt else _hm("18:00") + 5
+
+
+def next_open_text(now: datetime, nxt: bool) -> str:
+    m = now.hour * 60 + now.minute
+    if m < _hm("08:00") and nxt:
+        return "08:00 넥스트레이드 프리마켓부터"
+    if m < _hm("08:30"):
+        return "08:30부터 (장전 시간외·동시호가)" if not nxt else "08:00부터"
+    if not nxt and _hm("15:30") <= m < _hm("15:40"):
+        return "15:40 장후 시간외부터"
+    return "내일 " + ("08:00 넥스트레이드 프리마켓" if nxt else "08:30 장전 시간외") + "부터"
+
+
 def tick_size(price: float) -> int:
     """국내 주식 호가 단위 (2023-01 개편 뒤 코스피·코스닥 같음)."""
     for lim, t in ((2000, 1), (5000, 5), (20000, 10), (50000, 50), (200000, 100), (500000, 500)):
@@ -109,13 +152,39 @@ class Paper:
             CREATE INDEX IF NOT EXISTS ix_fills_round ON fills (round_id, ts);
             CREATE INDEX IF NOT EXISTS ix_equity_round ON equity (round_id, ts);
             """)
+            try:
+                con.execute("ALTER TABLE orders ADD COLUMN nxt INTEGER DEFAULT 0")   # 통합 주문용: 넥스트레이드 거래 종목인지
+            except sqlite3.OperationalError:
+                pass
             con.commit()
         self.last_price: dict[str, int] = {}     # 종목 → 마지막 체결가 (평가용)
+        self._auc_done: set = set()              # (날짜, 'open'|'close', 종목) — 동시호가 체결 처리 끝남
 
     def _db(self):
         con = sqlite3.connect(self.path, timeout=10)
         con.row_factory = sqlite3.Row
         return con
+
+    @staticmethod
+    def eff_session(o, now: datetime | None = None, open_day: bool = True) -> str | None:
+        """주문이 지금 속한 세션 — 통합 주문이면 시각 따라, 아니면 주문할 때 고른 세션."""
+        if o["session"] != AUTO:
+            return o["session"]
+        return auto_session(now or now_kst(), bool(o["nxt"]), open_day)
+
+    def _hold_for_auction(self, o, now: datetime) -> bool:
+        """9시 전(15:30 전)에 낸 통합 주문은 그 동시호가 가격이 처리되기 전까지(최대 5분) 연속 매매로 체결하지 않음.
+        (안 그러면 9시 직후 들어온 정규장 시세로 지정가에 먼저 체결돼 버림 — 11-26 장중 시험에서 발견)"""
+        if o["session"] != AUTO:
+            return False
+        m = now.hour * 60 + now.minute
+        day = now.strftime("%Y-%m-%d")
+        day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if 540 <= m < 545 and o["ts"] < (day0 + timedelta(hours=9)).timestamp():
+            return (day, "open", o["code"]) not in self._auc_done
+        if 930 <= m < 935 and o["ts"] < (day0 + timedelta(hours=15, minutes=30)).timestamp():
+            return (day, "close", o["code"]) not in self._auc_done
+        return False
 
     # ── 회차 ─────────────────────────────────────────────────────────────
     def _round(self, con) -> sqlite3.Row | None:
@@ -172,16 +241,24 @@ class Paper:
 
     # ── 주문 ─────────────────────────────────────────────────────────────
     def place(self, code: str, name: str, side: str, otype: str, price: int | None, qty: int, session: str,
-              quote: dict, now: datetime | None = None, open_day: bool = True) -> dict:
+              quote: dict, now: datetime | None = None, open_day: bool = True, nxt: bool = False) -> dict:
         """주문 접수 → 바로 체결 가능한 만큼 체결. quote = {price, prev_close, close, upper, lower, asks, bids}.
         반환: 주문 행(dict)."""
         now = now or now_kst()
         side, otype = side.lower(), otype.lower()
         if side not in ("buy", "sell") or otype not in ("limit", "market"):
             raise PaperError("주문 종류가 잘못됨")
-        if session not in open_sessions(now, open_day):
+        eff = session
+        if session == AUTO:
+            eff = auto_session(now, nxt, open_day)
+            if not eff:
+                raise PaperError("지금은 거래 시간이 아니에요 — " + next_open_text(now, nxt) if open_day and now.weekday() < 5
+                                 else "오늘은 장이 열리지 않아요")
+        elif session not in open_sessions(now, open_day):
             raise PaperError(f"지금은 {SESSIONS.get(session, ('이 세션',))[0]} 시간이 아님")
-        kind = SESSIONS[session][3]
+        kind = SESSIONS[eff][3]
+        if session == AUTO and kind in ("close_prev", "close_today") and otype == "limit":
+            kind = "wait"        # 통합 지정가는 시간외 종가가 아니라 다음 동시호가·단일가를 기다림
         qty = int(qty)
         if qty <= 0:
             raise PaperError("수량은 1주 이상")
@@ -191,7 +268,7 @@ class Paper:
                 raise PaperError("기준 종가를 아직 모름")
             otype, price = "limit", int(ref)
         elif kind == "single" and otype == "market":
-            raise PaperError("시간외 단일가는 지정가만")
+            raise PaperError("시간외 단일가 시간(16:00~18:00)엔 지정가만 돼요")
         if otype == "limit":
             price = int(price or 0)
             if price <= 0:
@@ -222,16 +299,16 @@ class Paper:
                 have = (pos["qty"] if pos else 0) - res_qty.get(code, 0)
                 if qty > have:
                     raise PaperError(f"매도 가능 수량 부족 (가능 {max(0, have):,}주)")
-            cur = con.execute("INSERT INTO orders (round_id, ts, code, name, side, otype, price, qty, session, status, day)"
-                              " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                              (r["id"], time.time(), code, name, side, otype, price, qty, session, "open", now.strftime("%Y-%m-%d")))
+            cur = con.execute("INSERT INTO orders (round_id, ts, code, name, side, otype, price, qty, session, status, day, nxt)"
+                              " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                              (r["id"], now.timestamp(), code, name, side, otype, price, qty, session, "open", now.strftime("%Y-%m-%d"), int(bool(nxt))))
             con.commit()
             oid = cur.lastrowid
         if quote.get("price"):
             self.last_price[code] = int(quote["price"])
         # 바로 체결
         if kind == "cont":
-            self.on_book(code, SESSIONS[session][4], quote.get("asks") or [], quote.get("bids") or [], quote.get("price"))
+            self.on_book(code, SESSIONS[eff][4], quote.get("asks") or [], quote.get("bids") or [], quote.get("price"))
         elif kind in ("close_prev", "close_today"):
             self._fill_order(oid, int(price), qty)
         return self.order(oid)
@@ -341,10 +418,10 @@ class Paper:
 
     def _cont_orders(self, code: str, venue: str) -> list:
         """이 종목의 연속 매매 미체결 주문 — 정규장 주문(UN)은 통합 시세로, 넥스트레이드 주문(NX)은 NX 시세로만 체결."""
-        out = []
+        out, now = [], now_kst()
         for o in self.open_orders(code):
-            s = SESSIONS.get(o["session"])
-            if not s or s[3] != "cont":
+            s = SESSIONS.get(self.eff_session(o, now))
+            if not s or s[3] != "cont" or self._hold_for_auction(o, now):
                 continue
             if s[4] == venue:
                 out.append(o)
@@ -387,16 +464,25 @@ class Paper:
         """실제 체결이 들어왔을 때. kind: cont(연속)·open(9시 첫 체결)·close(종가 확정)·single(시간외 단일가 체결)."""
         price = int(price)
         self.last_price[code] = price
-        fills = []
+        fills, now = [], now_kst()
+        day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        t_open, t_close = (day0 + timedelta(hours=9)).timestamp(), (day0 + timedelta(hours=15, minutes=30)).timestamp()
         for o in self.open_orders(code):
-            s = SESSIONS.get(o["session"])
-            if not s:
+            auto = o["session"] == AUTO
+            s = SESSIONS.get(self.eff_session(o, now))
+            if not s and not auto:
                 continue
-            k = s[3]
+            k = s[3] if s else None
+            if auto and kind == "open" and o["ts"] < t_open:      # 9시 전에 낸 통합 주문은 시가 동시호가에 참여
+                k = "auc_open"
+            elif auto and kind == "close" and o["ts"] < t_close:  # 15:30 전 통합 주문은 종가 동시호가에 참여
+                k = "auc_close"
+            elif auto and kind == "single" and not o["nxt"]:     # 18:00 마지막 단일가 체결이 늦게 잡혀도 반영
+                k = "single"
             left = o["qty"] - o["filled"]
             lim = o["price"]
             ok = lim is None or (o["side"] == "buy" and price <= lim) or (o["side"] == "sell" and price >= lim)
-            if kind == "cont" and k == "cont" and s[4] == venue and lim is not None:
+            if kind == "cont" and k == "cont" and s and s[4] == venue and lim is not None and not self._hold_for_auction(o, now):
                 # 지정가보다 유리한 가격에 체결이 났으면 내 주문도 그 가격(=지정가)에 다 체결, 같은 가격이면 그 수량만큼
                 if (o["side"] == "buy" and price < lim) or (o["side"] == "sell" and price > lim):
                     f = self._fill_order(o["id"], lim, left)
@@ -414,6 +500,8 @@ class Paper:
                 f = None
             if f:
                 fills.append(f)
+        if kind in ("open", "close"):
+            self._auc_done.add((now.strftime("%Y-%m-%d"), kind, code))
         return fills
 
     def expire(self, now: datetime | None = None, open_day: bool = True) -> int:
@@ -424,9 +512,13 @@ class Paper:
         n = 0
         with self._lock, closing(self._db()) as con:
             for o in con.execute("SELECT * FROM orders WHERE status='open'").fetchall():
-                s = SESSIONS.get(o["session"])
-                grace = 5 if s and s[3] in ("auc_open", "auc_close", "single") else 0
-                if o["day"] != today or not s or m >= _hm(s[2]) + grace:
+                if o["session"] == AUTO:
+                    gone = o["day"] != today or m >= auto_last_end(bool(o["nxt"]))
+                else:
+                    s = SESSIONS.get(o["session"])
+                    grace = 5 if s and s[3] in ("auc_open", "auc_close", "single") else 0
+                    gone = o["day"] != today or not s or m >= _hm(s[2]) + grace
+                if gone:
                     con.execute("UPDATE orders SET status=?, reason='세션 종료' WHERE id=?",
                                 ("cancelled" if o["filled"] == 0 else "partial", o["id"]))
                     n += 1
