@@ -63,11 +63,12 @@ function _csRender() {
   const chips = s.presets.map(p => {
     const r = s.results[p.id];
     const n = r ? r.hits.length : (s.last_day && s.last_day[p.id] ? s.last_day[p.id].hits.length : null);
-    return `<button type="button" class="cs-chip${p.id === _csSel ? ' on' : ''}" onclick="_csSelect('${p.id}')">
+    return `<button type="button" class="cs-chip${p.id === _csSel ? ' on' : ''}" onclick="_csSelect('${p.id}')" title="${n ? '지금 ' + n + '종목' : '지금 잡힌 종목 없음'}">
       <span class="cs-kind cs-kind-${p.kind === '스윙' ? 'swing' : 'day'}">${p.kind}</span>
-      <b>${_csEsc(p.alias)}</b>${n != null ? `<span class="cs-n">${n}</span>` : ''}</button>`;
+      <b>${_csEsc(p.alias)}</b><span class="cs-n${n ? '' : ' cs-n-zero'}">${n || 0}</span></button>`;
   }).join('');
   document.getElementById('cs-presets').innerHTML = chips;
+  _csBadge(s);
 
   const p = s.presets.find(x => x.id === _csSel);
   const r = s.results[p.id];
@@ -163,3 +164,33 @@ function _csRenderHist(id) {
 function _csOpen(code, ticker) {
   navigateToChart(ticker || resolveTickerInput(code, 'kr') || code + '.KS');
 }
+
+// ── 오른쪽 메뉴 🎯 아이콘에 지금 잡힌 종목 수 (11-27) — 다른 탭에 있어도 1분마다 ──
+function _csTotal(s) {
+  return Object.values(s.results || {}).reduce((a, r) => a + ((r.hits || []).length), 0);
+}
+
+function _csBadge(s) {
+  const n = s ? _csTotal(s) : 0;
+  document.querySelectorAll('.nav-btn[data-view="cond"], #nav-more-sheet button[data-view="cond"], #nav-more-btn').forEach(btn => {
+    let b = btn.querySelector('.cs-nav-count');
+    if (!b) {
+      b = document.createElement('span');
+      b.className = 'wl-count-badge cs-nav-count';
+      btn.appendChild(b);
+    }
+    b.textContent = n > 99 ? '99+' : String(n);
+    b.style.display = n ? '' : 'none';
+    if (btn.id !== 'nav-more-btn') btn.title = n ? `조건검색 — 지금 ${n}종목` : '조건검색';
+  });
+}
+
+async function _csBadgeTick() {
+  if (typeof _currentView !== 'undefined' && _currentView === 'cond') return;   // 탭 안에서는 _csLoad가 갱신
+  try {
+    const r = await fetch('/api/cond-search');
+    _csBadge(await r.json());
+  } catch (e) { /* 다음 번에 */ }
+}
+setTimeout(_csBadgeTick, 4000);
+setInterval(_csBadgeTick, 60000);

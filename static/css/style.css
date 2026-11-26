@@ -254,6 +254,8 @@ header {
   .nav-label { position: static; transform: none; opacity: 1; background: none; color: inherit; font-size: 10.5px; font-weight: 500; padding: 0; }
   .nav-label::after { display: none; }
   .nav-btn .wl-count-badge { top: 2px; right: calc(50% - 22px); }
+  .nav-btn-more { position: relative; }
+  .nav-btn-more .wl-count-badge { position: absolute; top: 2px; right: calc(50% - 22px); margin: 0; font-size: 9.5px; line-height: 15px; padding: 0 4px; }   /* 🎯 조건검색 수 (11-27) */
   .nav-more-sheet:not([hidden]) {
     display: grid; grid-template-columns: 1fr 1fr; gap: 4px; position: fixed; right: 8px; z-index: 95;
     bottom: calc(66px + env(safe-area-inset-bottom)); width: 270px; padding: 8px;
@@ -1444,6 +1446,7 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .cs-kind-swing { color: var(--accent); }
 .cs-n { min-width: 20px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
   background: var(--up-bg); color: var(--up); }
+.cs-n-zero { background: transparent; color: var(--muted); font-weight: 500; }
 .cs-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
 .cs-desc { line-height: 1.5; }
 .cs-tag { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--up); color: var(--up); margin-right: 4px; }
