@@ -66,3 +66,7 @@ data/dart_corp_codes.json
 data/news_translations.json
 data/news_translations.json.tmp
 data/paper.sqlite
+
+# Codex용 규칙 사본 (11-18 자동 생성, 아직 안 씀 — 나중에 쓸 때 최신 CLAUDE.md로 다시 맞출 것)
+AGENTS.md
+.agents/
