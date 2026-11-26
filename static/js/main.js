@@ -545,6 +545,7 @@ function switchView(name) {
   }
   if (name !== 'chart'     && typeof stopChartTimers       === 'function') stopChartTimers();
   if (name !== 'portfolio' && typeof stopPortfolioRefresh  === 'function') stopPortfolioRefresh();
+  if (name !== 'cond'      && typeof stopCondSearch        === 'function') stopCondSearch();
 
   // 첫 진입 시 각 탭 초기화 (스크리너는 매번 재로드)
   if (name === 'screener')                        { initScreener();  _screenerInited  = true; }
@@ -556,6 +557,7 @@ function switchView(name) {
   // 워치리스트는 진입할 때마다 최신 데이터로 갱신
   if (name === 'watchlist')  { initWatchlist();  _watchlistInited  = true; }
   if (name === 'portfolio')  { initPortfolio(); _portfolioInited  = true; }
+  if (name === 'cond' && typeof initCondSearch === 'function') initCondSearch();   // 🎯 조건검색 (11-26)
   if (typeof paperOnView === 'function') paperOnView(name);   // 💹 모의투자: 차트를 옮겨 붙이고, 나가면 되돌림 (11-26)
   _rtSubscribe();   // 탭을 바꾸면 보는 종목도 바로 알려준다
 }

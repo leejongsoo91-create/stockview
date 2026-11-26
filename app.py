@@ -20,6 +20,7 @@ from cache import Cache
 import data_fetcher as df
 import kis
 import paper
+import condsearch as cs
 from collections import deque
 
 PE_EPS_FILE  = os.path.join(os.path.dirname(__file__), "data", "pe_eps_cache.json")
@@ -1158,6 +1159,60 @@ def refresh_daily_signals():
         log.error(f"refresh_daily_signals 실패: {e}")
 
 
+# ── 🎯 조건검색기 (11-26) ── 사용자 조건검색식 프리셋을 장중 5분마다(시가급등예상은 08:30~09:00 2분마다). condsearch.py
+def _cond_names() -> dict:
+    return {r.get("code") or df.kr_code(r.get("ticker")): r.get("name") for r in (cache.get("kr_stocks") or [])}
+
+
+def refresh_cond_daily():
+    """조건검색용 일봉·전일 분봉 — 평일 아침 한 번 (오늘 저장 파일이 있으면 그것을 씀)."""
+    if paper.now_kst().weekday() >= 5 or not _pp_open_day():
+        return
+    rows, quotes = cache.get("kr_stocks") or [], cache.get("kr_quotes") or {}
+    if len(rows) < 1000:
+        log.info("조건검색 일봉: 종목 목록이 아직 없어 나중에")
+        return
+    uni = {}
+    for r in rows:
+        code = r.get("code") or df.kr_code(r.get("ticker"))
+        kind = r.get("kind") or (quotes.get(code) or {}).get("kind")
+        if kind and cs.is_common(code, r.get("name"), kind):
+            uni[code] = (r["ticker"], r.get("name"))
+    cs.load_daily(uni)
+
+
+def refresh_cond_scan():
+    if not df.regular_session_now("KR") or not _pp_open_day():
+        return
+    if not cs.loaded_today():
+        if cs.LOAD["state"] != "받는 중":
+            threading.Thread(target=refresh_cond_daily, daemon=True).start()
+        return
+    quotes = cache.get("kr_quotes") or {}
+    if len(quotes) < 2500:
+        return
+    cs.scan(quotes, _cond_names())
+    _emit_queue.put(("cond_update", {"ts": cs.SCAN["ts"]}))
+
+
+def refresh_cond_gap():
+    now = paper.now_kst()
+    hm = now.hour * 60 + now.minute
+    if not (480 <= hm <= 930) or now.weekday() >= 5 or not _pp_open_day() or not cs.loaded_today():
+        return
+    cs.scan_gap(cache.get("kr_quotes") or {}, _cond_names())
+    _emit_queue.put(("cond_update", {"ts": time.time()}))
+
+
+def refresh_cond_pre():
+    now = paper.now_kst()
+    hm = now.hour * 60 + now.minute
+    if not (510 <= hm < 540) or now.weekday() >= 5 or not _pp_open_day() or not kis.enabled():
+        return
+    cs.scan_pre(cache.get("kr_quotes") or {}, _cond_names())
+    _emit_queue.put(("cond_update", {"ts": time.time()}))
+
+
 def _compute_market_mood(items: list[dict]) -> dict:
     """뉴스/리포트 감성 분포 -> Market Mood (긍정/부정/중립 비율 + 라벨). /api/brief와 refresh_voice_briefing 공용."""
     sentiments = [i.get("sentiment", "neutral") for i in items]
@@ -1316,6 +1371,7 @@ def initial_load():
     _start_after(120, lambda: refresh_report_lists(force=True))
     _start_after(150, lambda: refresh_dart(force=True))
     _start_after(180, lambda: refresh_finra_short())
+    _start_after(200, refresh_cond_daily)   # 🎯 조건검색: 오늘 일봉 (저장 파일이 있으면 바로)
     _start_after(6,  refresh_fear_greed)
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
@@ -1494,6 +1550,10 @@ for _slot, _t in _US_SNAPS:   # 미국 시장 누적 거래량·거래대금: �
     _scheduler.add_job(record_us_market_flow, "cron", day_of_week="mon-fri", hour=_t // 60, minute=_t % 60,
                        timezone="America/New_York", id=f"market_flow_us_{_slot}", args=[_slot])
 _scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
+_scheduler.add_job(refresh_cond_daily, "cron", day_of_week="mon-fri", hour=7, minute=30, timezone="Asia/Seoul", id="cond_daily")
+_scheduler.add_job(refresh_cond_gap,   "cron", day_of_week="mon-fri", hour="8-15", minute="1-51/10", timezone="Asia/Seoul", id="cond_gap")
+_scheduler.add_job(refresh_cond_scan,  "cron", day_of_week="mon-fri", hour="9-15", minute="1-56/5", timezone="Asia/Seoul", id="cond_scan")
+_scheduler.add_job(refresh_cond_pre,   "cron", day_of_week="mon-fri", hour=8, minute="30-58/2", timezone="Asia/Seoul", id="cond_pre")
 if VOICE_BRIEFING_ENABLED:
     _scheduler.add_job(refresh_voice_briefing, "interval", hours=24, id="voice_briefing")
 
@@ -2297,6 +2357,18 @@ def paper_reset_api():
 @app.route("/api/paper/rounds")
 def paper_rounds_api():
     return jsonify(PAPER.rounds())
+
+
+@app.route("/api/cond-search")
+def cond_search_api():
+    """🎯 조건검색 — 프리셋·최근 결과·준비 상태 (11-26)."""
+    return jsonify(cs.state())
+
+
+@app.route("/api/cond-search/history")
+def cond_search_history_api():
+    days = min(max(int(request.args.get("days", 20) or 20), 1), 120)
+    return jsonify(cs.history(request.args.get("preset") or None, days))
 
 
 def _macro_item(hist: list, freq: str, yoy: bool = False) -> dict:

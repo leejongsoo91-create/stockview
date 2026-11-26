@@ -208,6 +208,47 @@ def overtime_book(code: str) -> dict | None:
             "total_ask": _i(o.get("ovtm_untp_total_askp_rsqn")), "total_bid": _i(o.get("ovtm_untp_total_bidp_rsqn"))}
 
 
+# ── 조건검색용 (11-26, condsearch.py) ─────────────────────────────────────────
+def stock_status(code: str) -> dict | None:
+    """종목 상태 {관리·투자위험·투자경고·투자주의·거래정지·정리매매·환기·단기과열: bool} (KRX 현재가 조회의 구분 값)."""
+    j = get(_Q + "inquire-price", "FHKST01010100", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    o = (j or {}).get("output") or {}
+    if not o:
+        return None
+    st, warn = o.get("iscd_stat_cls_code") or "", o.get("mrkt_warn_cls_code") or "00"
+    return {"관리": o.get("mang_issu_cls_code") == "Y" or st == "51",
+            "투자위험": warn == "03" or st == "52",
+            "투자경고": warn == "02" or st == "53",
+            "투자주의": warn == "01" or st == "54",
+            "거래정지": o.get("temp_stop_yn") == "Y" or st == "58",
+            "정리매매": o.get("sltr_yn") == "Y",
+            "환기": o.get("invt_caful_yn") == "Y",          # 투자주의환기종목 (투자유의 여부 값으로 판정)
+            "단기과열": o.get("short_over_yn") == "Y" or st == "59"}
+
+
+def strength(code: str) -> float | None:
+    """체결강도 % (KRX 최근 체결의 당일 체결강도)."""
+    j = get(_Q + "inquire-ccnl", "FHKST01010300", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    rows = (j or {}).get("output") or []
+    return _f(rows[0].get("tday_rltv")) if rows else None
+
+
+def expected_rank(market: str, min_vol: int = 0) -> list[dict]:
+    """장 시작 전 예상체결 상승률 상위 30 (market: '0001' 코스피 · '1001' 코스닥).
+    [{code, name, price(예상체결가), base(기준가), rate(%), vol(예상체결량)}]"""
+    j = get("/uapi/domestic-stock/v1/ranking/exp-trans-updown", "FHPST01820000", {
+        "fid_rank_sort_cls_code": "0", "fid_cond_mrkt_div_code": "J", "fid_cond_scr_div_code": "20182",
+        "fid_input_iscd": market, "fid_div_cls_code": "0", "fid_aply_rang_prc_1": "", "fid_vol_cnt": str(min_vol or ""),
+        "fid_pbmn": "", "fid_blng_cls_code": "0", "fid_mkop_cls_code": "0"})
+    out = []
+    for x in (j or {}).get("output") or []:
+        code, price = x.get("stck_shrn_iscd"), _i(x.get("stck_prpr"))
+        if code and price:
+            out.append({"code": code, "name": (x.get("hts_kor_isnm") or "").strip(), "price": price,
+                        "base": _i(x.get("stck_sdpr")), "rate": _f(x.get("prdy_ctrt")), "vol": _i(x.get("cntg_vol"))})
+    return out
+
+
 _holi: dict[str, bool] = {}
 
 

@@ -31,6 +31,7 @@
 | `data_fetcher.py` (~3,590줄) | 공통 | 모든 외부 수집·파싱·신호 계산·음성 브리핑. `# ── 섹션명 ──` 헤더로 구분, **모듈 분리 금지** |
 | `kis.py` | KR | 한국투자증권 KIS Open API **조회 전용**(11-26) — 토큰 파일 캐시(`api/kis_token_real.json`), 초당 약 3건이라 0.35초 간격 줄 세우기. 공매도·신용잔고·투자자별. 주문 함수 없음 |
 | `paper.py` | KR | 💹 모의투자 가상계좌(11-26) — 세션·통합 주문(시간대 자동 `auto_session`)·호가 단위·체결 계산·회차·평가. `data/paper.sqlite`. 결정 009 |
+| `condsearch.py` | KR | 🎯 조건검색기(11-26) — 사용자 조건검색식 프리셋 12개(단타: 시가급등예상·시초가 갭상승·떡상이·떡상이 마이너스·오돌이·오돌이(중대장)·DayUp 오돌이·5분봉강지세력주 / 스윙: 역매공파1·역매공파224·스중필터링안정화·파캔장), 조건식(and/or) 해석, 참/거짓/모름 3단 거르기(시세+일봉 → 후보 네이버 1분봉 → 마지막 후보 KIS), 잡힌 기록·수익. `data/cond_daily.json.gz`(아침 일봉 요약)·`data/cond_hits.sqlite` |
 | `cache.py` | 공통 | Thread-Safe TTL 캐시 (stale-while-revalidate, 200회마다 방치 항목 정리) |
 | `templates/index.html` | 공통 | SPA 단일 HTML (10탭, 💹 모의투자 11-26) |
 | `static/js/main.js` | 공통 | 뷰 전환, 홈, 뉴스, 소켓, 공용 헬퍼(`signalBadgeHtml`, `makeNotesStore`, CSV 등) |
@@ -41,6 +42,7 @@
 | `static/js/watchlist.js` / `portfolio.js` | 공통 | localStorage 기반 관심종목 / 손익 |
 | `static/js/earnings.js` | US | 실적 캘린더 |
 | `static/js/paper.js` | KR | 💹 모의투자 모드 — 헤더 ON/OFF 스위치, 켜면 차트 탭 옆 호가·주문(차트 클릭 = 주문 가격, 평균 단가·대기 주문 선), 휴대폰은 아래 시트. 💹 탭은 계좌·회차. chart.js `loadChart`가 `paperOnChart`, 차트 클릭이 `_ppChartClick` 호출 |
+| `static/js/condsearch.js` | KR | 🎯 조건검색 탭 — 프리셋 칩·거르기 단계 수·결과 표(누르면 차트)·조건식·📒 잡힌 기록(당일·1·3·5일 수익, 승률). 탭에 있을 때 30초마다 새로 받음 |
 | `static/css/style.css` | 공통 | 다크/라이트 테마 전체 (섹션 순서 규칙은 `.claude/rules/css.md`) |
 | `scripts/*.py` | — | 수동 실행 도구 (수집·백테스트). **app.py에서 import 금지** |
 | `data/kr_stocks.json` | KR | 국내주식 기본 데이터 4,318종목(주식·ETF·ETN, 11-09 생성). `scripts/fetch_kr_stocks.py`(약 2~3분, `--dry-run`은 비교만)로 재생성 — 목록·시총 네이버 `marketValue`, 업종 네이버 `industry`, PER/EPS `integration`, 52주 Yahoo. 종목코드는 영문 섞인 신규 코드(`0126Z0`) 포함 → 코드 추출은 `df.kr_code()` |
@@ -80,6 +82,10 @@
 | `refresh_daily_signals` | 24시간 | 시작 240초 후. **그 전까지 신호 관련 API는 비어 있음(정상)** |
 | `refresh_voice_briefing` | 24시간 | **기본 꺼짐** (`VOICE_BRIEFING_ENABLED = False`, 꺼지면 등록 자체를 안 함). 켜면 시작 270초 후, 오늘 생성분 있으면 재사용 |
 | `refresh_dynamic_indices` | 1주 | |
+| `refresh_cond_daily` | 평일 07:30 KST + 시작 200초 뒤(오늘 파일 없으면) | 🎯 조건검색용 국내 보통주 약 2,660종목 일봉 4년(야후)→최근 140봉+지수이평 시작값(5~600), 전 거래일 1분봉(네이버)→5분봉 OHLCV·분별 누적 거래량. 4개씩 병렬로 약 7~9분. `data/cond_daily.json.gz` |
+| `refresh_cond_scan` | 평일 09:01~15:26 5분마다 (정규장·개장일만) | 장중 프리셋 10개 검색. 후보만 네이버 오늘 1분봉(최대: 떡상이 500·나머지 300), 세력주 후보는 전 3거래일 5분봉(하루 한 번), 마지막 후보 프리셋당 40개까지 KIS(종목 상태 하루 한 번·체결강도·호가)·재무(네이버 연간+DART 이자, 하루 한 번). `cond_update` |
+| `refresh_cond_gap` | 평일 08:01~15:21 10분마다 | 시초가 갭상승 — 어제 5%↑ 종목의 오늘 첫 체결(넥스트 08:00 / 정규장 09:00, 네이버 1분봉) ≥ 어제 종가 +2% |
+| `refresh_cond_pre` | 평일 08:30~08:58 2분마다 | 시가급등예상 — KIS 예상체결 상승률 순위(코스피·코스닥 각 30, 예상 거래량 5만 주↑) |
 
 서버 시작 시 `initial_load()`가 작업들을 2~4초 간격으로 시차 실행한다.
 
@@ -92,6 +98,7 @@
 | 뉴스·공시 | `/api/news`(항목에 `category`, 번역됐으면 `title_ko`), `/api/news/translation`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>` |
 | Brief·신호 | `/api/brief`, `/api/daily-signals`, `/api/volume-surges`, `/api/candle-patterns`, `/api/rsi-divergence`, `/api/52w-movers`, `/api/earnings-signals`, `/api/fear-greed`, `/api/voice-briefing`, `/api/voice-briefing/audio/<file>` |
 | 수급 | `/api/flow-stock/<ticker>`(미국), `/api/kr-flow/<code>`(국내, KIS 공매도·신용·투자자별, 6시간 캐시, 키 없는 서버는 집 서버 값) |
+| 조건검색 | `/api/cond-search`(프리셋·결과·준비 상태, 장 밖에 재시작했으면 `last_day`), `/api/cond-search/history?preset=&days=`(잡힌 기록·수익). 키움과 다를 수 있는 점: 과거 거래대금은 종가×거래량 근사, 일목 선행스팬은 25봉 전 계산값, 환기종목은 KIS `invt_caful_yn`으로 판정, 이자보상배율은 DART 영업이익 ÷ 현금흐름표 이자 지급, 재무 PER = 현재가 ÷ 최근 연간 EPS, 파라볼릭 SAR은 최근 140봉(5분봉은 3거래일)부터 계산 |
 | 모의투자 | `/api/paper/state`, `/api/paper/quote/<code>`, `/api/paper/rounds`, POST `/api/paper/order`(세션 생략 = 통합 주문 auto)·`cancel`·`reset`(헤더 `X-StockView: paper` 필수). quote에 `phase`(지금 장·끝나는 시각·안내). 소켓: 보내기 `paper_watch`, 받기 `paper_book`·`paper_tick`·`paper_fill`·`paper_acct`. 환경변수 `STOCKVIEW_KIS_WS=1`(웹소켓, 한 서버만), 시험용 `STOCKVIEW_PAPER_NOW`·`STOCKVIEW_PAPER_DB` |
 | 캘린더 | `/api/earnings`, `/api/economic-calendar` |
 | 운영 | `/api/cache/status` |
@@ -99,7 +106,7 @@
 신호 계열(`daily-signals`, `volume-surges`, `candle-patterns`, `rsi-divergence`, `52w-movers`, `earnings-signals`)은 전부 `daily_signals` 캐시 하나에서 파생된다.
 
 ## 5. 브라우저 저장소 (localStorage)
-`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
+`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `stockview_cs_sel`(조건검색 마지막 프리셋) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
 
 ## 6. 외부 데이터 소스 주의사항
 

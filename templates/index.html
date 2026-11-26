@@ -36,6 +36,7 @@
   <nav id="main-nav" aria-label="탭 메뉴">
     <button class="nav-btn active" data-view="home" aria-label="홈"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="nav-label">홈</span></button>
     <button class="nav-btn" data-view="screener" aria-label="종목검색"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg><span class="nav-label">종목검색</span></button>
+    <button class="nav-btn nav-more" data-view="cond" aria-label="조건검색"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.8"/></svg><span class="nav-label">조건검색</span></button>
     <button class="nav-btn nav-more" data-view="heatmap" aria-label="히트맵"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/></svg><span class="nav-label">히트맵</span></button>
     <button class="nav-btn" data-view="chart" aria-label="차트"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M17 4v16"/><rect x="5" y="8" width="4" height="7" rx="1"/><rect x="15" y="6" width="4" height="9" rx="1"/></svg><span class="nav-label">차트</span></button>
     <span class="nav-sep"></span>
@@ -1065,6 +1066,15 @@
 
     <!-- ─── EARNINGS ─────────────────────────────────────────────────── -->
     <!-- 💹 모의투자 (11-26) — 사이트 자체 가상계좌 + KIS 실시간 호가(조회만). paper.js -->
+    <div id="view-cond" class="view">
+      <div class="cs-band">
+        <b>🎯 조건검색</b>
+        <span id="cs-status" class="cs-status"></span>
+      </div>
+      <div id="cs-presets" class="cs-presets" role="tablist" aria-label="조건검색 프리셋"></div>
+      <div id="cs-body"></div>
+    </div>
+
     <div id="view-paper" class="view">
       <div class="pp-band">
         <b>모의투자 — 실제 돈이 아닙니다</b>
@@ -1238,5 +1248,6 @@
   <script src="/static/js/portfolio.js"></script>
   <script src="/static/js/earnings.js"></script>
   <script src="/static/js/paper.js"></script>
+  <script src="/static/js/condsearch.js"></script>
 </body>
 </html>
