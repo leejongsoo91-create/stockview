@@ -545,7 +545,7 @@ function switchView(name) {
   }
   if (name !== 'chart'     && typeof stopChartTimers       === 'function') stopChartTimers();
   if (name !== 'portfolio' && typeof stopPortfolioRefresh  === 'function') stopPortfolioRefresh();
-  if (name !== 'cond'      && typeof stopCondSearch        === 'function') stopCondSearch();
+  if (name !== 'cond'      && typeof stopCondSearch        === 'function' && !document.body.classList.contains('cs-dock')) stopCondSearch();
 
   // 첫 진입 시 각 탭 초기화 (스크리너는 매번 재로드)
   if (name === 'screener')                        { initScreener();  _screenerInited  = true; }
@@ -2831,18 +2831,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // 탭 클릭
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', e => {
+      // 🎯 조건검색은 데스크톱에서 옆 패널로 (보던 화면 유지, 11-27)
+      if (btn.dataset.view === 'cond' && typeof toggleCondDock === 'function' && window.innerWidth > 760) {
+        toggleCondDock();
+        if (e.detail > 0) btn.blur();
+        return;
+      }
       _currentView = btn.dataset.view;
       switchView(btn.dataset.view);
       if (e.detail > 0) btn.blur();   // 마우스·손가락으로 누른 뒤엔 이름 말풍선이 남지 않게 (키보드 Enter는 초점 유지)
     });
   });
 
-  // 🎯 조건검색 새 창 (#cond-pop, 11-27) — 머리줄·탭 막대 없이 조건검색만. 종목을 누르면 띄운 창(opener)의 차트로
-  const _csPop = window.location.hash === '#cond-pop';
-  if (_csPop) document.body.classList.add('cs-pop');
-
-  // 홈 초기 로드 (조건검색 새 창은 홈을 안 그림)
-  if (!_csPop) loadHome().then(updateTimestamp);
+  // 홈 초기 로드
+  loadHome().then(updateTimestamp);
   loadEarnSoon(); setInterval(loadEarnSoon, 60 * 60 * 1000);   // 실적 임박 배지 (11-25)
 
   // 시장 상태 배지 — 1분마다 갱신 (ET 시간 변동 반영)
@@ -2862,8 +2864,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // URL hash로 탭 직접 진입 (예: #screener, #heatmap)
   const _hash = window.location.hash.slice(1);
   const _views = ['home','screener','heatmap','chart','news','brief','earnings','watchlist','portfolio','cond'];
-  if (_csPop) { switchView('cond'); document.title = '🎯 조건검색 — StockView'; }
-  else if (_hash && _views.includes(_hash)) switchView(_hash);
+  if (_hash && _views.includes(_hash)) switchView(_hash);
 
   // 글로벌 검색 초기화
   initGlobalSearch();

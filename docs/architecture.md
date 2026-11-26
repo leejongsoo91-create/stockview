@@ -108,7 +108,7 @@
 신호 계열(`daily-signals`, `volume-surges`, `candle-patterns`, `rsi-divergence`, `52w-movers`, `earnings-signals`)은 전부 `daily_signals` 캐시 하나에서 파생된다.
 
 ## 5. 브라우저 저장소 (localStorage)
-`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `stockview_cs_sel`(조건검색 마지막 프리셋) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
+`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `stockview_cs_sel`(조건검색 마지막 프리셋) · `stockview_cs_dock`(조건검색 옆 패널 열림) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
 
 ## 6. 외부 데이터 소스 주의사항
 - **네이버 1분봉에는 08:00~08:50 넥스트 프리마켓 구간이 없다**(11-27 확인 — 오늘·어제 모두 09:00부터, 애프터 15:30~20:00은 있음). 프리마켓 분봉은 KIS `inquire-time-itemchartprice`에 `FID_COND_MRKT_DIV_CODE=NX`(체결강도 `inquire-ccnl`도 프리마켓엔 J가 빈 값, NX로).

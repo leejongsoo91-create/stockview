@@ -163,24 +163,42 @@ function _csRenderHist(id) {
 
 function _csOpen(code, ticker) {
   const t = ticker || resolveTickerInput(code, 'kr') || code + '.KS';
-  // 새 창(#cond-pop)이면 띄운 원래 창의 차트를 바꾼다 — 검색 목록은 이 창에 그대로 (11-27)
-  if (document.body.classList.contains('cs-pop')) {
-    try {
-      const o = window.opener;
-      if (o && !o.closed && typeof o.navigateToChart === 'function') { o.navigateToChart(t); o.focus(); return; }
-    } catch (e) { /* 원래 창이 다른 주소로 바뀐 경우 — 아래로 */ }
-    document.body.classList.remove('cs-pop');   // 원래 창이 없으면 이 창에서 차트 (탭 막대도 다시 보이게)
-  }
-  navigateToChart(t);
+  navigateToChart(t);   // 옆 패널이면 패널은 그대로, 왼쪽이 차트로
 }
 
-// "↗ 새 창" — 조건검색만 따로 띄워 차트 옆에 두고 본다. 같은 이름 창이 있으면 그 창을 앞으로
-function _csPopOpen() {
-  const w = window.open('/#cond-pop', 'stockview-cond', 'popup,width=820,height=920');
-  if (w) w.focus();
+// ── 옆 패널 (11-27, 사용자 "창이 넘어가지 않고 사이트 안에서 열리게 — 거래할 때 차트랑 같이") ──
+// 데스크톱(761px~)에서 🎯 메뉴 = 패널 열기/닫기. 휴대폰은 예전처럼 탭 전환. 열림 상태는 기억(새로고침해도 유지)
+const _CS_DOCK_KEY = 'stockview_cs_dock';
+function _csDockable() { return window.innerWidth > 760; }
+
+function toggleCondDock(on) {
+  const b = document.body;
+  if (on === undefined) on = !b.classList.contains('cs-dock');
+  if (on && !_csDockable()) on = false;
+  b.classList.toggle('cs-dock', on);
+  const m = document.querySelector('main');
+  if (m) document.documentElement.style.setProperty('--cs-top', m.getBoundingClientRect().top + window.scrollY + 'px');
+  document.querySelectorAll('.nav-btn[data-view="cond"]').forEach(x => x.classList.toggle('dock-on', on));
+  if (on) {
+    if (typeof _currentView !== 'undefined' && _currentView === 'cond') switchView('chart');   // 탭으로 보던 중이면 왼쪽은 차트로
+    initCondSearch();
+  } else if (typeof _currentView === 'undefined' || _currentView !== 'cond') {
+    stopCondSearch();
+  }
+  try { localStorage.setItem(_CS_DOCK_KEY, on ? '1' : '0'); } catch (e) { /* 저장소 막힘 */ }
+  window.dispatchEvent(new Event('resize'));   // 차트 폭 다시 맞춤
 }
+
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('cs-pop-btn')?.addEventListener('click', _csPopOpen);
+  let saved = null;
+  try { saved = localStorage.getItem(_CS_DOCK_KEY); } catch (e) { /* 저장소 막힘 */ }
+  if (saved === '1' && _csDockable()) setTimeout(() => toggleCondDock(true), 0);
+});
+window.addEventListener('resize', () => {
+  if (document.body.classList.contains('cs-dock') && !_csDockable()) {
+    document.body.classList.remove('cs-dock');   // 휴대폰 폭으로 줄면 패널 접음 (기억은 유지)
+    document.querySelectorAll('.nav-btn[data-view="cond"]').forEach(x => x.classList.remove('dock-on'));
+  }
 });
 
 // ── 오른쪽 메뉴 🎯 아이콘에 지금 잡힌 종목 수 (11-27) — 다른 탭에 있어도 1분마다 ──
@@ -204,7 +222,7 @@ function _csBadge(s) {
 }
 
 async function _csBadgeTick() {
-  if (typeof _currentView !== 'undefined' && _currentView === 'cond') return;   // 탭 안에서는 _csLoad가 갱신
+  if ((typeof _currentView !== 'undefined' && _currentView === 'cond') || document.body.classList.contains('cs-dock')) return;   // 탭·패널에서는 _csLoad가 갱신
   try {
     const r = await fetch('/api/cond-search');
     _csBadge(await r.json());

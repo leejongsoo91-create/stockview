@@ -1438,12 +1438,19 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .cs-band { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 10px 2px 8px; }
 .cs-band b { font-size: 17px; }
 .cs-status { color: var(--muted); font-size: 12.5px; }
-.cs-pop-btn { margin-left: auto; align-self: center; padding: 4px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
-  border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
-.cs-pop-btn:hover { border-color: var(--accent); }
-/* 조건검색 새 창(#cond-pop, 11-27) — 머리줄·탭 막대 없이 검색만 */
-body.cs-pop > header, body.cs-pop #ticker-tape, body.cs-pop #main-nav, body.cs-pop .cs-pop-btn { display: none; }
-body.cs-pop main { padding: 8px 12px 16px; max-width: none; }
+/* 조건검색 옆 패널 (11-27) — 데스크톱에서 🎯를 누르면 보던 화면은 그대로, 오른쪽 탭 막대 옆에 패널. 종목을 누르면 왼쪽 차트가 바뀜 */
+.cs-dock-close { display: none; margin-left: auto; align-self: center; width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--muted); font-size: 14px; line-height: 1; }
+.cs-dock-close:hover { border-color: var(--accent); color: var(--text); }
+@media (min-width: 761px) {
+  body.cs-dock { --cs-dock-w: clamp(380px, 30vw, 520px); }
+  body.cs-dock #view-cond { display: block; position: fixed; top: var(--cs-top, 96px); right: var(--rail-w); bottom: 0; width: var(--cs-dock-w);
+    overflow: auto; padding: 0 12px 16px; background: var(--bg); border-left: 1px solid var(--border); z-index: 40; }
+  body.cs-dock main { padding-right: calc(20px + var(--rail-w) + var(--cs-dock-w)); max-width: calc(1600px + var(--rail-w) + var(--cs-dock-w)); }
+  body.cs-dock .cs-dock-close { display: inline-block; }
+  body.cs-dock #view-cond table { font-size: 12.5px; }
+  .nav-btn.dock-on { color: var(--accent); background: var(--bg-input); }
+}
 .cs-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .cs-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 13px; }
