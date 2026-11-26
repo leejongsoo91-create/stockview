@@ -161,6 +161,20 @@ def check_kr(mode: str, base: str) -> tuple[str, Check]:
             dl = []
         n_dart = len(dl) if isinstance(dl, list) else 0
         ch.add("DART 공시 오늘 수집", n_dart >= 5, f"분류된 공시 {n_dart}건")
+        # 11-26: 🎯 조건검색 (집 서버만 검색) — 아침 준비 08:00 전, 장중 5분 검색 70회↑(09:01~15:26 = 78회), 오류 0
+        try:
+            cs = get_json(f"{base}/api/cond-search")
+        except Exception:
+            cs = {}
+        ld, sc = cs.get("load") or {}, cs.get("scan") or {}
+        fin = datetime.fromtimestamp(ld["finished"], KST) if ld.get("finished") else None
+        ch.add("조건검색 아침 준비 08:00 전", bool(fin) and fin.strftime("%Y-%m-%d") == today and fin.hour < 8,
+               f"{ld.get('state')} · 끝난 시각 {fin:%m-%d %H:%M}" if fin else f"{ld.get('state') or '응답 없음'}")
+        ok_day = sc.get("day") == today
+        ch.add("조건검색 장중 검색 70회 이상", ok_day and (sc.get("n") or 0) >= 70,
+               f"장중 {sc.get('n') if ok_day else 0}회 · 시초가 {sc.get('n_gap') if ok_day else 0}회 · 예상체결 {sc.get('n_pre') if ok_day else 0}회 · 마지막 {sc.get('secs')}초")
+        ch.add("조건검색 오류 없음", ok_day and not sc.get("errors"),
+               f"오류 {sc.get('errors') if ok_day else '-'}건" + (f" · {sc.get('last_error')}" if sc.get("last_error") else ""))
         for m in ("KOSPI", "KOSDAQ"):
             f = get_json(f"{base}/api/market-flow?market={m}&days=5")
             last = (f.get("rows") or [{}])[-1]

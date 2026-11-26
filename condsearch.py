@@ -9,7 +9,8 @@
 
 데이터 (아침 08:10 한 번, 서버 시작 때 오늘 것이 없으면 한 번):
   - 일봉 4년치(야후, KRX 공식) → 최근 WIN개 봉 + 그 앞까지의 지수이평 값(seed). 오늘 봉은 시세로 붙인다.
-  - 전 거래일 1분봉(네이버) → 5분봉 종가 최근 60개, 분마다 누적 거래량(전일 같은 시각 비교용).
+  - 전 거래일 1분봉(네이버) → 5분봉 OHLCV, 분마다 누적 거래량(전일 같은 시각 비교용).
+  ⚠️ 네이버 1분봉의 accumulatedTradingVolume은 이름과 달리 '그 1분의 거래량'이다(11-26 확인: 하루 합 ≈ 일봉 거래량).
   저장: data/cond_daily.json.gz (그날 다시 시작해도 다시 안 받음). 잡힌 기록: data/cond_hits.sqlite.
 
 키움과 다를 수 있는 점 (docs/architecture.md에도 적음):
@@ -44,7 +45,7 @@ HITS_DB = os.path.join(_DIR, "cond_hits.sqlite")
 
 WIN = 140                       # 계산에 쓰는 최근 일봉 수 (50봉 안 조건 + 일목 52+25봉)
 EMA_P = (5, 15, 20, 60, 112, 150, 224, 448, 500, 600)
-FILE_VER = 2
+FILE_VER = 3   # 3: 1분봉 거래량을 분당 값으로 바로잡음(11-27)
 KIS_CAP = 40                    # 프리셋 하나가 한 번에 KIS로 확인하는 최대 종목 수
 _MIN_URL = ("https://api.stock.naver.com/chart/domestic/item/{code}/minute"
             "?startDateTime={d}0900&endDateTime={d}1530")
@@ -319,7 +320,7 @@ class Ctx:
     def __init__(self, code, name, q, d: Day, now_hm):
         self.code, self.name, self.q, self.d, self.now_hm = code, name, q, d, now_hm
         self.m5 = None          # M5 (전일 + 오늘 5분봉) — 2차에서 채움
-        self.m1 = None          # 오늘 1분봉 [(분 번호, 시가, 고가, 저가, 종가, 누적 거래량)]
+        self.m1 = None          # 오늘 1분봉 [(분 번호, 시가, 고가, 저가, 종가, 그 1분 거래량)]
         self.fin = None         # 재무 {sales(억), icr, debt, reserve, per} — 3차에서 채움
         self.same_ratio = None  # 오늘 누적 거래량 ÷ 전일 같은 시각 누적 거래량
         self.k = None           # {"status": {...}, "cttr": 체결강도, "ask_ratio": 매도잔량비율} — 3차에서 채움
@@ -547,8 +548,8 @@ def _odol2():
     def min_value(c):   # 최근 1분봉 5개 안에 한 번이라도 1분 거래대금 1,000만 원 이상
         if c.m1 is None:
             return None
-        rows = c.m1[-6:]
-        vals = [(rows[i][5] - rows[i - 1][5]) * rows[i][4] for i in range(1, len(rows))]
+        rows = c.m1
+        vals = [r[5] * r[4] for r in rows[-5:]]
         return any(v >= 1e7 for v in vals[-5:])
 
     def env3(c):
@@ -826,7 +827,7 @@ def now_kst() -> datetime:
 
 
 def _minutes(code: str, day: str) -> list[tuple]:
-    """네이버 1분봉 (그날 09:00~15:30 KRX) → [(분 번호 0=09:00, 시가, 고가, 저가, 종가, 누적 거래량)]."""
+    """네이버 1분봉 (그날 09:00~15:30 KRX) → [(분 번호 0=09:00, 시가, 고가, 저가, 종가, 그 1분 거래량)]."""
     d = day.replace("-", "")
     r = requests.get(_MIN_URL.format(code=code, d=d), headers=df._NAVER_RT_HEADERS, timeout=10)
     r.raise_for_status()
@@ -848,11 +849,9 @@ def _minutes(code: str, day: str) -> list[tuple]:
 
 def _to_m5(rows) -> list[list]:
     """1분봉 → 5분봉 [[봉 번호(0 = 09:00~09:04), 시가, 고가, 저가, 종가, 거래량]] (거래량은 누적의 차이)."""
-    bars, prev_cum = {}, None
-    for hm, o, h, l, c, cum in rows:
+    bars = {}
+    for hm, o, h, l, c, v in rows:
         k = hm // 5
-        v = max(0, cum - prev_cum) if prev_cum is not None else cum
-        prev_cum = cum
         b = bars.get(k)
         if b is None:
             bars[k] = [k, o, h, l, c, v]
@@ -862,10 +861,10 @@ def _to_m5(rows) -> list[list]:
 
 
 def _cum_array(rows) -> array.array:
-    """분 번호 0~390별 누적 거래량 (빈 분은 앞 값)."""
+    """분 번호 0~390별 그때까지의 누적 거래량 (1분 거래량을 더해 감)."""
     a, v, it = array.array("l", [0] * 391), 0, {r[0]: r[5] for r in rows}
     for i in range(391):
-        v = it.get(i, v)
+        v += it.get(i, 0)
         a[i] = v
     return a
 
@@ -999,7 +998,18 @@ def _kis_fill(ctx: Ctx, needs) -> None:
 
 # ── 검색 ───────────────────────────────────────────────────────────────────
 RESULTS: dict = {}          # {preset id: {...}}
-SCAN = {"ts": None, "secs": None, "note": None, "running": False}
+SCAN = {"ts": None, "secs": None, "note": None, "running": False,
+        "day": None, "n": 0, "n_gap": 0, "n_pre": 0, "errors": 0, "last_error": None}   # 그날 횟수·오류 (자동 점검용)
+
+
+def _count(kind: str, err: Exception | None = None) -> None:
+    today = now_kst().strftime("%Y-%m-%d")
+    if SCAN["day"] != today:
+        SCAN.update(day=today, n=0, n_gap=0, n_pre=0, errors=0, last_error=None)
+    SCAN[{"scan": "n", "gap": "n_gap", "pre": "n_pre"}[kind]] += 1
+    if err is not None:
+        SCAN["errors"] += 1
+        SCAN["last_error"] = f"{now_kst():%H:%M} {kind}: {err}"
 _minute_cache: dict = {}    # {code: (시각, 오늘 1분봉)}
 
 
@@ -1125,9 +1135,11 @@ def scan(quotes: dict, names: dict[str, str]) -> None:
     t0 = time.time()
     try:
         _scan(quotes, names)
+        _count("scan")
     except Exception as e:
         log.exception(f"조건검색 실패: {e}")
         SCAN["note"] = f"검색 실패: {e}"
+        _count("scan", e)
     finally:
         SCAN.update(running=False, ts=time.time(), secs=round(time.time() - t0, 1))
 
@@ -1181,7 +1193,7 @@ def _scan(quotes, names):
         pc = rec.get("pcum")
         if pc:
             idx = min(rows[-1][0], 390)
-            ctx.same_ratio = rows[-1][5] / pc[idx] if pc[idx] else None
+            ctx.same_ratio = sum(r[5] for r in rows) / pc[idx] if pc[idx] else None
 
     for p in _INTRADAY:
         n1, keep = stage1[p["id"]]
@@ -1216,6 +1228,15 @@ def _scan(quotes, names):
 
 
 def scan_pre(quotes: dict, names: dict[str, str]) -> None:
+    try:
+        _scan_pre(quotes, names)
+        _count("pre")
+    except Exception as e:
+        log.exception(f"조건검색 시가급등예상 실패: {e}")
+        _count("pre", e)
+
+
+def _scan_pre(quotes: dict, names: dict[str, str]) -> None:
     """시가급등예상 — 08:30~09:00 동시호가 예상체결 (KIS 예상체결 상승률 상위 30 × 코스피·코스닥)."""
     p = next(x for x in PRESETS if x["id"] == "pre")
     now = now_kst()
@@ -1287,6 +1308,17 @@ def _first_trade(code: str, day: str):
 
 
 def scan_gap(quotes: dict, names: dict[str, str]) -> None:
+    if not loaded_today():
+        return
+    try:
+        _scan_gap(quotes, names)
+        _count("gap")
+    except Exception as e:
+        log.exception(f"조건검색 시초가 갭상승 실패: {e}")
+        _count("gap", e)
+
+
+def _scan_gap(quotes: dict, names: dict[str, str]) -> None:
     """시초가 갭상승 — 어제 5%↑ 종목의 오늘 첫 체결가가 어제 종가보다 2%↑ (08:00~15:30 10분마다)."""
     if not loaded_today():
         return
