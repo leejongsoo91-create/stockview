@@ -44,6 +44,7 @@ function _csPct(v) { return v == null ? '—' : (v > 0 ? '+' : '') + Number(v).t
 function _csEok(v) { return v ? Math.round(v / 1e8).toLocaleString('ko-KR') + '억' : '—'; }
 
 function _csStatusText(s) {
+  if (s.off) return '이 서버에서는 조건검색이 꺼져 있고 집 서버 결과도 받지 못했어요 — 검색은 집 서버(STOCKVIEW_COND=1)에서만 돌아요';
   const ld = s.load || {};
   if (ld.state === '받는 중') return `📥 일봉 준비 중 ${ld.done}/${ld.total} — 끝나면 검색을 시작해요`;
   const sc = s.scan || {};
@@ -52,6 +53,7 @@ function _csStatusText(s) {
   if (!s.loaded) parts.push('오늘 일봉 아직 없음 (평일 07:30에 받음)');
   if (sc.note) parts.push('⚠️ ' + sc.note);
   parts.push('장중 5분마다 자동 검색');
+  if (s.from_home) parts.push('🏠 집 서버 결과');
   return parts.join(' · ');
 }
 

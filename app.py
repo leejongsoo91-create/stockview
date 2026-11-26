@@ -1160,6 +1160,8 @@ def refresh_daily_signals():
 
 
 # ── 🎯 조건검색기 (11-26) ── 사용자 조건검색식 프리셋을 장중 5분마다(시가급등예상은 08:30~09:00 2분마다). condsearch.py
+# 환경변수 STOCKVIEW_COND=1인 서버(집 서버)만 검색한다 — 네이버·KIS 요청이 서버 수만큼 늘지 않게. 나머지는 집 서버 결과를 받아 보여줌
+_COND_ON = os.environ.get("STOCKVIEW_COND", "").strip() == "1"
 def _cond_names() -> dict:
     return {r.get("code") or df.kr_code(r.get("ticker")): r.get("name") for r in (cache.get("kr_stocks") or [])}
 
@@ -1371,7 +1373,8 @@ def initial_load():
     _start_after(120, lambda: refresh_report_lists(force=True))
     _start_after(150, lambda: refresh_dart(force=True))
     _start_after(180, lambda: refresh_finra_short())
-    _start_after(200, refresh_cond_daily)   # 🎯 조건검색: 오늘 일봉 (저장 파일이 있으면 바로)
+    if _COND_ON:
+        _start_after(200, refresh_cond_daily)   # 🎯 조건검색: 오늘 일봉 (저장 파일이 있으면 바로)
     _start_after(6,  refresh_fear_greed)
     _start_after(8,  refresh_kr_market_news)
     _start_after(12, refresh_reports)
@@ -1550,10 +1553,11 @@ for _slot, _t in _US_SNAPS:   # 미국 시장 누적 거래량·거래대금: �
     _scheduler.add_job(record_us_market_flow, "cron", day_of_week="mon-fri", hour=_t // 60, minute=_t % 60,
                        timezone="America/New_York", id=f"market_flow_us_{_slot}", args=[_slot])
 _scheduler.add_job(refresh_daily_signals,   "interval", hours=24,   id="daily_signals")
-_scheduler.add_job(refresh_cond_daily, "cron", day_of_week="mon-fri", hour=7, minute=30, timezone="Asia/Seoul", id="cond_daily")
-_scheduler.add_job(refresh_cond_gap,   "cron", day_of_week="mon-fri", hour="8-15", minute="1-51/10", timezone="Asia/Seoul", id="cond_gap")
-_scheduler.add_job(refresh_cond_scan,  "cron", day_of_week="mon-fri", hour="9-15", minute="1-56/5", timezone="Asia/Seoul", id="cond_scan")
-_scheduler.add_job(refresh_cond_pre,   "cron", day_of_week="mon-fri", hour=8, minute="30-58/2", timezone="Asia/Seoul", id="cond_pre")
+if _COND_ON:
+    _scheduler.add_job(refresh_cond_daily, "cron", day_of_week="mon-fri", hour=7, minute=30, timezone="Asia/Seoul", id="cond_daily")
+    _scheduler.add_job(refresh_cond_gap,   "cron", day_of_week="mon-fri", hour="8-15", minute="1-51/10", timezone="Asia/Seoul", id="cond_gap")
+    _scheduler.add_job(refresh_cond_scan,  "cron", day_of_week="mon-fri", hour="9-15", minute="1-56/5", timezone="Asia/Seoul", id="cond_scan")
+    _scheduler.add_job(refresh_cond_pre,   "cron", day_of_week="mon-fri", hour=8, minute="30-58/2", timezone="Asia/Seoul", id="cond_pre")
 if VOICE_BRIEFING_ENABLED:
     _scheduler.add_job(refresh_voice_briefing, "interval", hours=24, id="voice_briefing")
 
@@ -2361,14 +2365,24 @@ def paper_rounds_api():
 
 @app.route("/api/cond-search")
 def cond_search_api():
-    """🎯 조건검색 — 프리셋·최근 결과·준비 상태 (11-26)."""
+    """🎯 조건검색 — 프리셋·최근 결과·준비 상태 (11-26). 검색을 안 하는 서버는 집 서버 결과를 받아 보여준다."""
+    if not _COND_ON:
+        d = _home_json("/api/cond-search", {}, "home_cond", "presets")
+        if d:
+            return jsonify(d)
+        return jsonify({**cs.state(), "off": True})
     return jsonify(cs.state())
 
 
 @app.route("/api/cond-search/history")
 def cond_search_history_api():
     days = min(max(int(request.args.get("days", 20) or 20), 1), 120)
-    return jsonify(cs.history(request.args.get("preset") or None, days))
+    preset = request.args.get("preset") or None
+    if not _COND_ON:
+        d = _home_json("/api/cond-search/history", {"days": days, "preset": preset or ""}, f"home_cond_hist_{preset}_{days}", None)
+        if d is not None:
+            return jsonify(d)
+    return jsonify(cs.history(preset, days))
 
 
 def _macro_item(hist: list, freq: str, yoy: bool = False) -> dict:

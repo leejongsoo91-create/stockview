@@ -82,6 +82,7 @@
 | `refresh_daily_signals` | 24시간 | 시작 240초 후. **그 전까지 신호 관련 API는 비어 있음(정상)** |
 | `refresh_voice_briefing` | 24시간 | **기본 꺼짐** (`VOICE_BRIEFING_ENABLED = False`, 꺼지면 등록 자체를 안 함). 켜면 시작 270초 후, 오늘 생성분 있으면 재사용 |
 | `refresh_dynamic_indices` | 1주 | |
+| `refresh_cond_*` 4개 공통 | — | **환경변수 `STOCKVIEW_COND=1`인 서버(집 서버, `stockview.service.d/cond.conf`)만 등록.** 끈 서버(작업 PC)의 `/api/cond-search`·`history`는 집 서버 결과를 받아 보여줌(`_home_json`, 5분 캐시, `from_home`) |
 | `refresh_cond_daily` | 평일 07:30 KST + 시작 200초 뒤(오늘 파일 없으면) | 🎯 조건검색용 국내 보통주 약 2,660종목 일봉 4년(야후)→최근 140봉+지수이평 시작값(5~600), 전 거래일 1분봉(네이버)→5분봉 OHLCV·분별 누적 거래량. 4개씩 병렬로 약 7~9분. `data/cond_daily.json.gz` |
 | `refresh_cond_scan` | 평일 09:01~15:26 5분마다 (정규장·개장일만) | 장중 프리셋 10개 검색. 후보만 네이버 오늘 1분봉(최대: 떡상이 500·나머지 300), 세력주 후보는 전 3거래일 5분봉(하루 한 번), 마지막 후보 프리셋당 40개까지 KIS(종목 상태 하루 한 번·체결강도·호가)·재무(네이버 연간+DART 이자, 하루 한 번). `cond_update` |
 | `refresh_cond_gap` | 평일 08:01~15:21 10분마다 | 시초가 갭상승 — 어제 5%↑ 종목의 오늘 첫 체결(넥스트 08:00 / 정규장 09:00, 네이버 1분봉) ≥ 어제 종가 +2% |
