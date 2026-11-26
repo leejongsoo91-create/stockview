@@ -45,10 +45,10 @@ HITS_DB = os.path.join(_DIR, "cond_hits.sqlite")
 
 WIN = 140                       # 계산에 쓰는 최근 일봉 수 (50봉 안 조건 + 일목 52+25봉)
 EMA_P = (5, 15, 20, 60, 112, 150, 224, 448, 500, 600)
-FILE_VER = 3   # 3: 1분봉 거래량을 분당 값으로 바로잡음(11-27)
+FILE_VER = 4   # 3: 1분봉 거래량을 분당 값으로 바로잡음(11-27) · 4: 전일 넥스트 애프터 5분봉(p5x) 추가(11-27)
 KIS_CAP = 40                    # 프리셋 하나가 한 번에 KIS로 확인하는 최대 종목 수
 _MIN_URL = ("https://api.stock.naver.com/chart/domestic/item/{code}/minute"
-            "?startDateTime={d}0900&endDateTime={d}1530")
+            "?startDateTime={d}0900&endDateTime={d}{end}")
 
 
 # ── 참/거짓/모름 ────────────────────────────────────────────────────────────
@@ -206,8 +206,9 @@ class Day:
         self.o = rec["o"] + [o]
         self.h = rec["h"] + [h]
         self.l = rec["l"] + [l]
-        self.v = rec["v"] + [q.get("volume") or 0]
-        self.val = [c * v for c, v in zip(rec["c"], rec["v"])] + [q.get("value") or 0]
+        # 오늘 거래량·대금 None = 아직 모름(넥스트레이드 프리마켓 1차 — 네이버 시세엔 넥스트 거래량이 0으로 옴)
+        self.v = rec["v"] + [q.get("volume") if "volume" in q else 0]
+        self.val = [c * v for c, v in zip(rec["c"], rec["v"])] + [q.get("value") if "value" in q else 0]
         self.start = rec["n"] - len(rec["c"])          # 목록 첫 봉의 전체 봉 번호
         self.seed = rec["seed"]
         self._ema, self._ichi = {}, None
@@ -775,7 +776,7 @@ def _gapup():
             "title": "어제 5% 넘게 오른 종목이 오늘 아침 첫 가격(시초가)도 어제 종가보다 2% 넘게 높게 시작한 종목",
             "expr": "A and B and C and D and E", "conds": C, "kis": ("status",), "cap": 300,
             "window": "08:00~15:30 (10분마다)",
-            "notes": ["시초가 = 오늘 첫 체결가 — 넥스트레이드 종목은 08:00 넥스트 첫 체결, 아닌 종목은 09:00 정규장 시가 (네이버 1분봉)"]}
+            "notes": ["시초가 = 오늘 첫 체결가 — 넥스트레이드 종목은 08:00 넥스트 첫 체결(KIS 넥스트 시가), 아닌 종목은 09:00 정규장 시가(네이버 1분봉)"]}
 
 
 def _pre():
@@ -803,7 +804,7 @@ for _p in PRESETS:
 
 def presets_public() -> list[dict]:
     return [{"id": p["id"], "name": p["name"], "alias": p["alias"], "kind": p["kind"], "tag": p["tag"],
-             "title": p["title"], "expr": p["expr"], "window": p.get("window", "09:00~15:30 (5분마다)"), "conds": [{"key": k, "label": v[0]} for k, v in p["conds"].items()]}
+             "title": p["title"], "expr": p["expr"], "window": p.get("window", "08:03~08:48 넥스트 프리마켓 · 09:00~15:30 정규장 (5분마다)"), "conds": [{"key": k, "label": v[0]} for k, v in p["conds"].items()]}
             for p in PRESETS]
 
 
@@ -826,10 +827,12 @@ def now_kst() -> datetime:
     return datetime.now(KST)
 
 
-def _minutes(code: str, day: str) -> list[tuple]:
-    """네이버 1분봉 (그날 09:00~15:30 KRX) → [(분 번호 0=09:00, 시가, 고가, 저가, 종가, 그 1분 거래량)]."""
+def _minutes(code: str, day: str, last: int = 390) -> list[tuple]:
+    """네이버 1분봉 (그날 09:00~15:30 KRX, last=660이면 넥스트 애프터 ~20:00까지) → [(분 번호 0=09:00, 시가, 고가, 저가, 종가, 그 1분 거래량)].
+    08시대 넥스트 프리마켓 구간은 네이버에 없다(11-27 확인)."""
     d = day.replace("-", "")
-    r = requests.get(_MIN_URL.format(code=code, d=d), headers=df._NAVER_RT_HEADERS, timeout=10)
+    end = f"{(540 + last) // 60:02d}{(540 + last) % 60:02d}"
+    r = requests.get(_MIN_URL.format(code=code, d=d, end=end), headers=df._NAVER_RT_HEADERS, timeout=10)
     r.raise_for_status()
     out = []
     for x in r.json() or []:
@@ -837,7 +840,7 @@ def _minutes(code: str, day: str) -> list[tuple]:
         if t[:8] != d:
             continue
         hm = int(t[8:10]) * 60 + int(t[10:12]) - 540
-        if not 0 <= hm <= 390:
+        if not 0 <= hm <= last:
             continue
         c = x.get("currentPrice")
         if not c:
@@ -889,10 +892,14 @@ def _load_one(code: str, ticker: str, today: str):
            "l": [b["low"] for b in tail], "c": [b["close"] for b in tail], "v": [int(b.get("volume") or 0) for b in tail],
            "seed": seed}
     try:
-        rows = _minutes(code, tail[-1]["time"])
+        allrows = _minutes(code, tail[-1]["time"], 660)
+        rows = [r for r in allrows if r[0] <= 390]          # KRX 정규장
+        after = [r for r in allrows if r[0] > 390]          # 넥스트 애프터 15:31~20:00 (넥스트 종목만)
         if rows:
             rec["p5"] = _to_m5(rows)
             rec["pcum"] = list(_cum_array(rows))
+        if after:
+            rec["p5x"] = _to_m5(after)
     except Exception as e:
         log.debug(f"cond 전일 분봉 {code}: {e}")
     return rec
@@ -984,29 +991,30 @@ def _kis_status(code: str):
     return s
 
 
-def _kis_fill(ctx: Ctx, needs) -> None:
+def _kis_fill(ctx: Ctx, needs, mkt: str = "J") -> None:
+    """mkt: J = KRX 정규장, NX = 넥스트레이드(프리마켓 검색)."""
     k = {}
     if "status" in needs:
         k["status"] = _kis_status(ctx.code)
     if "cttr" in needs:
-        k["cttr"] = kis.strength(ctx.code)
+        k["cttr"] = kis.strength(ctx.code, mkt)
     if "book" in needs:
-        b = kis.book(ctx.code, "J")
+        b = kis.book(ctx.code, mkt)
         k["ask_ratio"] = (b["total_ask"] / b["total_bid"] * 100) if b and b.get("total_bid") else None
     ctx.k = k
 
 
 # ── 검색 ───────────────────────────────────────────────────────────────────
 RESULTS: dict = {}          # {preset id: {...}}
-SCAN = {"ts": None, "secs": None, "note": None, "running": False,
-        "day": None, "n": 0, "n_gap": 0, "n_pre": 0, "errors": 0, "last_error": None}   # 그날 횟수·오류 (자동 점검용)
+SCAN = {"ts": None, "secs": None, "note": None, "running": False, "session": None,
+        "day": None, "n": 0, "n_nx": 0, "n_gap": 0, "n_pre": 0, "errors": 0, "last_error": None}   # 그날 횟수·오류 (자동 점검용)
 
 
 def _count(kind: str, err: Exception | None = None) -> None:
     today = now_kst().strftime("%Y-%m-%d")
     if SCAN["day"] != today:
-        SCAN.update(day=today, n=0, n_gap=0, n_pre=0, errors=0, last_error=None)
-    SCAN[{"scan": "n", "gap": "n_gap", "pre": "n_pre"}[kind]] += 1
+        SCAN.update(day=today, n=0, n_nx=0, n_gap=0, n_pre=0, errors=0, last_error=None)
+    SCAN[{"scan": "n", "nx": "n_nx", "gap": "n_gap", "pre": "n_pre"}[kind]] += 1
     if err is not None:
         SCAN["errors"] += 1
         SCAN["last_error"] = f"{now_kst():%H:%M} {kind}: {err}"
@@ -1024,6 +1032,43 @@ def _today_minutes(code: str, today: str, max_age: float = 200):
         rows = None
     _minute_cache[code] = (time.time(), rows)
     return rows
+
+
+_nx_cache: dict = {}        # {code: (오늘, {분 번호: 1분봉})} — 넥스트레이드 프리마켓 1분봉 (한 번 받은 분은 다시 안 받음)
+NX_CAP = 100                # 프리마켓 검색에서 1분봉을 받는 최대 종목 수 (KIS 초당 한도 — 1종목 1~2회 호출)
+
+
+def _nx_minutes(code: str, today: str, now: datetime):
+    """넥스트레이드 프리마켓(08:00~08:50) 오늘 1분봉 — KIS 분봉(NX, 한 번에 30개) → [(분 번호 -60=08:00, 시가, 고가, 저가, 종가, 그 1분 거래량)].
+    네이버 1분봉엔 08시대 넥스트레이드 구간이 없다(11-27 확인 — 어제 것도 09:00부터)."""
+    d = today.replace("-", "")
+    day, have = _nx_cache.get(code) or (None, {})
+    if day != today:
+        have = {}
+    hour = now.strftime("%H%M00")
+    for _ in range(3):
+        try:
+            rows = kis.minute_bars(code, "NX", hour)
+        except Exception as e:
+            log.debug(f"cond 넥스트 분봉 {code}: {e}")
+            rows = None
+        if not rows:
+            break
+        early = None
+        for dt, hms, o, h, l, c, v in rows:
+            if dt != d or not c:
+                continue
+            m = int(hms[:2]) * 60 + int(hms[2:4])
+            if not 480 <= m < 540:
+                continue
+            have[m - 540] = (m - 540, o or c, h or c, l or c, c, v)
+            early = m if early is None else min(early, m)
+        # 처음 받는 종목이면 08:00까지 거슬러 받는다 (30개씩)
+        if early is None or early <= 480 or (early - 1 - 540) in have:
+            break
+        hour = f"{(early - 1) // 60:02d}{(early - 1) % 60:02d}00"
+    _nx_cache[code] = (today, have)
+    return [have[k] for k in sorted(have)] or None
 
 
 _deep_cache: dict = {}      # {(오늘, code): 전 3거래일 5분봉}
@@ -1127,32 +1172,41 @@ def _m_rank(quotes: dict, codes, now_idx: int) -> set | None:
     return {c for _r, c in ratios[:1000]}
 
 
-def scan(quotes: dict, names: dict[str, str]) -> None:
-    """장중 5분마다. quotes = 네이버 전 종목 시세 캐시, names = {code: 이름}."""
+def scan(quotes: dict, names: dict[str, str], nx: bool = False) -> None:
+    """장중 5분마다. quotes = 네이버 전 종목 시세 캐시, names = {code: 이름}.
+    nx=True: 넥스트레이드 프리마켓(08:00~08:50) — 넥스트 거래 종목만, 오늘 1분봉은 KIS 넥스트레이드 분봉."""
     if SCAN["running"] or not loaded_today():
         return
     SCAN["running"] = True
     t0 = time.time()
+    kind = "nx" if nx else "scan"
     try:
-        _scan(quotes, names)
-        _count("scan")
+        _scan(quotes, names, nx)
+        _count(kind)
     except Exception as e:
         log.exception(f"조건검색 실패: {e}")
         SCAN["note"] = f"검색 실패: {e}"
-        _count("scan", e)
+        _count(kind, e)
     finally:
-        SCAN.update(running=False, ts=time.time(), secs=round(time.time() - t0, 1))
+        SCAN.update(running=False, ts=time.time(), secs=round(time.time() - t0, 1), session="넥스트 프리마켓" if nx else "정규장")
 
 
-def _scan(quotes, names):
+_NX_NOTE = ("넥스트레이드 프리마켓(08:00~08:50) 검색 — 넥스트 거래 종목만. 5분봉은 어제 정규장 → 어제 넥스트 애프터(~20:00) → 오늘 넥스트 프리(KIS) 순서로 이어 계산하고, "
+            "체결강도·호가도 넥스트 기준. 전일 같은 시각 비교(거래량 증가율 등)는 어제 그 시각 기록이 없어 '모름'")
+
+
+def _scan(quotes, names, nx: bool = False):
     now = now_kst()
     today = now.strftime("%Y-%m-%d")
     now_hm = now.hour * 60 + now.minute
     now_idx = max(0, now_hm - 540)
     st = DAILY.get("stocks") or {}
+    if nx:
+        # 네이버 시세의 넥스트 거래량은 0 → 오늘 거래량·대금은 '모름'으로 두고 2차에서 분봉 합으로 채운다
+        quotes = {c: {**q, "volume": None, "value": None} for c, q in quotes.items() if q.get("session") == "pre"}
     codes = [c for c, q in quotes.items()
              if c in st and q.get("price") and is_common(c, names.get(c, ""), q.get("kind", "stock"))]
-    m_rank = _m_rank(quotes, codes, now_idx)
+    m_rank = None if nx else _m_rank(quotes, codes, now_idx)
 
     ctxs = {}
     for code in codes:
@@ -1172,14 +1226,21 @@ def _scan(quotes, names):
     stage1 = {}
     for p in _INTRADAY:
         keep = [c for c in codes if eval_node(p["node"], vals(p, ctxs[c])) is not False]
-        keep.sort(key=lambda c: -(quotes[c].get("value") or 0))
+        if nx:   # 거래대금을 아직 모름 → 오른 순서
+            keep.sort(key=lambda c: -(quotes[c].get("change_pct") or 0))
+        else:
+            keep.sort(key=lambda c: -(quotes[c].get("value") or 0))
         stage1[p["id"]] = (len(keep), keep[:p["cap"]])
 
     # 2차 — 후보 종목만 오늘 1분봉
     need = sorted({c for _n, keep in stage1.values() for c in keep})
-    deep = sorted({c for p in _INTRADAY if p.get("deep") for c in stage1[p["id"]][1]})
+    if nx and len(need) > NX_CAP:
+        need = sorted(need, key=lambda c: -(quotes[c].get("change_pct") or 0))[:NX_CAP]
+    need_set = set(need)
+    deep = sorted({c for p in _INTRADAY if p.get("deep") for c in stage1[p["id"]][1] if c in need_set})
+    with ThreadPoolExecutor(max_workers=1 if nx else 6) as ex:   # KIS는 어차피 한 줄로 (초당 한도)
+        mins = dict(zip(need, ex.map((lambda c: _nx_minutes(c, today, now)) if nx else (lambda c: _today_minutes(c, today)), need)))
     with ThreadPoolExecutor(max_workers=6) as ex:
-        mins = dict(zip(need, ex.map(lambda c: _today_minutes(c, today), need)))
         deeps = dict(zip(deep, ex.map(lambda c: _deep_prev(c, st[c], today), deep)))
     for code in need:
         rows = mins.get(code)
@@ -1187,11 +1248,17 @@ def _scan(quotes, names):
             continue
         rec, ctx = st[code], ctxs[code]
         o, h, l = rows[0][1], max(r[2] for r in rows), min(r[3] for r in rows)
+        if nx:
+            ctx.q = quotes[code] = {**quotes[code], "price": rows[-1][4], "volume": sum(r[5] for r in rows),
+                                    "value": sum(r[5] * r[4] for r in rows)}
         ctx.d = Day(rec, quotes[code], (o, h, l))
-        ctx.m5 = M5(deeps.get(code) or rec.get("p5") or [], _to_m5(rows))
+        prev5 = deeps.get(code) or rec.get("p5") or []
+        if nx:   # 통합 시세처럼: 어제 정규장 → 어제 넥스트 애프터 → 오늘 넥스트 프리 (11-27 엔켐 08:13 비교로 확인)
+            prev5 = prev5 + (rec.get("p5x") or [])
+        ctx.m5 = M5(prev5, _to_m5(rows))
         ctx.m1 = rows
         pc = rec.get("pcum")
-        if pc:
+        if pc and not nx:
             idx = min(rows[-1][0], 390)
             ctx.same_ratio = sum(r[5] for r in rows) / pc[idx] if pc[idx] else None
 
@@ -1202,7 +1269,7 @@ def _scan(quotes, names):
         final, checked = [], 0
         for code in stage2[:KIS_CAP]:
             ctx = ctxs[code]
-            _kis_fill(ctx, p["kis"])
+            _kis_fill(ctx, p["kis"], "NX" if nx else "J")
             if p.get("fin") and ctx.fin is None:
                 ctx.fin = _fin(code)
             checked += 1
@@ -1217,13 +1284,17 @@ def _scan(quotes, names):
             notes.append(f"마지막 후보 {len(stage2)}개 중 거래대금 상위 {KIS_CAP}개만 KIS로 확인")
         if not kis.enabled():
             notes.append("KIS 키가 없어 체결강도·종목 상태 조건을 판정할 수 없음")
+        if nx:
+            notes.append(_NX_NOTE)
+            if len(stage1[p["id"]][1]) > len([c for c in stage1[p["id"]][1] if c in need_set]):
+                notes.append(f"넥스트 분봉은 1차 후보 중 많이 오른 {NX_CAP}종목만 받음")
         notes += p.get("notes", [])
-        RESULTS[p["id"]] = {"ts": time.time(), "hm": now.strftime("%H:%M"),
+        RESULTS[p["id"]] = {"ts": time.time(), "hm": now.strftime("%H:%M"), "session": "nx" if nx else "krx",
                             "funnel": {"universe": len(codes), "stage1": n1, "stage2": len(stage2),
                                        "checked": checked, "final": len(final)},
                             "hits": hits, "notes": notes}
     SCAN["note"] = None
-    log.info("조건검색 " + " · ".join(f"{p['alias']} {RESULTS[p['id']]['funnel']['final']}" for p in _INTRADAY)
+    log.info(("조건검색(넥스트 프리) " if nx else "조건검색 ") + " · ".join(f"{p['alias']} {RESULTS[p['id']]['funnel']['final']}" for p in _INTRADAY)
              + f" (보통주 {len(codes)})")
 
 
@@ -1285,11 +1356,26 @@ def _scan_pre(quotes: dict, names: dict[str, str]) -> None:
 _first_cache: dict = {}     # {(오늘, code): (시초가, "HH:MM") | None}
 
 
+_nx_open_cache: dict = {}   # {(오늘, code): 넥스트 시가 | 0(넥스트 종목 아님)}
+
+
 def _first_trade(code: str, day: str):
-    """오늘 첫 체결 (넥스트레이드 08:00부터 · 정규장 09:00) — 네이버 1분봉 첫 줄의 시가."""
+    """오늘 첫 체결 — 넥스트레이드 종목은 KIS 넥스트 시가(08:00 프리마켓 첫 체결), 아니면 네이버 1분봉 첫 줄의 시가(09:00).
+    네이버 1분봉엔 08시대 넥스트 구간이 없다(11-27 확인) → 예전엔 프리마켓 동안 0건, 9시 뒤엔 정규장 시가로 잘못 봄."""
     key = (day, code)
     if key in _first_cache and _first_cache[key]:
         return _first_cache[key]
+    if kis.enabled():
+        nxo = _nx_open_cache.get(key)
+        if nxo is None:
+            p = kis.price(code, "NX")        # 넥스트에 없는 종목은 None
+            nxo = (p or {}).get("open") or 0 if p else 0
+            if p and not p.get("open"):      # 넥스트 종목인데 아직 첫 체결 전 → 다음에 다시
+                return None
+            _nx_open_cache[key] = nxo
+        if nxo:
+            _first_cache[key] = (nxo, "넥스트")
+            return _first_cache[key]
     d = day.replace("-", "")
     try:
         r = requests.get(f"https://api.stock.naver.com/chart/domestic/item/{code}/minute"

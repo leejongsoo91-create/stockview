@@ -2837,8 +2837,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 홈 초기 로드
-  loadHome().then(updateTimestamp);
+  // 🎯 조건검색 새 창 (#cond-pop, 11-27) — 머리줄·탭 막대 없이 조건검색만. 종목을 누르면 띄운 창(opener)의 차트로
+  const _csPop = window.location.hash === '#cond-pop';
+  if (_csPop) document.body.classList.add('cs-pop');
+
+  // 홈 초기 로드 (조건검색 새 창은 홈을 안 그림)
+  if (!_csPop) loadHome().then(updateTimestamp);
   loadEarnSoon(); setInterval(loadEarnSoon, 60 * 60 * 1000);   // 실적 임박 배지 (11-25)
 
   // 시장 상태 배지 — 1분마다 갱신 (ET 시간 변동 반영)
@@ -2857,8 +2861,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // URL hash로 탭 직접 진입 (예: #screener, #heatmap)
   const _hash = window.location.hash.slice(1);
-  const _views = ['home','screener','heatmap','chart','news','brief','earnings','watchlist','portfolio'];
-  if (_hash && _views.includes(_hash)) switchView(_hash);
+  const _views = ['home','screener','heatmap','chart','news','brief','earnings','watchlist','portfolio','cond'];
+  if (_csPop) { switchView('cond'); document.title = '🎯 조건검색 — StockView'; }
+  else if (_hash && _views.includes(_hash)) switchView(_hash);
 
   // 글로벌 검색 초기화
   initGlobalSearch();

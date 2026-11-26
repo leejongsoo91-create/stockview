@@ -1197,6 +1197,19 @@ def refresh_cond_scan():
     _emit_queue.put(("cond_update", {"ts": cs.SCAN["ts"]}))
 
 
+def refresh_cond_nx():
+    """넥스트레이드 프리마켓(08:00~08:50) 조건검색 — 넥스트 종목만, KIS 넥스트 1분봉 (11-27)."""
+    now = paper.now_kst()
+    hm = now.hour * 60 + now.minute
+    if not (480 < hm <= 530) or now.weekday() >= 5 or not _pp_open_day() or not kis.enabled() or not cs.loaded_today():
+        return
+    quotes = cache.get("kr_quotes") or {}
+    if len(quotes) < 2500:
+        return
+    cs.scan(quotes, _cond_names(), nx=True)
+    _emit_queue.put(("cond_update", {"ts": cs.SCAN["ts"]}))
+
+
 def refresh_cond_gap():
     now = paper.now_kst()
     hm = now.hour * 60 + now.minute
@@ -1557,6 +1570,7 @@ if _COND_ON:
     _scheduler.add_job(refresh_cond_daily, "cron", day_of_week="mon-fri", hour=7, minute=30, timezone="Asia/Seoul", id="cond_daily")
     _scheduler.add_job(refresh_cond_gap,   "cron", day_of_week="mon-fri", hour="8-15", minute="1-51/10", timezone="Asia/Seoul", id="cond_gap")
     _scheduler.add_job(refresh_cond_scan,  "cron", day_of_week="mon-fri", hour="9-15", minute="1-56/5", timezone="Asia/Seoul", id="cond_scan")
+    _scheduler.add_job(refresh_cond_nx,    "cron", day_of_week="mon-fri", hour=8, minute="3-48/5", timezone="Asia/Seoul", id="cond_nx")
     _scheduler.add_job(refresh_cond_pre,   "cron", day_of_week="mon-fri", hour=8, minute="30-58/2", timezone="Asia/Seoul", id="cond_pre")
 if VOICE_BRIEFING_ENABLED:
     _scheduler.add_job(refresh_voice_briefing, "interval", hours=24, id="voice_briefing")

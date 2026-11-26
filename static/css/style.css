@@ -1438,6 +1438,12 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .cs-band { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 10px 2px 8px; }
 .cs-band b { font-size: 17px; }
 .cs-status { color: var(--muted); font-size: 12.5px; }
+.cs-pop-btn { margin-left: auto; align-self: center; padding: 4px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
+.cs-pop-btn:hover { border-color: var(--accent); }
+/* 조건검색 새 창(#cond-pop, 11-27) — 머리줄·탭 막대 없이 검색만 */
+body.cs-pop > header, body.cs-pop #ticker-tape, body.cs-pop #main-nav, body.cs-pop .cs-pop-btn { display: none; }
+body.cs-pop main { padding: 8px 12px 16px; max-width: none; }
 .cs-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .cs-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 13px; }

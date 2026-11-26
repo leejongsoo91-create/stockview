@@ -226,11 +226,23 @@ def stock_status(code: str) -> dict | None:
             "단기과열": o.get("short_over_yn") == "Y" or st == "59"}
 
 
-def strength(code: str) -> float | None:
-    """체결강도 % (KRX 최근 체결의 당일 체결강도)."""
-    j = get(_Q + "inquire-ccnl", "FHKST01010300", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+def strength(code: str, mkt: str = "J") -> float | None:
+    """체결강도 % (최근 체결의 당일 체결강도). mkt: J = KRX, NX = 넥스트레이드(프리마켓엔 J가 빈 값)."""
+    j = get(_Q + "inquire-ccnl", "FHKST01010300", {"FID_COND_MRKT_DIV_CODE": mkt, "FID_INPUT_ISCD": code})
     rows = (j or {}).get("output") or []
     return _f(rows[0].get("tday_rltv")) if rows else None
+
+
+def minute_bars(code: str, mkt: str, hour: str) -> list[tuple] | None:
+    """오늘 1분봉 — hour(HHMMSS)까지 최근 30개, 최신부터. [(날짜, HHMMSS, 시가, 고가, 저가, 종가, 그 1분 거래량)].
+    mkt NX = 넥스트레이드(08:00 프리마켓 포함), J = KRX. 시세가 없는 분은 가격 0으로 온다."""
+    j = get(_Q + "inquire-time-itemchartprice", "FHKST03010200",
+            {"FID_ETC_CLS_CODE": "", "FID_COND_MRKT_DIV_CODE": mkt, "FID_INPUT_ISCD": code,
+             "FID_INPUT_HOUR_1": hour, "FID_PW_DATA_INCU_YN": "Y"})
+    if not j:
+        return None
+    return [(x.get("stck_bsop_date"), x.get("stck_cntg_hour") or "", _i(x.get("stck_oprc")), _i(x.get("stck_hgpr")),
+             _i(x.get("stck_lwpr")), _i(x.get("stck_prpr")), _i(x.get("cntg_vol"))) for x in j.get("output2") or []]
 
 
 def expected_rank(market: str, min_vol: int = 0) -> list[dict]:

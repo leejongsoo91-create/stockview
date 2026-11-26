@@ -49,10 +49,10 @@ function _csStatusText(s) {
   if (ld.state === '받는 중') return `📥 일봉 준비 중 ${ld.done}/${ld.total} — 끝나면 검색을 시작해요`;
   const sc = s.scan || {};
   const parts = [];
-  if (sc.ts) parts.push('마지막 검색 ' + new Date(sc.ts * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + (sc.secs != null ? ` (${sc.secs}초)` : ''));
+  if (sc.ts) parts.push('마지막 검색 ' + new Date(sc.ts * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + (sc.session ? ' ' + sc.session : '') + (sc.secs != null ? ` (${sc.secs}초)` : ''));
   if (!s.loaded) parts.push('오늘 일봉 아직 없음 (평일 07:30에 받음)');
   if (sc.note) parts.push('⚠️ ' + sc.note);
-  parts.push('장중 5분마다 자동 검색');
+  parts.push('08:03~08:48 넥스트 프리마켓 · 09:01~ 정규장, 5분마다 자동 검색');
   if (s.from_home) parts.push('🏠 집 서버 결과');
   return parts.join(' · ');
 }
@@ -162,8 +162,26 @@ function _csRenderHist(id) {
 }
 
 function _csOpen(code, ticker) {
-  navigateToChart(ticker || resolveTickerInput(code, 'kr') || code + '.KS');
+  const t = ticker || resolveTickerInput(code, 'kr') || code + '.KS';
+  // 새 창(#cond-pop)이면 띄운 원래 창의 차트를 바꾼다 — 검색 목록은 이 창에 그대로 (11-27)
+  if (document.body.classList.contains('cs-pop')) {
+    try {
+      const o = window.opener;
+      if (o && !o.closed && typeof o.navigateToChart === 'function') { o.navigateToChart(t); o.focus(); return; }
+    } catch (e) { /* 원래 창이 다른 주소로 바뀐 경우 — 아래로 */ }
+    document.body.classList.remove('cs-pop');   // 원래 창이 없으면 이 창에서 차트 (탭 막대도 다시 보이게)
+  }
+  navigateToChart(t);
 }
+
+// "↗ 새 창" — 조건검색만 따로 띄워 차트 옆에 두고 본다. 같은 이름 창이 있으면 그 창을 앞으로
+function _csPopOpen() {
+  const w = window.open('/#cond-pop', 'stockview-cond', 'popup,width=820,height=920');
+  if (w) w.focus();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('cs-pop-btn')?.addEventListener('click', _csPopOpen);
+});
 
 // ── 오른쪽 메뉴 🎯 아이콘에 지금 잡힌 종목 수 (11-27) — 다른 탭에 있어도 1분마다 ──
 function _csTotal(s) {
