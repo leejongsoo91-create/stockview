@@ -323,6 +323,8 @@ function initChart() {
   _bindChartZoomEvents();
   _bindDrawToolEvents();
   _bindDrawColorEvent();
+  _bindSidebarTabs();
+  _mcInit();
 }
 
 // 차트 탭 이탈 시 타이머 정지 (main.js에서 호출)
@@ -372,6 +374,7 @@ function _setChartType(type) {
     if (d._priceLineRef) { try { _candleSeries.removePriceLine(d._priceLineRef); } catch {} d._priceLineRef = null; }
   });
   const range = _lwChart.timeScale().getVisibleLogicalRange();
+  _sigLineRefs = []; _sigLineSeries = null;   // 신호 가격선은 옛 시리즈와 같이 사라짐 → _applyIndicators가 새로 붙임
   _lwChart.removeSeries(_candleSeries);
   _candleSeries = _createMainSeries();
   if (_lastOhlcv.length) _candleSeries.setData(_lastOhlcv.map(_mainPoint));
@@ -443,7 +446,16 @@ function _createLWChart() {
     handleScale: false,
   });
 
+  // 추세 배경(⚙ 지표 → 신호) — 캔들보다 먼저 만들어야 캔들 뒤에 깔린다. 별도 축을 꽉 채우는 막대
+  _sigBgSeries = _lwChart.addHistogramSeries({ priceScaleId: 'sigbg', priceLineVisible: false, lastValueVisible: false,
+    base: 0, autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 1 } }) });
+  _lwChart.priceScale('sigbg').applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+
   _candleSeries = _createMainSeries();   // 캔들·라인·바 중 저장된 차트 종류
+
+  // 슈퍼트렌드 선 — 세로 범위는 캔들 기준으로만 (선 때문에 눈금이 넓어지지 않게)
+  _stSeries = _lwChart.addLineSeries({ lineWidth: 2, lineType: 1, priceLineVisible: false, lastValueVisible: false,
+    crosshairMarkerVisible: false, autoscaleInfoProvider: () => null });
 
   // BB 밴드 fill/mask — volSeries 보다 먼저 생성해야 볼륨 바가 마스크 위에 렌더됨
   _indSeries.bbFill = _lwChart.addAreaSeries({
@@ -514,6 +526,18 @@ function _createLWChart() {
   _volLegendEl.className = 'chart-vol-legend';
   _volLegendEl.hidden = true;
   container.appendChild(_volLegendEl);
+
+  // 신호 배지(왼쪽 위) + 화살표 이유 풍선 (11-28)
+  const badge = document.createElement('div');
+  badge.id = 'chart-sig-badge';
+  badge.className = 'sigb';
+  badge.hidden = true;
+  container.appendChild(badge);
+  const tip = document.createElement('div');
+  tip.className = 'sigtip';
+  tip.hidden = true;
+  container.appendChild(tip);
+  _lwChart.subscribeCrosshairMove(param => _sigTipMove(tip, container, _sigEvents, _lastOhlcv, _isKrStock(_currentTicker), param));
 }
 
 // ── 국내 HTS 방식 구간 확대/축소 (왼쪽 드래그 방향 감지) ────────────────────────
@@ -1553,6 +1577,7 @@ async function loadChart(ticker) {
   const stale = () => reqId !== _chartReqSeq;
   ticker = ticker.toUpperCase();
   if (_compareMode) _exitCompare();   // 새 종목 로드 시 비교 모드 종료
+  if (_currentTicker !== ticker) _sigbOpen = false;   // 종목이 바뀌면 신호 배지 '자세히' 접기
   _currentTicker = ticker;
   document.getElementById('chart-input').value = ticker;
   if (typeof paperOnChart === 'function') paperOnChart(ticker);   // 💹 모의투자 모드: 차트 옆 주문창 종목 바꾸기 (11-26)
@@ -1631,13 +1656,15 @@ async function loadChart(ticker) {
     }
 
     _startAutoRefresh();
+    _mcOnMainLoad(ticker);
 
   } catch {
     if (stale()) return;
     // 11-12: 예전엔 제목만 바뀌고 이전 종목의 차트·신호·진단·재무가 그대로 남아 착각할 수 있었음
     stopChartTimers();
     _setDummyBanner(false);
-    ['signal-card', 'stock-analysis-card', 'financials-card'].forEach(id => {
+    const sb = document.getElementById('chart-sig-badge'); if (sb) sb.hidden = true;
+    ['stock-analysis-card', 'financials-card'].forEach(id => {
       const el = document.getElementById(id); if (el) el.style.display = 'none';
     });
     document.getElementById('chart-price-badge').innerHTML = '';
@@ -1674,7 +1701,7 @@ async function _loadWarmup(ticker, key, stale) {
 
 // 없는 종목 안내 — 차트 영역 전체를 덮어 이전 종목 차트가 보이지 않게 함. null이면 숨김
 function _setNotFound(ticker) {
-  const main = document.querySelector('.chart-main');
+  const main = document.getElementById('chart-slot-main') || document.querySelector('.chart-main');
   if (!main) return;
   let el = document.getElementById('chart-notfound');
   if (!ticker) { if (el) el.hidden = true; return; }
@@ -1988,8 +2015,10 @@ function _getWeeklyTrendArray(ohlcv, maPeriod = 13) {
   const result = new Array(n).fill(0);
   let j = 0;
   for (let i = 0; i < n; i++) {
-    while (j < wtList.length - 1 && wtList[j + 1].time <= ohlcv[i].time) j++;
-    if (j < wtList.length && wtList[j].time <= ohlcv[i].time) result[i] = wtList[j].trend;
+    // 11-28 고침: 일봉 time은 'YYYY-MM-DD' 글자라 주봉(초 숫자)과 비교가 늘 거짓 → 일봉에서 주봉 필터가 안 걸리고 있었음
+    const t = typeof ohlcv[i].time === 'number' ? ohlcv[i].time : Math.floor(_parseBarTime(ohlcv[i].time).getTime() / 1000);
+    while (j < wtList.length - 1 && wtList[j + 1].time <= t) j++;
+    if (j < wtList.length && wtList[j].time <= t) result[i] = wtList[j].trend;
   }
   return result;
 }
@@ -2295,8 +2324,8 @@ function _applyIndicators() {
   if (_chartIsDummy) {
     // 예시 데이터 위에 가짜 매수/매도 신호를 띄우지 않는다
     _candleSeries.setMarkers([]);
-    const sc = document.getElementById('signal-card');
-    if (sc) sc.style.display = 'none';
+    _sigEvents = []; _sigLevels = null; _clearSignalExtras();
+    _renderSignalCard();   // 더미면 배지 숨김
   } else {
     _applySignalMarkers();
     _renderSignalCard();
@@ -2306,76 +2335,76 @@ function _applyIndicators() {
 }
 
 // ── 복합 매수/매도 시그널 ────────────────────────────────────────────────────
-function _calcSignals() {
-  if (!_lastOhlcv.length) return null;
-  const closes = _lastOhlcv.map(d => d.close);
-  const times  = _lastOhlcv.map(d => d.time);
+// data_fetcher.py compute_today_signal()과 같은 로직 — 한쪽을 고치면 다른 쪽도 같이 고친다.
+// 11-28: MA50 추세 필터 뺌 — 5년 백테스트에서 넣으면 매수 10일 적중률이 60~65% → 50%로 떨어짐
+//        (decisions/003 검증 로직엔 원래 없었음, scripts/backtest_trend_signals.py)
+// ohlcv·ticker를 받아 여러 칸(작은 차트)에서도 같은 계산을 쓴다. lab = 그 봉의 지표별 상태 설명(이유 풍선용)
+function _calcSignals(ohlcv = _lastOhlcv, ticker = _currentTicker) {
+  if (!ohlcv || !ohlcv.length) return null;
+  const closes = ohlcv.map(d => d.close);
+  const times  = ohlcv.map(d => d.time);
   const n      = closes.length;
   const sig    = new Array(n).fill(0);  // 각 시점 합산 점수
+  const st     = { macd: new Array(n).fill(0), rsi: new Array(n).fill(0), sto: new Array(n).fill(0), div: new Array(n).fill(0) };
+  const lab    = { macd: new Array(n).fill(''), rsi: new Array(n).fill(''), sto: new Array(n).fill('') };
+  const isKr   = _isKrStock(ticker);
 
   // MACD: 골든크로스→+1, 데드크로스는 MACD값이 음수일 때만 -1 (제로라인 필터)
   if (_activeInds.has('macd')) {
     const { macd, signal: msig } = _calcMACD(closes);
-    let state = 0;
+    let state = 0, why = '';
     for (let i = 1; i < n; i++) {
-      if (macd[i] == null || msig[i] == null) continue;
-      if (macd[i-1] != null && msig[i-1] != null) {
-        if (macd[i-1] <= msig[i-1] && macd[i] > msig[i]) state = 1;
-        else if (macd[i-1] >= msig[i-1] && macd[i] < msig[i])
+      if (macd[i] != null && msig[i] != null && macd[i-1] != null && msig[i-1] != null) {
+        if (macd[i-1] <= msig[i-1] && macd[i] > msig[i]) { state = 1; why = 'MACD 골든크로스'; }
+        else if (macd[i-1] >= msig[i-1] && macd[i] < msig[i]) {
           state = macd[i] < 0 ? -1 : 0;  // 데드크로스 + MACD 음수만 매도
+          why = state ? 'MACD 데드크로스 (0선 아래)' : '';
+        }
       }
-      sig[i] += state;
+      if (macd[i] == null || msig[i] == null) continue;
+      sig[i] += state; st.macd[i] = state; lab.macd[i] = why;
     }
   }
 
   // RSI: 과매도 탈출(30 상향) → +1 매수, 과매수 탈출(70 하향) → -1 매도
   if (_activeInds.has('rsi')) {
     const rsi = _calcRSI(closes);
-    let state = 0;
+    let state = 0, why = '';
     for (let i = 1; i < rsi.length; i++) {
       if (rsi[i] == null || rsi[i-1] == null) continue;
-      if (rsi[i-1] < 30 && rsi[i] >= 30) state = 1;       // 과매도 탈출 → 매수
-      else if (rsi[i-1] >= 30 && rsi[i] < 30) state = -1; // 과매도 진입 → 하락 추세
-      else if (rsi[i-1] > 70 && rsi[i] <= 70) state = -1; // 과매수 탈출 → 매도 (핵심 수정)
-      else if (rsi[i-1] <= 70 && rsi[i] > 70) state = 1;  // 과매수 진입 → 강한 상승 모멘텀
-      sig[i] += state;
+      if (rsi[i-1] < 30 && rsi[i] >= 30)       { state = 1;  why = 'RSI 과매도 탈출 (30 위로)'; }
+      else if (rsi[i-1] >= 30 && rsi[i] < 30)  { state = -1; why = 'RSI 과매도 진입 (30 아래로)'; }
+      else if (rsi[i-1] > 70 && rsi[i] <= 70)  { state = -1; why = 'RSI 과매수 이탈 (70 아래로)'; }
+      else if (rsi[i-1] <= 70 && rsi[i] > 70)  { state = 1;  why = 'RSI 과매수 진입 (강한 상승)'; }
+      sig[i] += state; st.rsi[i] = state; lab.rsi[i] = why;
     }
   }
 
   // STO: 과매도 존(이전봉 ≤30)에서 골든크로스 → +1, 과매수 존(이전봉 ≥70)에서 데드크로스 → -1
   if (_activeInds.has('sto')) {
-    const { k, d } = _calcStochastic(_lastOhlcv);
-    let state = 0;
+    const { k, d } = _calcStochastic(ohlcv);
+    let state = 0, why = '';
     for (let i = 1; i < n; i++) {
       if (k[i] == null || d[i] == null || k[i-1] == null || d[i-1] == null) continue;
       const crossUp   = k[i-1] <= d[i-1] && k[i] > d[i];
       const crossDown = k[i-1] >= d[i-1] && k[i] < d[i];
-      if (crossUp   && k[i-1] <= 30) state = 1;   // 과매도 존 골든크로스 → 매수
-      if (crossDown && k[i-1] >= 70) state = -1;  // 과매수 존 데드크로스 → 매도
-      sig[i] += state;
+      if (crossUp   && k[i-1] <= 30) { state = 1;  why = 'STO 과매도권 골든크로스'; }
+      if (crossDown && k[i-1] >= 70) { state = -1; why = 'STO 과매수권 데드크로스'; }
+      sig[i] += state; st.sto[i] = state; lab.sto[i] = why;
     }
   }
 
   // RSI 다이버전스 보너스 (RSI 활성 시 각 다이버전스 포인트에 ±1 추가)
   if (_activeInds.has('rsi')) {
     const divSig = _calcRSIDivergence(closes);
-    for (let i = 0; i < n; i++) sig[i] += divSig[i];
+    for (let i = 0; i < n; i++) { sig[i] += divSig[i]; st.div[i] = divSig[i]; }
   }
 
   // 캔들 패턴: 백테스트에서 정확도 저하 확인 → 스코어 미반영, UI 표시만
 
-  // ── MA50 추세 필터 ──────────────────────────────────────────────────────────
-  // 상승 추세(가격 > MA50): 매도 신호 무효화 / 하락 추세(가격 < MA50): 매수 신호 무효화
-  const ma50 = _calcMA(closes, 50);
-  for (let i = 0; i < n; i++) {
-    if (ma50[i] == null) continue;
-    if (closes[i] > ma50[i] && sig[i] < 0) sig[i] = 0;
-    if (closes[i] < ma50[i] && sig[i] > 0) sig[i] = 0;
-  }
-
   // ── 주봉 추세 필터 ──────────────────────────────────────────────────────────
   // 주봉 MA13(3개월): 주봉 상승 시 매도 억제, 주봉 하락 시 매수 억제
-  const wTrend = _getWeeklyTrendArray(_lastOhlcv, 13);
+  const wTrend = _getWeeklyTrendArray(ohlcv, 13);
   for (let i = 0; i < n; i++) {
     if (wTrend[i] ===  1 && sig[i] < 0) sig[i] = 0;
     if (wTrend[i] === -1 && sig[i] > 0) sig[i] = 0;
@@ -2385,19 +2414,21 @@ function _calcSignals() {
   // 매수(sig≥2): 가격이 BB 하단 35% 이하일 때만 유효 (과매도 구간 확인)
   // 매도(sig≤-2): 가격이 BB 상단 65% 이상일 때만 유효 (과매수 구간 확인)
   const { upper: _bbU, lower: _bbL } = _calcBB(closes, 20, 2);
+  const pbArr = new Array(n).fill(null);
+  const sellPbThr = isKr ? 0.85 : 0.65;  // KR: 0.85 (백테스트 매도 +4%p), US: 0.65
   for (let i = 0; i < n; i++) {
     const bw = _bbU[i] != null ? _bbU[i] - _bbL[i] : null;
     if (bw == null || bw === 0) continue;
     const pb = (closes[i] - _bbL[i]) / bw;
-    const sellPbThr = _isKrStock(_currentTicker) ? 0.85 : 0.65;  // KR: 0.85 (백테스트 매도 +4%p), US: 0.65
+    pbArr[i] = pb;
     if (sig[i] >= 2  && pb >= 0.35)        sig[i] = 0;  // 매수인데 하단 근처 아님 → 차단
     if (sig[i] <= -2 && pb <= sellPbThr)   sig[i] = 0;  // 매도인데 상단 근처 아님 → 차단
   }
 
   // ── [전략B] KR 전용: 매도 신호 약세 캔들 확인 ────────────────────────────────
   // 백테스트 KR 매도 60.6% → 68.0% (+7.4%p) — 슈팅스타/베어리시 인걸핑 없으면 차단
-  if (_isKrStock(_currentTicker)) {
-    const krPat = _calcCandlePatterns(_lastOhlcv);
+  if (isKr) {
+    const krPat = _calcCandlePatterns(ohlcv);
     for (let i = 0; i < n; i++) {
       if (sig[i] <= -2) {
         const hasBearish = krPat[i] < 0
@@ -2411,49 +2442,148 @@ function _calcSignals() {
   const activeCount = (_activeInds.has('macd') ? 1 : 0) +
                       (_activeInds.has('rsi')  ? 1 : 0) +
                       (_activeInds.has('sto')  ? 1 : 0);
-  const lastMa50  = ma50[n - 1];
-  const lastClose = closes[n - 1];
-  const trend = lastMa50 == null ? 'neutral'
-              : lastClose > lastMa50 ? 'up' : 'down';
+  return { sig, times, activeCount, st, lab, pb: pbArr, isKr };
+}
 
-  return { sig, times, activeCount, trend };
+// 신호 한 개의 이유 (풍선) — 그 봉에서 같은 방향으로 점수를 준 지표들 + 통과한 필터
+function _signalReasons(r, i, buy) {
+  const s = buy ? 1 : -1, out = [];
+  ['macd', 'rsi', 'sto'].forEach(k => { if (r.st[k][i] === s && r.lab[k][i]) out.push(r.lab[k][i]); });
+  if (r.st.div[i] === s) out.push(buy ? 'RSI 강세 다이버전스' : 'RSI 약세 다이버전스');
+  if (r.pb[i] != null) out.push(`BB %B ${Math.round(r.pb[i] * 100)}% (${buy ? '하단 근처 ✓' : '상단 근처 ✓'})`);
+  if (!buy && r.isKr) out.push('약세 캔들 확인 ✓');
+  return out;
+}
+
+// 매수·매도 화살표 + 신호 목록 (큰 차트·작은 차트 공용). short = 4칸일 때 글자 없이
+function _buildSignalMarkers(ohlcv, ticker, short = false) {
+  const r = _calcSignals(ohlcv, ticker);
+  if (!r || r.activeCount === 0) return { markers: [], events: [] };
+  // score>=2 + BB%B 통과 시 마커 표시 (score=3 시도 후 되돌림: 매도 신호 소멸 문제)
+  const threshold = r.activeCount >= 3 ? 2 : 1;
+  const markers = [], events = [];
+  let prevScore = 0;
+  for (let i = 1; i < r.sig.length; i++) {
+    const s = r.sig[i];
+    if (s === prevScore) continue;
+    prevScore = s;
+    if (s < threshold && s > -threshold) continue;
+    const buy = s > 0, strong = Math.abs(s) >= 3;
+    markers.push({
+      time: r.times[i], position: buy ? 'belowBar' : 'aboveBar',
+      color: buy ? (strong ? C_UP : '#ffa64d') : (strong ? C_DN : '#58a6ff'),
+      shape: buy ? 'arrowUp' : 'arrowDown', size: strong ? 3 : 1.5,
+      text: short ? '' : (strong ? '강력' : '') + (buy ? '매수' : '매도'),
+    });
+    events.push({ i, time: r.times[i], score: s, buy, reasons: _signalReasons(r, i, buy) });
+  }
+  return { markers, events };
+}
+
+// ATR (와일더 평균, 트레이딩뷰와 같음)
+function _calcATR(ohlcv, p = 14) {
+  const n = ohlcv.length, out = new Array(n).fill(null);
+  if (n <= p) return out;
+  const tr = ohlcv.map((b, i) => i ? Math.max(b.high - b.low, Math.abs(b.high - ohlcv[i-1].close), Math.abs(b.low - ohlcv[i-1].close)) : b.high - b.low);
+  out[p - 1] = tr.slice(0, p).reduce((a, x) => a + x, 0) / p;
+  for (let i = p; i < n; i++) out[i] = (out[i-1] * (p - 1) + tr[i]) / p;
+  return out;
+}
+
+// 슈퍼트렌드 (ATR 10 × 3) — scripts/backtest_trend_signals.py와 같은 계산. 선 아래 빨강 = 상승 추세
+function _calcSupertrend(ohlcv, p = 10, mult = 3) {
+  const atr = _calcATR(ohlcv, p), out = [];
+  let fu = null, fl = null, dir = 0;
+  for (let i = 0; i < ohlcv.length; i++) {
+    if (atr[i] == null) continue;
+    const b = ohlcv[i], hl2 = (b.high + b.low) / 2, bu = hl2 + mult * atr[i], bl = hl2 - mult * atr[i];
+    const pc = i ? ohlcv[i-1].close : b.close;
+    fu = (fu == null || bu < fu || pc > fu) ? bu : fu;
+    fl = (fl == null || bl > fl || pc < fl) ? bl : fl;
+    dir = dir === 0 ? (b.close > hl2 ? 1 : -1) : dir === -1 ? (b.close > fu ? 1 : -1) : (b.close < fl ? -1 : 1);
+    out.push({ time: b.time, value: dir === 1 ? fl : fu, color: dir === 1 ? C_UP : C_DN });
+  }
+  return out;
+}
+
+// 가격선: 최근 20봉 안의 마지막 신호 — 진입 = 그 봉 종가, 손절 = 진입 ∓ ATR(14)×2, 목표 = 손익비 2:1
+const _SIG_LINE_BARS = 20;
+function _signalLevels(ohlcv, events) {
+  const ev = events[events.length - 1];
+  if (!ev || ohlcv.length - 1 - ev.i > _SIG_LINE_BARS) return null;
+  const atr = _calcATR(ohlcv, 14)[ev.i];
+  if (!atr) return null;
+  const entry = ohlcv[ev.i].close, risk = atr * 2;
+  const rd = v => entry >= 1000 ? Math.round(v) : Math.round(v * 100) / 100;   // 국내·고가주는 원 단위
+  return { buy: ev.buy, entry, stop: rd(ev.buy ? entry - risk : entry + risk),
+           target: rd(ev.buy ? entry + risk * 2 : entry - risk * 2), ago: ohlcv.length - 1 - ev.i };
+}
+
+function _signalLineDefs(lv, short) {
+  const pct = v => { const x = (v / lv.entry - 1) * 100; return `${x > 0 ? '+' : ''}${x.toFixed(1)}%`; };
+  return [
+    { price: lv.entry,  color: '#ffa64d', lineWidth: 1, lineStyle: 0, axisLabelVisible: true,
+      title: short ? '신호' : (lv.buy ? '매수 신호가' : '매도 신호가') },
+    { price: lv.stop,   color: lv.buy ? C_DN : C_UP, lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+      title: short ? '손절' : `손절 ${pct(lv.stop)} (ATR×2)` },
+    { price: lv.target, color: lv.buy ? C_UP : C_DN, lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+      title: short ? '목표' : `목표 ${pct(lv.target)} (2:1)` },
+  ];
+}
+
+// 추세 배경: 60일선 위 = 옅은 빨강, 아래 = 옅은 파랑 (정보 표시용 — 신호 계산엔 안 씀)
+function _trendBgData(ohlcv) {
+  const ma = _calcMA(ohlcv.map(d => d.close), 60);
+  return ohlcv.map((d, i) => ({ time: d.time, value: 1,
+    color: ma[i] == null ? 'rgba(0,0,0,0)' : d.close > ma[i] ? 'rgba(240,68,82,0.07)' : 'rgba(49,130,246,0.08)' }));
+}
+
+// ── 신호 표시 설정 (⚙ 지표 → 신호, 모든 칸 공통) — localStorage CHS ─────────────
+const _CHS_KEY = 'CHS';
+const _SIG_OPT_DEFS = [
+  { k: 'mark',  name: '매수·매도 화살표', sub: '종합 점수 ±2 이상 · 올리면 이유',  color: C_UP },
+  { k: 'badge', name: '신호 배지',        sub: '차트 왼쪽 위 한 줄 요약',          color: '#58a6ff' },
+  { k: 'line',  name: '가격선',           sub: `최근 ${_SIG_LINE_BARS}봉 신호 · 손절 ATR×2 · 목표 2:1`, color: '#ffa64d' },
+  { k: 'bg',    name: '추세 배경',        sub: '60일선 위 빨강 · 아래 파랑',        color: 'rgba(240,68,82,0.5)' },
+  { k: 'st',    name: '슈퍼트렌드 선',    sub: 'ATR(10)×3 추세선 · 넘으면 추세 전환', color: C_UP, color2: C_DN },
+];
+const _sigOpts = (() => {
+  const def = { mark: true, badge: true, line: true, bg: false, st: false };
+  try { return { ...def, ...(JSON.parse(localStorage.getItem(_CHS_KEY)) || {}) }; } catch { return def; }
+})();
+function _setSigOpt(k, on) {
+  _sigOpts[k] = on;
+  try { localStorage.setItem(_CHS_KEY, JSON.stringify(_sigOpts)); } catch { /* 저장 못 해도 동작 */ }
+  _syncIndicatorUI();
+  if (!_compareMode) { _applySignalMarkers(); _renderSignalCard(); }
+  _mcApplyAll();
+}
+
+let _sigEvents = [], _sigLevels = null, _sigLineRefs = [], _sigLineSeries = null;
+let _sigBgSeries = null, _stSeries = null;
+
+function _clearSignalExtras() {
+  if (_sigLineSeries) _sigLineRefs.forEach(l => { try { _sigLineSeries.removePriceLine(l); } catch { /* 시리즈 바뀜 */ } });
+  _sigLineRefs = []; _sigLineSeries = null;
+  if (_sigBgSeries) _sigBgSeries.setData([]);
+  if (_stSeries) _stSeries.setData([]);
 }
 
 function _applySignalMarkers() {
   if (!_candleSeries || !_lastOhlcv.length) return;
-  const result = _calcSignals();
-  if (!result || result.activeCount === 0) { _setMainMarkers([]); return; }
-
-  const { sig, times, activeCount } = result;
-  const isKr = _isKrStock(_currentTicker);
-  const fmtPrice = v => isKr ? _fmtKrPrice(v) : fmt$(v);
-  // score>=2 + BB%B 통과 시 마커 표시 (score=3 시도 후 되돌림: 매도 신호 소멸 문제)
-  const threshold = activeCount >= 3 ? 2 : 1;
-  const markers   = [];
-  let   prevScore = 0;
-
-  for (let i = 1; i < sig.length; i++) {
-    const s = sig[i];
-    if (s === prevScore) continue;
-    prevScore = s;
-    const price = fmtPrice(_lastOhlcv[i].close);
-    if (s >= threshold) {
-      markers.push({
-        time: times[i], position: 'belowBar',
-        color: s >= 3 ? C_UP : '#ffa64d',
-        shape: 'arrowUp', size: s >= 3 ? 3 : 1.5,
-        text: (s >= 3 ? '강력매수 ' : '매수 ') + price,
-      });
-    } else if (s <= -threshold) {
-      markers.push({
-        time: times[i], position: 'aboveBar',
-        color: s <= -3 ? C_DN : '#58a6ff',
-        shape: 'arrowDown', size: s <= -3 ? 3 : 1.5,
-        text: (s <= -3 ? '강력매도 ' : '매도 ') + price,
-      });
-    }
+  const { markers, events } = _buildSignalMarkers(_lastOhlcv, _currentTicker, _chartGridN === 4);
+  _sigEvents = events;
+  _setMainMarkers(_sigOpts.mark ? markers : []);
+  // 가격선·추세 배경·슈퍼트렌드
+  _clearSignalExtras();
+  if (_compareMode) return;
+  _sigLevels = _signalLevels(_lastOhlcv, events);
+  if (_sigOpts.line && _sigLevels) {
+    _sigLineSeries = _candleSeries;
+    _sigLineRefs = _signalLineDefs(_sigLevels, _chartGridN === 4).map(d => _candleSeries.createPriceLine(d));
   }
-  _setMainMarkers(markers);
+  if (_sigOpts.bg && _sigBgSeries) _sigBgSeries.setData(_trendBgData(_lastOhlcv));
+  if (_sigOpts.st && _stSeries) _stSeries.setData(_calcSupertrend(_lastOhlcv));
 }
 
 // 메인 시리즈 표시 = 매수·매도 화살표 + (켜져 있으면) 역매공파 네모. Lightweight Charts는 시간순 정렬 필요
@@ -2463,18 +2593,36 @@ function _setMainMarkers(signalMarkers) {
   _candleSeries.setMarkers(all);
 }
 
+// 화살표에 마우스를 올리면 신호 이유 풍선 (큰 차트·작은 차트 공용)
+function _sigTipMove(tipEl, hostEl, events, ohlcv, isKr, param) {
+  const ev = _sigOpts.mark && param.time != null && param.point ? events.find(e => e.time === param.time) : null;
+  if (!ev) { tipEl.hidden = true; return; }
+  const fmtP = v => isKr ? _fmtKrPrice(v) : fmt$(v);
+  const strong = Math.abs(ev.score) >= 3;
+  tipEl.innerHTML = `<div class="sigtip-t ${ev.buy ? 'up' : 'down'}">${strong ? '강력 ' : ''}${ev.buy ? '매수' : '매도'} 신호 · 점수 ${ev.score > 0 ? '+' : '−'}${Math.abs(ev.score)}</div>
+    <div class="sigtip-d">${_barTimeLabel(ev.time)} · 종가 ${fmtP(ohlcv[ev.i].close)}</div>
+    ${ev.reasons.map(r => `<div>· ${_escHtml(r)}</div>`).join('')}`;
+  tipEl.hidden = false;
+  const w = hostEl.clientWidth, tw = tipEl.offsetWidth || 200;
+  tipEl.style.left = Math.max(4, Math.min(param.point.x + 14, w - tw - 70)) + 'px';
+  tipEl.style.top  = Math.max(param.point.y - 24, 40) + 'px';
+}
+
+// ── 신호 배지 (차트 왼쪽 위, 11-28 — 예전 오른쪽 '종합 신호' 카드) ─────────────────
+// 계산은 예전 카드와 같다: 지표별 '지금 상태' 합 → 주봉 MA13 · BB %B · (KR) 약세 캔들 필터. MA50 필터는 뺌(위 _calcSignals 참고)
+let _sigbOpen = false;
 function _renderSignalCard() {
-  const card = document.getElementById('signal-card');
+  const card = document.getElementById('chart-sig-badge');
   if (!card) return;
+  const host = document.getElementById('lw-chart');
 
   const activeCount = (_activeInds.has('macd') ? 1 : 0) +
                       (_activeInds.has('rsi')  ? 1 : 0) +
                       (_activeInds.has('sto')  ? 1 : 0);
-  if (activeCount === 0 || !_lastOhlcv.length) {
-    card.style.display = 'none';
+  if (!_sigOpts.badge || activeCount === 0 || !_lastOhlcv.length || _chartIsDummy || _compareMode) {
+    card.hidden = true; host.classList.remove('has-sigb');
     return;
   }
-  card.style.display = '';
 
   const closes = _lastOhlcv.map(d => d.close);
   const n      = closes.length;
@@ -2492,8 +2640,7 @@ function _renderSignalCard() {
         s = macd[i] < 0 ? -1 : 0;
     }
     total += s;
-    const val = macd[n-1] != null ? macd[n-1].toFixed(3) : '—';
-    rows.push({ label: 'MACD', score: s, detail: val });
+    rows.push({ label: 'MACD', score: s, detail: macd[n-1] != null ? macd[n-1].toFixed(macd[n-1] > 100 || macd[n-1] < -100 ? 0 : 2) : '—' });
   }
 
   // RSI 최신 상태
@@ -2509,8 +2656,7 @@ function _renderSignalCard() {
     }
     total += s;
     const last = rsi[rsi.length - 1];
-    const val  = last != null ? last.toFixed(1) : '—';
-    rows.push({ label: 'RSI', score: s, detail: val });
+    rows.push({ label: 'RSI', score: s, detail: last != null ? last.toFixed(1) : '—', show: true });
   }
 
   // STO 최신 상태
@@ -2524,23 +2670,18 @@ function _renderSignalCard() {
     }
     total += s;
     const last = k[k.length - 1];
-    const val  = last != null ? last.toFixed(1) : '—';
-    rows.push({ label: 'STO', score: s, detail: val });
+    rows.push({ label: 'STO', score: s, detail: last != null ? last.toFixed(1) : '—', show: true });
   }
 
   // RSI 다이버전스 최신 상태 (RSI 활성 시, 최근 20봉 내 마지막 감지값)
-  let divScore = 0;
   if (_activeInds.has('rsi')) {
     const divArr = _calcRSIDivergence(closes);
+    let divScore = 0;
     for (let i = n - 1; i >= Math.max(0, n - 20); i--) {
       if (divArr[i] !== 0) { divScore = divArr[i]; break; }
     }
     total += divScore;
-    rows.push({
-      label: 'DIV',
-      score: divScore,
-      detail: divScore > 0 ? '강세' : divScore < 0 ? '약세' : '—',
-    });
+    rows.push({ label: 'DIV', score: divScore, detail: divScore > 0 ? '강세' : divScore < 0 ? '약세' : '—' });
   }
 
   // 캔들 패턴 (정보 표시용, 스코어 미반영)
@@ -2553,147 +2694,376 @@ function _renderSignalCard() {
     : patScore < 0
     ? (patArr[n-1] !== 0 ? '유성형' : '하락 장악형')
     : '—';
-  rows.push({ label: 'CANDLE', score: 0, detail: patName, infoOnly: true, tone: patScore });
 
-  // MA50 추세 방향 계산
-  const ma50arr   = _calcMA(closes, 50);
-  const lastMa50  = ma50arr[n - 1];
-  const lastClose = closes[n - 1];
-  const trendUp   = lastMa50 != null && lastClose > lastMa50;
-  const trendDown = lastMa50 != null && lastClose < lastMa50;
+  // 주봉 MA13 필터: 주봉 추세 반대 신호 무효화
+  const wTrendNow = _getWeeklyTrendArray(_lastOhlcv, 13)[n - 1];
+  const afterWeekly = (wTrendNow === 1 && total < 0) || (wTrendNow === -1 && total > 0) ? 0 : total;
 
-  // MA50 필터: 추세 반대 신호 무효화
-  const filteredByMA50 = lastMa50 == null ? total
-    : (trendUp && total < 0) ? 0
-    : (trendDown && total > 0) ? 0
-    : total;
-
-  // BB %B 계산 및 필터
+  // BB %B 필터
   const { upper: _bbU2, lower: _bbL2 } = _calcBB(closes, 20, 2);
-  const lastBbU = _bbU2[n - 1]; const lastBbL = _bbL2[n - 1];
-  const lastBw  = (lastBbU != null) ? lastBbU - lastBbL : null;
-  const lastPb  = (lastBw != null && lastBw > 0) ? (lastClose - lastBbL) / lastBw : null;
-  const _sellThr = _isKrStock(_currentTicker) ? 0.85 : 0.65;
-  const filteredTotal = (lastPb == null) ? filteredByMA50
-    : (filteredByMA50 >= 2  && lastPb >= 0.35)      ? 0
-    : (filteredByMA50 <= -2 && lastPb <= _sellThr)  ? 0
-    : filteredByMA50;
+  const lastClose = closes[n - 1];
+  const lastBw  = (_bbU2[n - 1] != null) ? _bbU2[n - 1] - _bbL2[n - 1] : null;
+  const lastPb  = (lastBw != null && lastBw > 0) ? (lastClose - _bbL2[n - 1]) / lastBw : null;
+  const isKrMode = _isKrStock(_currentTicker);
+  const _sellThr = isKrMode ? 0.85 : 0.65;
+  const bbBlocked = lastPb != null && ((afterWeekly >= 2 && lastPb >= 0.35) || (afterWeekly <= -2 && lastPb <= _sellThr));
+  const filteredTotal = bbBlocked ? 0 : afterWeekly;
 
   // [전략B] KR 전용: 매도 신호 약세 캔들 확인 (슈팅스타/베어리시 인걸핑 없으면 차단)
-  const isKrMode = _isKrStock(_currentTicker);
   let candleBlocked = false;
   if (isKrMode && filteredTotal <= -2) {
-    const hasBearish = patArr[n-1] < 0
-      || (n >= 2 && patArr[n-2] < 0)
-      || (n >= 3 && patArr[n-3] < 0);
+    const hasBearish = patArr[n-1] < 0 || (n >= 2 && patArr[n-2] < 0) || (n >= 3 && patArr[n-3] < 0);
     if (!hasBearish) candleBlocked = true;
   }
   const finalTotal = candleBlocked ? 0 : filteredTotal;
-  if (isKrMode) {
-    const cr = rows.find(r => r.label === 'CANDLE');
-    if (cr) cr.detail = candleBlocked          ? '⚡ 매도 차단'
-                      : (filteredTotal <= -2 && patScore < 0) ? patName + ' ✓'
-                      : patName;
-  }
 
-  const scoreColor = finalTotal > 0 ? 'var(--up)' : finalTotal < 0 ? 'var(--down)' : 'var(--muted)';
-  const scoreLabel = finalTotal >= 3 ? '강력 매수'  : finalTotal === 2  ? '매수'
-                   : finalTotal <= -3 ? '강력 매도' : finalTotal === -2 ? '매도'
+  const cls = finalTotal > 0 ? 'up' : finalTotal < 0 ? 'down' : 'flat';
+  const scoreLabel = finalTotal >= 3 ? '강력 매수'  : finalTotal === 2  ? '매수 신호'
+                   : finalTotal <= -3 ? '강력 매도' : finalTotal === -2 ? '매도 신호'
                    : finalTotal === 1 ? '약한 매수'  : finalTotal === -1 ? '약한 매도' : '중립';
-
-  const trendColor = trendUp ? 'var(--up)' : trendDown ? 'var(--down)' : 'var(--muted)';
-  const trendLabel = trendUp ? '▲ 상승 추세' : trendDown ? '▼ 하락 추세' : '— 중립';
-  const ma50Val    = lastMa50 != null ? lastMa50.toFixed(2) : '—';
-  const trendRow   = `<div class="sc-row sc-trend-row">
-    <span class="sc-label">MA50</span>
-    <span class="sc-val">${ma50Val}</span>
-    <span class="sc-sig" style="color:${trendColor}">${trendLabel}</span>
-  </div>`;
-
-  // 주봉 MA13 추세 행
-  const wTrendArr  = _getWeeklyTrendArray(_lastOhlcv, 13);
-  const wTrendNow  = wTrendArr[n - 1];
-  const wTrendColor = wTrendNow ===  1 ? 'var(--up)' : wTrendNow === -1 ? 'var(--down)' : 'var(--muted)';
-  const wTrendLabel = wTrendNow ===  1 ? '▲ 주봉 상승' : wTrendNow === -1 ? '▼ 주봉 하락' : '— 중립';
-  const weeklyRow  = `<div class="sc-row sc-trend-row">
-    <span class="sc-label">주봉 MA13</span>
-    <span class="sc-val">주봉</span>
-    <span class="sc-sig" style="color:${wTrendColor}">${wTrendLabel}</span>
-  </div>`;
-
-  // BB %B 행
-  const pbPct = lastPb != null ? `${(lastPb * 100).toFixed(0)}%` : '—';
-  const bbBlocked = lastPb != null && (
-    (filteredByMA50 >= 2  && lastPb >= 0.35) ||
-    (filteredByMA50 <= -2 && lastPb <= _sellThr)
-  );
-  const pbColor = bbBlocked ? '#ffa64d'
-    : lastPb == null   ? 'var(--muted)'
-    : lastPb < 0.20    ? 'var(--up)'
-    : lastPb < 0.35    ? 'var(--accent)'
-    : lastPb > 0.80    ? 'var(--down)'
-    : lastPb > 0.65    ? '#ffa64d'
-    : 'var(--muted)';
-  const pbLabel = bbBlocked       ? '⚡ 신호 차단'
-    : lastPb == null   ? '—'
-    : lastPb < 0.20    ? '하단권 (강한 반등)'
-    : lastPb < 0.35    ? '하단 근처'
-    : lastPb > 0.80    ? '상단권 (강한 조정)'
-    : lastPb > 0.65    ? '상단 근처'
-    : '중립 구간';
-  const bbRow = `<div class="sc-row">
-    <span class="sc-label">%B</span>
-    <span class="sc-val">${pbPct}</span>
-    <span class="sc-sig" style="color:${pbColor}">${pbLabel}</span>
-  </div>`;
-
-  const rowsHtml = rows.map(r => {
-    if (r.infoOnly) {
-      const ic = r.detail === '—' ? 'var(--muted)' : r.tone > 0 ? 'var(--accent)' : '#ffa64d';
-      return `<div class="sc-row">
-        <span class="sc-label">${r.label === 'CANDLE' ? '캔들' : r.label}</span>
-        <span class="sc-val" style="color:${ic}">${r.detail}</span>
-        <span class="sc-sig" style="color:var(--muted);opacity:.7">참고</span>
-      </div>`;
-    }
-    // 추세 반대 신호는 회색으로 표시 (필터됨)
-    const filtered = (trendUp && r.score < 0) || (trendDown && r.score > 0);
-    const ic = filtered ? 'var(--muted)'
-             : r.score > 0 ? 'var(--up)' : r.score < 0 ? 'var(--down)' : 'var(--muted)';
-    const il = filtered
-             ? (r.score > 0 ? '▲ 매수 (필터)' : '▼ 매도 (필터)')
-             : r.score > 0 ? '▲ 매수' : r.score < 0 ? '▼ 매도' : '— 중립';
-    return `<div class="sc-row">
-      <span class="sc-label">${r.label}</span>
-      <span class="sc-val">${r.detail}</span>
-      <span class="sc-sig" style="color:${ic}">${il}</span>
-    </div>`;
-  }).join('');
-
   const totalSlots = activeCount + (_activeInds.has('rsi') ? 1 : 0); // DIV는 RSI 활성 시 포함
-  const scoreBg = finalTotal > 0 ? 'var(--up-bg)'
-                : finalTotal < 0 ? 'var(--down-bg)'
-                : 'rgba(139,148,158,0.08)';
-  card.innerHTML = `
-    <div class="sc-banner" style="background:${scoreBg};border-left-color:${scoreColor}">
-      <div class="sc-title">종합 신호</div>
-      <div class="sc-score" style="color:${scoreColor}">${scoreLabel}</div>
-      <div class="sc-score-num" style="color:${scoreColor}">${finalTotal > 0 ? '+' : ''}${finalTotal} / ${totalSlots}</div>
+
+  // 60일선 위·아래 (정보 표시 — 신호 계산엔 안 씀)
+  const ma60 = _calcMA(closes, 60)[n - 1];
+  const maTxt = ma60 == null ? '' : lastClose > ma60 ? '<b class="up">위</b>' : '<b class="down">아래</b>';
+  const sym = r => r.score > 0 ? '<b class="up">▲</b>' : r.score < 0 ? '<b class="down">▼</b>' : '<b>—</b>';
+  const dots = rows.map(r => `<span>${r.label} ${r.show ? `<b class="${r.score > 0 ? 'up' : r.score < 0 ? 'down' : ''}">${r.detail}${r.score > 0 ? '↗' : r.score < 0 ? '↘' : ''}</b>` : sym(r)}</span>`).join('');
+
+  const wLabel = wTrendNow === 1 ? '<b class="up">상승</b> (매도 신호 억제)' : wTrendNow === -1 ? '<b class="down">하락</b> (매수 신호 억제)' : '중립';
+  const pbLabel = lastPb == null ? '—' : `${Math.round(lastPb * 100)}%` + (bbBlocked ? ' <b class="warn">⚡ 신호 차단</b>'
+    : lastPb < 0.35 ? ' (하단 근처)' : lastPb > 0.65 ? ' (상단 근처)' : ' (중간)');
+  const fmtP = v => isKrMode ? _fmtKrPrice(v) : fmt$(v);
+  const lv = _sigLevels;
+  const lineTxt = lv
+    ? `${lv.ago ? `${lv.ago}봉 전` : '오늘'} ${lv.buy ? '매수' : '매도'} 신호 · 진입 ${fmtP(lv.entry)} · 손절 ${fmtP(lv.stop)} (ATR×2) · 목표 ${fmtP(lv.target)} (2:1)`
+    : `최근 ${_SIG_LINE_BARS}봉 안에 신호가 없어 가격선 없음`;
+  const multi = _chartGridN > 1;
+
+  card.innerHTML = `<div class="sigb-top">
+      <span class="sigb-verdict ${cls}">${scoreLabel}</span>
+      <span class="sigb-score">점수 ${finalTotal > 0 ? '+' : ''}${finalTotal} / ${totalSlots}</span>
+      ${multi ? '' : `<span class="sigb-dots">${dots}${maTxt ? `<span>60일선 ${maTxt}</span>` : ''}</span>`}
+      <button type="button" class="sigb-more" aria-expanded="${_sigbOpen}">${_sigbOpen ? '접기 ▴' : '자세히 ▾'}</button>
     </div>
-    <div class="sc-divider"></div>
-    ${trendRow}
-    ${weeklyRow}
-    ${bbRow}
-    <div class="sc-divider"></div>
-    ${rowsHtml}`;
+    <div class="sigb-detail" ${_sigbOpen ? '' : 'hidden'}>
+      ${multi ? `<div class="sigb-dots">${dots}</div>` : ''}
+      ${rows.map(r => `<div><b>${r.label}</b> ${r.detail} · ${r.score > 0 ? '<span class="up">매수 쪽</span>' : r.score < 0 ? '<span class="down">매도 쪽</span>' : '중립'}</div>`).join('')}
+      <div><b>캔들</b> ${candleBlocked ? '<b class="warn">⚡ 약세 캔들 없어 매도 차단</b>' : patName} <small>(참고)</small></div>
+      <div><b>주봉 MA13</b> ${wLabel}</div>
+      <div><b>BB %B</b> ${pbLabel}</div>
+      <div><b>가격선</b> ${lineTxt}</div>
+    </div>`;
+  card.hidden = false;
+  host.classList.add('has-sigb');
+  host.style.setProperty('--sigb-h', card.offsetHeight + 'px');
+  card.querySelector('.sigb-more').onclick = e => {
+    e.stopPropagation();
+    _sigbOpen = !_sigbOpen;
+    _renderSignalCard();
+  };
+}
+
+// ── 🪟 차트 1·2·4칸 (11-28) ──────────────────────────────────────────────────
+// 큰 차트(#chart-slot-main — 지표·보조창·그리기·옆칸·수급)는 '누른 칸' 자리에 들어가고 나머지 칸은 작은 차트.
+// 작은 칸을 누르면 큰 차트가 그 자리로 옮겨 가서 그 종목을 연다. 봉 단위·기간·지표·신호 설정은 모든 칸 공통.
+// 배치·칸별 종목은 localStorage CHL = { n, active, codes }
+const _CHL_KEY = 'CHL';
+let _chartGridN = 1, _chartGridActive = 0, _chartGridCodes = [];
+const _mcPanes = {};   // 칸 번호 → { el, hd, box, tip, chart, candle, mas, bg, st, lineRefs, ticker, url, ohlcv, events, stock, seq }
+let _mcTimer = null;
+
+function _mcSave() {
+  try { localStorage.setItem(_CHL_KEY, JSON.stringify({ n: _chartGridN, active: _chartGridActive, codes: _chartGridCodes })); } catch { /* 저장 못 해도 동작 */ }
+}
+
+function _mcFillCodes() {
+  const main = _currentTicker || _chartGridCodes[_chartGridActive] || '';
+  const pool = _isKrStock(main) ? ['005930.KS', '000660.KS', '035420.KS', '005380.KS', '373220.KS']
+                                : ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL'];
+  for (let i = 0; i < 4; i++) {
+    if (_chartGridCodes[i]) continue;
+    _chartGridCodes[i] = pool.find(t => !_chartGridCodes.includes(t) && t !== main) || pool[i];
+  }
+}
+
+function _mcSetN(n) {
+  if (![1, 2, 4].includes(n)) return;
+  if (_chartGridActive >= n) {   // 큰 차트가 사라질 칸에 있으면 1번 칸으로
+    _chartGridCodes[0] = _currentTicker || _chartGridCodes[_chartGridActive];
+    _chartGridActive = 0;
+  }
+  _chartGridN = n;
+  _mcFillCodes();
+  _mcLayout();
+  _mcSave();
+}
+
+function _mcLayout() {
+  const grid = document.getElementById('chart-grid'), main = document.getElementById('chart-slot-main');
+  if (!grid || !main) return;
+  const multi = _chartGridN > 1;
+  grid.className = `chart-grid n${_chartGridN}${multi ? ' multi' : ''}`;
+  document.querySelectorAll('#chart-split [data-n]').forEach(b => {
+    const on = +b.dataset.n === _chartGridN;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+  });
+  Object.keys(_mcPanes).forEach(k => { if (+k >= _chartGridN || +k === _chartGridActive) _mcDestroy(+k); });
+  for (let i = 0; i < _chartGridN; i++) {
+    const el = i === _chartGridActive ? main : (_mcPanes[i] ? _mcPanes[i].el : _mcCreate(i));
+    grid.appendChild(el);   // 이미 있는 요소는 순서대로 옮겨짐
+  }
+  main.classList.toggle('mc-active', multi);
+  _sigbOpen = false;   // 칸 수가 바뀌면 배지 '자세히' 접기 (작은 칸에서 차트를 덮지 않게)
+  if (_lastOhlcv.length && !_compareMode) { _applySignalMarkers(); _renderSignalCard(); }
+  clearInterval(_mcTimer); _mcTimer = null;
+  if (multi) _mcTimer = setInterval(() => {   // 작은 칸은 1분마다 새로 (차트 탭이 보일 때만)
+    if (document.hidden || !grid.offsetParent) return;
+    Object.keys(_mcPanes).forEach(k => _mcLoad(+k, true));
+  }, 60000);
+  requestAnimationFrame(_resizeChartPanels);
+}
+
+function _mcDestroy(i) {
+  const p = _mcPanes[i];
+  if (!p) return;
+  try { p.chart.remove(); } catch { /* 이미 지움 */ }
+  p.el.remove();
+  delete _mcPanes[i];
+}
+
+function _mcCreate(i) {
+  const el = document.createElement('div');
+  el.className = 'chart-slot mc-slot';
+  el.dataset.slot = i;
+  el.title = '누르면 이 종목을 큰 차트로 (지표·그리기·옆칸·수급)';
+  el.innerHTML = `<div class="mc-hd">
+      <div class="mc-search"><input class="mc-input" type="text" autocomplete="off" placeholder="종목 검색 (이름·티커)" aria-label="${i + 1}번 칸 종목">
+        <div class="global-search-dropdown mc-dd"></div></div>
+      <span class="mc-chip" hidden></span>
+      <span class="mc-px"></span>
+    </div>
+    <div class="mc-box"></div>`;
+  const box = el.querySelector('.mc-box');
+  const chart = LightweightCharts.createChart(box, {
+    width: box.clientWidth || 400, height: 240,
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontSize: 11 },
+    grid: { vertLines: { color: '#1e2530' }, horzLines: { color: '#1e2530' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d', scaleMargins: { top: 0.08, bottom: 0.06 } },
+    timeScale: { borderColor: '#30363d', timeVisible: true, rightOffset: 5 },
+    handleScale: { axisPressedMouseMove: false },
+  });
+  const bg = chart.addHistogramSeries({ priceScaleId: 'sigbg', priceLineVisible: false, lastValueVisible: false,
+    autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 1 } }) });
+  chart.priceScale('sigbg').applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+  const candle = chart.addCandlestickSeries({ upColor: C_UP, downColor: C_DN, borderUpColor: C_UP, borderDownColor: C_DN, wickUpColor: C_UP, wickDownColor: C_DN });
+  const st = chart.addLineSeries({ lineWidth: 2, lineType: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null });
+  const tip = document.createElement('div');
+  tip.className = 'sigtip'; tip.hidden = true;
+  box.appendChild(tip);
+  const p = _mcPanes[i] = { el, hd: el.querySelector('.mc-hd'), box, tip, chart, candle, bg, st, mas: [], lineRefs: [],
+                            ticker: null, url: '', ohlcv: [], events: [], stock: null, seq: 0 };
+  chart.subscribeCrosshairMove(param => _sigTipMove(tip, box, p.events, p.ohlcv, _isKrStock(p.ticker || ''), param));
+
+  // 칸 누르기 → 큰 차트로 (검색칸 누를 땐 제외)
+  el.addEventListener('click', e => { if (!e.target.closest('.mc-search')) _mcActivate(i); });
+  _mcBindSearch(i);
+  _mcLoad(i);
+  return el;
+}
+
+function _mcBindSearch(i) {
+  const p = _mcPanes[i], input = p.el.querySelector('.mc-input'), dd = p.el.querySelector('.mc-dd');
+  const pick = t => { if (!t) return; dd.style.display = 'none'; input.blur(); _chartGridCodes[i] = t; _mcSave(); _mcLoad(i); };
+  let timer = null;
+  input.addEventListener('focus', () => input.select());
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) { dd.style.display = 'none'; return; }
+    timer = setTimeout(() => {
+      const res = [...searchStocks(window._krStocks || [], q, 5).map(s => ({ ...s, _kr: true })),
+                   ...searchStocks(window._scStocks || [], q, 5)].slice(0, 8);
+      dd.innerHTML = res.length ? res.map(s => `<div class="gs-item" data-t="${_escHtml(s.ticker)}">
+          <span class="gs-ticker">${_escHtml(s._kr ? s.code : s.ticker)}</span><span class="gs-name">${_escHtml(s._kr ? s.name : usKoName(s))}</span></div>`).join('')
+        : '<div class="gs-empty">결과 없음</div>';
+      dd.style.display = 'block';
+    }, 150);
+  });
+  dd.addEventListener('mousedown', e => { const it = e.target.closest('[data-t]'); if (it) { e.preventDefault(); pick(it.dataset.t); } });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') pick(resolveTickerInput(input.value) || input.value.trim().toUpperCase());
+    if (e.key === 'Escape') { dd.style.display = 'none'; input.blur(); }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { dd.style.display = 'none'; _mcHeader(i); }, 150));
+}
+
+function _mcActivate(i) {
+  if (i === _chartGridActive || !_mcPanes[i]) return;
+  const t = _chartGridCodes[i];
+  _chartGridCodes[_chartGridActive] = _currentTicker || _chartGridCodes[_chartGridActive];
+  _chartGridActive = i;
+  _mcLayout();
+  _mcSave();
+  if (t && t !== _currentTicker) loadChart(t);
+}
+
+// loadChart에서 부름: 큰 차트 칸의 종목 기억 + 봉 단위·기간이 바뀌었으면 작은 칸도 다시
+function _mcOnMainLoad(ticker) {
+  _chartGridCodes[_chartGridActive] = ticker;
+  _mcSave();
+  Object.keys(_mcPanes).forEach(k => { const p = _mcPanes[k]; if (p.ticker && p.url !== _buildChartUrl(p.ticker)) _mcLoad(+k); });
+}
+
+async function _mcLoad(i, quiet = false) {
+  const p = _mcPanes[i];
+  if (!p) return;
+  const t = _chartGridCodes[i];
+  const seq = ++p.seq, url = _buildChartUrl(t);
+  if (p.ticker !== t) { p.ohlcv = []; p.events = []; p.stock = null; }
+  p.ticker = t; p.url = url;
+  if (!quiet) _mcHeader(i, '불러오는 중…');
+  try {
+    const [ohlcv, stock] = await Promise.all([
+      api(url),
+      _isIndex(t) ? Promise.resolve(null) : api(`/api/stock/${encTk(t)}`).catch(() => null),
+    ]);
+    if (seq !== p.seq || !_mcPanes[i]) return;
+    if (!ohlcv || !ohlcv.length) throw new Error('no data');
+    p.ohlcv = ohlcv; p.stock = stock;
+    _mcDraw(i, !quiet);
+  } catch {
+    if (seq !== p.seq || !_mcPanes[i]) return;
+    p.candle.setData([]); p.ohlcv = []; p.events = [];
+    _mcHeader(i, `"${t}" 시세를 못 불러왔어요`);
+  }
+}
+
+function _mcHeader(i, msg) {
+  const p = _mcPanes[i];
+  if (!p) return;
+  const t = p.ticker || _chartGridCodes[i] || '', s = p.stock, input = p.el.querySelector('.mc-input');
+  const kr = _isKrStock(t);
+  if (document.activeElement !== input)
+    input.value = s ? (kr ? `${t.replace(/\.(KS|KQ)$/, '')} ${s.name || ''}` : `${t} ${s.name_ko || ''}`).trim()
+                    : (_isIndex(t) ? (_INDEX_NAMES[t] || t) : t);
+  const px = p.el.querySelector('.mc-px');
+  if (msg) { px.innerHTML = `<span class="mc-msg">${_escHtml(msg)}</span>`; return; }
+  const last = p.ohlcv[p.ohlcv.length - 1], prev = p.ohlcv[p.ohlcv.length - 2];
+  const price = s && s.price != null ? s.price : last && last.close;
+  const pct = s && s.change_pct != null ? s.change_pct : (last && prev ? (last.close / prev.close - 1) * 100 : null);
+  const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
+  px.innerHTML = price == null ? '' : `<b class="${cls}">${_fmtQuote(price, t)}</b>${pct == null ? '' : ` <span class="${cls}">${pct > 0 ? '+' : ''}${pct.toFixed(2)}%</span>`}`;
+}
+
+// 작은 칸 그리기: 캔들 + 켜 둔 이평선 + 신호(화살표·가격선·추세 배경·슈퍼트렌드) — 큰 차트와 같은 계산
+function _mcDraw(i, fit = true) {
+  const p = _mcPanes[i];
+  if (!p || !p.ohlcv.length) return;
+  const o = p.ohlcv, closes = o.map(d => d.close), short = _chartGridN === 4;
+  const big = closes[closes.length - 1] >= 1000;   // 국내·고가주는 가격 축 정수
+  p.candle.applyOptions({ priceFormat: big ? { type: 'price', precision: 0, minMove: 1 } : { type: 'price', precision: 2, minMove: 0.01 } });
+  p.candle.setData(o.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
+  p.mas.forEach(s => p.chart.removeSeries(s));
+  p.mas = _IND_MA.filter(d => _activeInds.has(d.id)).map(d => {
+    const s = p.chart.addLineSeries({ color: d.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null });
+    const ma = _calcMA(closes, d.period);
+    s.setData(o.map((b, k) => ma[k] == null ? null : { time: b.time, value: ma[k] }).filter(Boolean));
+    return s;
+  });
+  const { markers, events } = _buildSignalMarkers(o, p.ticker, short);
+  p.events = events;
+  p.candle.setMarkers(_sigOpts.mark ? markers : []);
+  p.lineRefs.forEach(l => { try { p.candle.removePriceLine(l); } catch { /* 없음 */ } });
+  const lv = _signalLevels(o, events);
+  p.lineRefs = _sigOpts.line && lv ? _signalLineDefs(lv, short).map(d => p.candle.createPriceLine(d)) : [];
+  p.bg.setData(_sigOpts.bg ? _trendBgData(o) : []);
+  p.st.setData(_sigOpts.st ? _calcSupertrend(o) : []);
+  // 칸 제목 옆 신호 칩: 가격선과 같은 기준(최근 20봉 안 마지막 신호)
+  const chip = p.el.querySelector('.mc-chip');
+  const ev = lv ? events[events.length - 1] : null;
+  chip.hidden = !_sigOpts.badge || !ev;
+  if (ev) {
+    chip.className = `mc-chip ${ev.buy ? 'up' : 'down'}`;
+    chip.textContent = `${Math.abs(ev.score) >= 3 ? '강력 ' : ''}${ev.buy ? '매수' : '매도'} ${ev.score > 0 ? '+' : '−'}${Math.abs(ev.score)}${lv.ago ? ` · ${lv.ago}봉 전` : ' · 오늘'}`;
+  }
+  _mcHeader(i);
+  if (fit) p.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, o.length - 130), to: o.length - 1 + 5 });
+}
+
+// 신호·이평선 설정이 바뀌면 작은 칸도 다시 그림
+function _mcApplyAll() { Object.keys(_mcPanes).forEach(k => _mcDraw(+k, false)); }
+
+function _mcInit() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_CHL_KEY));
+    if (v && [1, 2, 4].includes(v.n)) {
+      _chartGridN = v.n;
+      _chartGridCodes = Array.isArray(v.codes) ? v.codes.slice(0, 4) : [];
+      _chartGridActive = Number.isInteger(v.active) && v.active < v.n ? v.active : 0;
+    }
+  } catch { /* 처음 */ }
+  document.querySelectorAll('#chart-split [data-n]').forEach(b => b.addEventListener('click', () => _mcSetN(+b.dataset.n)));
+  if (_chartGridN > 1) {
+    _mcFillCodes(); _mcLayout();
+    // 여러 칸 배치를 기억해 다시 열면 큰 칸도 그 종목으로 (다른 탭에서 종목을 눌러 들어온 경우엔 그 종목이 먼저)
+    const t = _chartGridCodes[_chartGridActive];
+    setTimeout(() => { if (!_currentTicker && t) loadChart(t); }, 0);
+  }
+}
+
+// ── 오른쪽 칸 탭: 요약 · 뉴스 · 리포트 · 재무 (11-28) — 마지막 탭은 localStorage CSB ─────────
+const _CSB_KEY = 'CSB';
+function _csbShow(k) {
+  document.querySelectorAll('.csb-tabs [data-csb]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.csb === k)));
+  document.querySelectorAll('.csb-pane').forEach(p => { p.hidden = p.dataset.csb !== k; });
+  try { localStorage.setItem(_CSB_KEY, k); } catch { /* 저장 못 해도 동작 */ }
+}
+
+function _bindSidebarTabs() {
+  const tabs = document.querySelectorAll('.csb-tabs [data-csb]');
+  if (!tabs.length) return;
+  tabs.forEach(b => b.addEventListener('click', () => _csbShow(b.dataset.csb)));
+  let k = 'sum';
+  try { k = localStorage.getItem(_CSB_KEY) || 'sum'; } catch { /* 처음 */ }
+  if (![...tabs].some(b => b.dataset.csb === k)) k = 'sum';
+  _csbShow(k);
+
+  // 뉴스: 탭 숫자 + 요약 탭 '최신 뉴스 2건'
+  const news = document.getElementById('stock-news-section'), mini = document.getElementById('csb-news-mini');
+  const cntNews = document.getElementById('csb-cnt-news'), cntRep = document.getElementById('csb-cnt-rep');
+  new MutationObserver(() => {
+    const items = news.querySelectorAll('.stock-news-item');
+    cntNews.textContent = items.length ? items.length : '';
+    mini.innerHTML = items.length
+      ? `<div class="info-section-title" style="margin-top:10px">최신 뉴스 <button type="button" class="csb-more" data-go="news">전체 보기 →</button></div>${[...items].slice(0, 2).map(x => x.outerHTML).join('')}`
+      : '';
+  }).observe(news, { childList: true });
+  mini.addEventListener('click', e => { if (e.target.closest('[data-go="news"]')) _csbShow('news'); });
+  // 리포트: 제목의 'N건'
+  const rep = document.getElementById('broker-research-section');
+  new MutationObserver(() => {
+    const m = /(\d+)건/.exec((rep.querySelector('.stock-news-cnt') || {}).textContent || '');
+    cntRep.textContent = m && +m[1] ? m[1] : '';
+  }).observe(rep, { childList: true });
+
+  // 넓은 화면: 옆칸 높이 = 차트 칸 높이 (안에서 스크롤). 모의투자 주문창이 열리면 원래대로
+  const main = document.querySelector('.chart-main'), side = document.querySelector('.chart-sidebar'), layout = document.querySelector('.chart-layout');
+  const sync = () => {
+    const two = getComputedStyle(layout).gridTemplateColumns.split(' ').length > 1;
+    side.style.height = two && !layout.classList.contains('pp-on') && main.offsetHeight > 200 ? main.offsetHeight + 'px' : '';
+  };
+  new ResizeObserver(sync).observe(main);
+  window.addEventListener('resize', sync);
 }
 
 // 서브 패널 수에 따라 메인 차트 높이 동적 조절 (뷰포트 기반)
 function _resizeChartPanels() {
   const PANEL_H   = 105;
   const PANEL_GAP = 2;
-  const count   = (_activeInds.has('rsi') ? 1 : 0) + (_activeInds.has('macd') ? 1 : 0) + (_activeInds.has('sto') ? 1 : 0);
   const el      = document.getElementById('lw-chart');
+  if (_chartGridN > 1) { _resizeChartGrid(); return; }
+  const count   = (_activeInds.has('rsi') ? 1 : 0) + (_activeInds.has('macd') ? 1 : 0) + (_activeInds.has('sto') ? 1 : 0);
   const topY    = el.getBoundingClientRect().top || 280;
   const TOTAL_H = Math.max(window.innerHeight - topY - 24, 300);
   const kf      = document.getElementById('kr-flow');                     // 📊 수급 창이 보이면 그만큼 메인 차트를 줄여 한 화면에 (11-28)
@@ -2701,6 +3071,21 @@ function _resizeChartPanels() {
   const mainH   = Math.max(TOTAL_H - count * (PANEL_H + PANEL_GAP) - kfH, 200);
   const w       = el.clientWidth || 900;
   if (_lwChart) _lwChart.resize(w, mainH);
+}
+
+// 2·4칸: 화면 높이를 줄 수로 나눠 칸마다 같은 높이 (RSI·MACD·STO 보조 창은 1칸일 때만 — CSS로 숨김)
+function _resizeChartGrid() {
+  const grid = document.getElementById('chart-grid');
+  const rows = _chartGridN === 4 ? 2 : 1;
+  const topY = grid.getBoundingClientRect().top || 280;
+  const kf   = document.getElementById('kr-flow');
+  const kfH  = kf && !kf.hidden ? kf.offsetHeight + 2 : 0;
+  const total = Math.max(window.innerHeight - topY - 24 - kfH, rows * 260);
+  const slotH = Math.floor((total - (rows - 1)) / rows);
+  const main = document.getElementById('chart-slot-main'), el = document.getElementById('lw-chart');
+  const fixed = [...main.children].filter(c => c !== el && c.offsetParent).reduce((a, c) => a + c.offsetHeight, 0);
+  if (_lwChart) _lwChart.resize(el.clientWidth || 400, Math.max(slotH - fixed, 150));
+  Object.values(_mcPanes).forEach(p => p.chart.resize(p.box.clientWidth || 400, Math.max(slotH - p.hd.offsetHeight, 150)));
 }
 
 function _createRSIChart() {
@@ -2790,11 +3175,17 @@ function _setIndicator(id, on) {
   _saveActiveInds();
   _syncIndicatorUI();
   if (!_compareMode) _applyIndicators();
+  _mcApplyAll();
 }
 
 function _syncIndicatorUI() {
   document.querySelectorAll('.ind-switch[data-ind]').forEach(s => {
     const on = _activeInds.has(s.dataset.ind);
+    s.classList.toggle('on', on);
+    s.setAttribute('aria-checked', on);
+  });
+  document.querySelectorAll('.ind-switch[data-sig]').forEach(s => {
+    const on = !!_sigOpts[s.dataset.sig];
     s.classList.toggle('on', on);
     s.setAttribute('aria-checked', on);
   });
@@ -2823,6 +3214,15 @@ function _bindIndicatorSettings() {
       <span class="ind-set-title">지표 설정</span>
       <button class="ind-set-close" data-act="close" aria-label="닫기">✕</button>
     </div>
+    <div class="ind-set-group ind-set-sig">
+      <div class="ind-set-group-name">신호 <small>모든 칸에 같이 적용</small></div>
+      ${_SIG_OPT_DEFS.map(d => `
+        <div class="ind-set-row">
+          ${_indDot(d)}<span class="ind-set-name">${d.name}</span>
+          <span class="ind-set-sub">${_escHtml(d.sub)}</span>
+          <button class="ind-switch" data-sig="${d.k}" role="switch" aria-checked="false" aria-label="${_escHtml(d.name)}"></button>
+        </div>`).join('')}
+    </div>
     ${_IND_TABS.map(t => `
       <div class="ind-set-group">
         <div class="ind-set-group-name">${t.name}</div>
@@ -2848,6 +3248,7 @@ function _bindIndicatorSettings() {
   box.addEventListener('click', e => {
     e.stopPropagation();
     const sw = e.target.closest('.ind-switch');
+    if (sw && sw.dataset.sig) { _setSigOpt(sw.dataset.sig, !_sigOpts[sw.dataset.sig]); return; }
     if (sw) { if (!_compareMode) _setIndicator(sw.dataset.ind, !_activeInds.has(sw.dataset.ind)); return; }
     const info = e.target.closest('.ind-set-info');
     if (info) { close(); _openIndicatorGuide(info.dataset.info); return; }
@@ -2856,7 +3257,7 @@ function _bindIndicatorSettings() {
     if (act === 'all-on' || act === 'all-off') {
       if (_compareMode) return;
       _IND_DEFS.forEach(d => act === 'all-on' ? _activeInds.add(d.id) : _activeInds.delete(d.id));
-      _saveActiveInds(); _syncIndicatorUI(); _applyIndicators();
+      _saveActiveInds(); _syncIndicatorUI(); _applyIndicators(); _mcApplyAll();
     }
   });
   document.addEventListener('click', () => { if (!box.hidden) close(); });
@@ -3210,6 +3611,7 @@ async function _loadCompareChart(ticker2) {
   _lwChart.timeScale().fitContent();
 
   _compareMode = true;
+  _clearSignalExtras(); _renderSignalCard();   // 비교 모드에선 신호 가격선·배경·배지 숨김
   _scheduleIndOverlay();   // 비교 모드에선 구름·매물대 지움
 
   // 범례 표시
@@ -3249,6 +3651,7 @@ function _exitCompare() {
   if (legend) legend.style.display = 'none';
 
   document.getElementById('chart-cmp-toggle')?.classList.remove('active');
+  if (_lastOhlcv.length) { _applySignalMarkers(); _renderSignalCard(); }
   _scheduleIndOverlay();   // 구름·매물대 다시 표시
 }
 
@@ -3902,6 +4305,8 @@ function _kfBars(ser) {
 
 // 매수·매도 비율 막대 (fmt: 값 → 글자)
 function _kfRatioHtml(buy, sell, fmt) {
+  if (!Number.isFinite(buy) && !Number.isFinite(sell)) return '<div class="kf-s">매수·매도 나눔 기록 없음</div>';   // 11-28 NaN억 표시 고침
+  buy = Number.isFinite(buy) ? buy : 0; sell = Number.isFinite(sell) ? sell : 0;
   const tot = (buy || 0) + (sell || 0), bp = tot ? Math.round(buy / tot * 100) : 50;
   return `<div class="kf-ratio" title="매수 ${fmt(buy)} · 매도 ${fmt(sell)}">
       <span class="kf-rb" style="width:${bp}%"></span><span class="kf-rs" style="width:${100 - bp}%"></span></div>
@@ -4073,13 +4478,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('kf-fold');
   if (!btn) return;
   const apply = fold => {
-    document.getElementById('kf-body').hidden = fold;
-    btn.textContent = fold ? '펴기' : '접기';
+    document.getElementById('kf-graphs').hidden = fold;   // 11-28: 숫자 칸·비율막대는 늘 보이고 그래프만 접힘
+    btn.textContent = fold ? '그래프 펴기 ▾' : '그래프 접기 ▴';
     btn.setAttribute('aria-expanded', String(!fold));
     if (typeof _resizeChartPanels === 'function') _resizeChartPanels();
   };
-  let fold = false;
-  try { fold = localStorage.getItem(_KF_FOLD) === '1'; } catch { /* 없으면 펼침 */ }
+  let fold = true;
+  try { fold = localStorage.getItem(_KF_FOLD) !== '0'; } catch { /* 없으면 그래프 접힘 */ }
   apply(fold);
   btn.addEventListener('click', () => {
     fold = !fold;

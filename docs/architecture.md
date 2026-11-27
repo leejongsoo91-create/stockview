@@ -108,7 +108,7 @@
 신호 계열(`daily-signals`, `volume-surges`, `candle-patterns`, `rsi-divergence`, `52w-movers`, `earnings-signals`)은 전부 `daily_signals` 캐시 하나에서 파생된다.
 
 ## 5. 브라우저 저장소 (localStorage)
-`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `stockview_cs_sel`(조건검색 마지막 프리셋) · `stockview_cs_dock`(조건검색 옆 패널 열림) · `stockview_kf_fold`(차트 아래 수급 창 접힘) · `stockview_kf_tab`(수급 그래프 탭: prog·inv) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
+`WL`(관심종목) · `PT`(포트폴리오) · `WLG`/`PTG`(그룹) · `WLN`/`PTN`(메모·목표가) · `stockview_cs_sel`(조건검색 마지막 프리셋) · `stockview_cs_dock`(조건검색 옆 패널 열림) · `stockview_kf_fold`(차트 아래 수급 창 흐름 그래프 접힘 — 11-28부터 숫자·비율막대는 늘 보임, 값 없으면 접힘) · `stockview_kf_tab`(수급 그래프 탭: prog·inv) · `PPM`(모의투자 모드 ON/OFF) · `PPT`(옛 모의투자 마지막 종목 — 11-26 오후부터 안 씀) · `NB`(뉴스·리포트·공시 북마크, `report_type`/`is_disclosure`로 구분) · `stockview_chart_drawings`(차트 그리기) · `NXV`(뉴스 탭 보기 설정: 분야·오른쪽 칸·한글/원문, 11-22) · `CHL`(차트 1·2·4칸 배치: `{n, active, codes}`, 11-28) · `CHS`(차트 신호 표시: 화살표·배지·가격선·추세 배경·슈퍼트렌드 켜기, 11-28) · `CSB`(차트 옆칸 마지막 탭: sum·news·rep·fin, 11-28). **키 이름·포맷을 바꾸면 기존 사용자 데이터가 깨지므로 호환 유지.**
 
 ## 6. 외부 데이터 소스 주의사항
 - **네이버 1분봉에는 08:00~08:50 넥스트 프리마켓 구간이 없다**(11-27 확인 — 오늘·어제 모두 09:00부터, 애프터 15:30~20:00은 있음). 프리마켓 분봉은 KIS `inquire-time-itemchartprice`에 `FID_COND_MRKT_DIV_CODE=NX`(체결강도 `inquire-ccnl`도 프리마켓엔 J가 빈 값, NX로).
@@ -129,6 +129,7 @@
 - **`data_fetcher.py`는 CRLF** — 파이썬으로 다시 쓸 때 줄바꿈 유지 (LF로 쓰면 전체 diff 발생)
 - Lightweight Charts: `fixRightEdge:true`와 `rightOffset`은 같이 못 씀. 메인+RSI+MACD+STO 4개 패널을 같이 고쳐야 세로선이 맞음
 - 신호 로직은 JS(`_calcSignals`)와 Python(`compute_today_signal`) **이중 구현** — 한쪽만 고치면 화면과 Brief가 어긋남
+- JS 차트 봉의 `time`은 일봉이면 `'YYYY-MM-DD'` 글자, 분봉이면 초 숫자 — 둘을 그대로 `<=` 비교하면 늘 거짓. 11-28까지 `_getWeeklyTrendArray`가 이 때문에 일봉에서 주봉 필터를 못 걸었음(Python과 신호 11% 어긋남)
 - 공유 저장소(`NB` 등)에 새 소비자를 붙이면 상대방 항목 필터링 누락으로 교차 오염 발생한 전례
 - 포트 5001: Claude가 띄운 서버와 사용자가 띄운 서버가 동시에 돌면 충돌. 병렬 작업은 5002+ (`parallel-work` 스킬)
 

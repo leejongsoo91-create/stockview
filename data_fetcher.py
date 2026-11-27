@@ -4074,11 +4074,8 @@ def compute_today_signal(ohlcv: list[dict], is_kr: bool) -> int:
     div = _sig_rsi_divergence(closes)
     combined = [sig[i] + div[i] for i in range(n)]
 
-    ma50 = _sig_sma(closes, 50)
-    for i in range(n):
-        if ma50[i] is None: continue
-        if closes[i] > ma50[i] and combined[i] < 0: combined[i] = 0
-        if closes[i] < ma50[i] and combined[i] > 0: combined[i] = 0
+    # MA50 추세 필터는 11-28 뺌 — 5년 백테스트에서 넣으면 매수 적중률이 60~65% → 50%로 떨어짐
+    # (decisions/003 검증 로직엔 원래 없었음, scripts/backtest_trend_signals.py)
 
     wtrend = _sig_weekly_trend(ohlcv)
     for i in range(n):

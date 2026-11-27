@@ -24,6 +24,8 @@
   --chart-canvas:      #161b22;  /* Lightweight Charts 캔버스(항상 어두움)와 같은 색 — 지표 가이드 예시 그림 배경 */
   --chart-canvas-text: #e6edf3;
   --chart-canvas-hot:  #ffa64d;  /* 차트 캔버스 위 강조(평소 2배 이상 거래) — 캔버스가 늘 어두워 양쪽 테마 같은 값 */
+  --chart-canvas-muted: #8b949e; --chart-canvas-line: #30363d; --chart-canvas-panel: #21262d;   /* 차트 위 신호 배지·풍선 (11-28) — 양쪽 테마 같은 값 */
+  --chart-canvas-up: #f04452; --chart-canvas-down: #3182f6; --chart-canvas-accent: #58a6ff;
   /* 공포·탐욕 5구간 (극단적 공포 → 극단적 탐욕) + 색 띠 위 글자색 */
   --fg-c1: #e5534b; --fg-c2: #e07a3a; --fg-c3: #e3b341; --fg-c4: #5dac57; --fg-c5: #27ae60; --fg-on: #0d1117;
   --inv-ind: #f0a040; --inv-for: #58a6ff; --inv-ins: #b083f0;   /* 투자자별 순매수: 개인·외국인·기관 (11-20) */
@@ -51,6 +53,8 @@ body.light-theme {
   --chart-canvas:      #161b22;  /* 라이트 테마에서도 차트 캔버스는 어두움 */
   --chart-canvas-text: #e6edf3;
   --chart-canvas-hot:  #ffa64d;  /* 차트 캔버스 위 강조(평소 2배 이상 거래) — 캔버스가 늘 어두워 양쪽 테마 같은 값 */
+  --chart-canvas-muted: #8b949e; --chart-canvas-line: #30363d; --chart-canvas-panel: #21262d;   /* 차트 위 신호 배지·풍선 (11-28) — 양쪽 테마 같은 값 */
+  --chart-canvas-up: #f04452; --chart-canvas-down: #3182f6; --chart-canvas-accent: #58a6ff;
   --fg-c1: #cf222e; --fg-c2: #bc4c00; --fg-c3: #9a6700; --fg-c4: #2da44e; --fg-c5: #116329; --fg-on: #ffffff;
   --inv-ind: #bc6c00; --inv-for: #0969da; --inv-ins: #8250df;
   --nc-econ: #bc4c00; --nc-world: #8250df; --nc-tech: #0969da; --nc-energy: #9a6700; --nc-policy: #1a7f37; --nc-sports: #1b7c83; --nc-general: #57606a;
@@ -2496,6 +2500,100 @@ main { padding: 20px calc(20px + var(--rail-w)) 20px 20px; max-width: calc(1600p
 .stock-news-dot.up   { background: var(--up); }
 .stock-news-dot.down { background: var(--down); }
 
+/* ── 🪟 차트 1·2·4칸 · 신호 배지 · 옆칸 탭 (11-28) ─────────────────────────── */
+/* 화면 나누기 아이콘 (지표 줄) */
+.chart-split { display: inline-flex; gap: 2px; padding: 2px; border-radius: 5px; background: var(--bg-input); border: 1px solid var(--border); vertical-align: middle; }
+.chart-split button { width: 26px; height: 20px; padding: 0; border: 0; border-radius: 3px; background: none; cursor: pointer; display: inline-grid; place-items: center; }
+.chart-split button:hover { background: var(--border); }
+.chart-split button.on { background: var(--accent); }
+.chart-split svg { width: 16px; height: 12px; }
+.chart-split svg rect { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.chart-split button.on svg rect { stroke: var(--bg); }
+.chart-split button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* 칸 배치: 칸 사이 1px 선 */
+.chart-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
+.chart-grid.multi { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border); border-bottom: 1px solid var(--border); }
+@media (max-width: 760px) { .chart-grid.multi { grid-template-columns: minmax(0, 1fr); } }
+.chart-slot { position: relative; min-width: 0; background: var(--bg-card); }
+.chart-grid.multi #rsi-panel, .chart-grid.multi #macd-panel, .chart-grid.multi #sto-panel { display: none !important; }
+#chart-slot-main.mc-active { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
+.chart-grid.multi .chart-header { padding: 7px 10px; }
+.chart-grid.multi .chart-ticker-name { font-size: 15px; }
+.chart-grid.multi #chart-price-badge { font-size: 13px; line-height: 1.3; }
+
+/* 작은 칸 */
+.mc-slot { cursor: pointer; }
+.mc-slot:hover { outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: -1px; }
+.mc-hd { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); min-width: 0; }
+.mc-search { position: relative; flex: 0 1 190px; min-width: 110px; }
+.mc-input { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 5px; color: var(--text); padding: 4px 8px; font-size: 12px; cursor: text; }
+.mc-input:focus { border-color: var(--accent); outline: none; }
+.mc-dd { top: calc(100% + 2px); }
+.mc-chip { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.mc-chip.up { color: var(--up); background: var(--up-bg); }
+.mc-chip.down { color: var(--down); background: var(--down-bg); }
+.mc-chip[hidden] { display: none; }
+.mc-px { margin-left: auto; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mc-px .up { color: var(--up); } .mc-px .down { color: var(--down); }
+.mc-msg { color: var(--muted); font-size: 12px; }
+.mc-box { position: relative; }
+
+/* 신호 배지 (차트 왼쪽 위) — 차트 캔버스는 늘 어두워 캔버스 색을 씀 */
+.sigb {
+  position: absolute; left: 8px; top: 8px; z-index: 6; max-width: calc(100% - 100px);
+  padding: 6px 10px; border-radius: 8px; font-size: 12px; line-height: 1.5;
+  background: color-mix(in srgb, var(--chart-canvas) 90%, transparent); color: var(--chart-canvas-text);
+  border: 1px solid var(--chart-canvas-line);
+}
+.sigb[hidden] { display: none; }
+.sigb-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sigb-verdict { font-weight: 700; padding: 1px 8px; border-radius: 5px; background: color-mix(in srgb, var(--chart-canvas-muted) 15%, transparent); }
+.sigb-verdict.up { color: var(--chart-canvas-up); background: color-mix(in srgb, var(--chart-canvas-up) 16%, transparent); }
+.sigb-verdict.down { color: var(--chart-canvas-down); background: color-mix(in srgb, var(--chart-canvas-down) 16%, transparent); }
+.sigb-score { font-variant-numeric: tabular-nums; color: var(--chart-canvas-muted); }
+.sigb-dots { display: inline-flex; gap: 8px; flex-wrap: wrap; color: var(--chart-canvas-muted); font-size: 11.5px; }
+.sigb b.up, .sigb .up { color: var(--chart-canvas-up); } .sigb b.down, .sigb .down { color: var(--chart-canvas-down); }
+.sigb b { font-weight: 600; }
+.sigb b.warn { color: var(--chart-canvas-hot); }
+.sigb-more { background: none; border: 0; padding: 0; color: var(--chart-canvas-accent); font-size: 11.5px; cursor: pointer; }
+.sigb-detail { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--chart-canvas-line); color: var(--chart-canvas-muted); font-size: 11.5px; }
+.sigb-detail b { color: var(--chart-canvas-text); }
+.sigb-detail > div:first-child .up, .sigb-detail > div:first-child .down { font-weight: 600; }
+.has-sigb .chart-vol-legend { top: calc(var(--sigb-h, 30px) + 14px); }
+
+/* 화살표 이유 풍선 */
+.sigtip {
+  position: absolute; z-index: 8; pointer-events: none; min-width: 180px; max-width: 280px;
+  padding: 7px 9px; border-radius: 7px; font-size: 12px; line-height: 1.6;
+  background: var(--chart-canvas-panel); color: var(--chart-canvas-text); border: 1px solid var(--chart-canvas-line); box-shadow: 0 6px 20px rgba(0,0,0,.45);
+}
+.sigtip[hidden] { display: none; }
+.sigtip-t { font-weight: 700; }
+.sigtip-t.up { color: var(--chart-canvas-up); } .sigtip-t.down { color: var(--chart-canvas-down); }
+.sigtip-d { color: var(--chart-canvas-muted); font-variant-numeric: tabular-nums; }
+
+/* ⚙ 지표 창 — 신호 묶음 */
+.ind-set-group.ind-set-sig { background: color-mix(in srgb, var(--accent) 7%, transparent); border-radius: 6px; padding: 6px 8px; margin: 2px -4px 4px; border-top: none; }
+.ind-set-group.ind-set-sig .ind-set-group-name { color: var(--accent); }
+.ind-set-group-name small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.ind-set-sig .ind-set-name { min-width: 92px; }
+
+/* 옆칸 탭 */
+.chart-sidebar { display: flex; flex-direction: column; min-height: 0; }
+.csb-tabs { display: flex; border-bottom: 1px solid var(--border); flex: none; }
+.csb-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 9px 2px 8px; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.csb-tabs button:hover { color: var(--text); }
+.csb-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 700; }
+.csb-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.csb-cnt:not(:empty) { margin-left: 3px; padding: 0 5px; border-radius: 999px; background: var(--bg-input); font-size: 10.5px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.csb-pane { flex: 1; min-height: 0; overflow-y: auto; }
+.csb-pane[hidden] { display: none; }
+.csb-more { background: none; border: 0; color: var(--accent); font-size: 11px; cursor: pointer; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+
+/* 수급: 숫자·비율막대는 늘, 그래프만 접힘 */
+#kf-graphs[hidden] { display: none; }
+
 /* ── NEWS ───────────────────────────────────────────────────────────────────── */
 .news-subtab-bar {
   display: flex;
@@ -4078,3 +4176,4 @@ body.light-theme .pp-band { background: #fff4d6; color: #7a5200; }
   .kf-legend { display: none; }
 }
 .kf-l-bar { border-top: 0 !important; height: 8px !important; width: 8px !important; background: linear-gradient(90deg, var(--up) 50%, var(--down) 50%); }
+
