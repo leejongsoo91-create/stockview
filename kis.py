@@ -233,6 +233,42 @@ def strength(code: str, mkt: str = "J") -> float | None:
     return _f(rows[0].get("tday_rltv")) if rows else None
 
 
+# ── 실시간 수급 창 (11-28, 차트 아래) ─────────────────────────────────────────
+EST_HOURS = {1: "09:30", 2: "10:00", 3: "11:20", 4: "13:20", 5: "14:30"}   # 외국인·기관 가집계 회차 → 발표 시각 (KIS 문서)
+
+
+def program_ticks(code: str) -> list[tuple] | None:
+    """종목 프로그램매매 최근 30건, 최신부터 [(HHMMSS, 주가, 누적 순매수 주, 누적 순매수 원)]. 체결마다 갱신."""
+    j = get(_Q + "program-trade-by-stock", "FHPPG04650101", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    if not j:
+        return None
+    return [(x.get("bsop_hour") or "", _i(x.get("stck_prpr")), _i(x.get("whol_smtn_ntby_qty")), _i(x.get("whol_smtn_ntby_tr_pbmn")))
+            for x in j.get("output") or [] if x.get("bsop_hour")]
+
+
+def investor_estimate(code: str) -> list[dict] | None:
+    """외국인·기관 장중 추정(가집계) [{n: 회차 1~5, at: 발표 시각, foreign, inst}] 회차 순 (주). 하루 5번만 바뀐다."""
+    j = get(_Q + "investor-trend-estimate", "HHPTJ04160200", {"MKSC_SHRN_ISCD": code})
+    if not j:
+        return None
+    out = [{"n": _i(x.get("bsop_hour_gb")), "foreign": _i(x.get("frgn_fake_ntby_qty")), "inst": _i(x.get("orgn_fake_ntby_qty"))}
+           for x in j.get("output2") or []]
+    for r in out:
+        r["at"] = EST_HOURS.get(r["n"], "")
+    return sorted((r for r in out if r["n"]), key=lambda r: r["n"])
+
+
+def market_program(mkt: str) -> tuple[str, int] | None:
+    """시장 전체 프로그램 순매수 (HHMMSS, 억 원) 최신. mkt K = 코스피, Q = 코스닥. KIS 단위는 백만 원(11-27 네이버 +10,463억과 일치)."""
+    j = get(_Q + "comp-program-trade-today", "FHPPG04600101",
+            {"FID_COND_MRKT_DIV_CODE": "J", "FID_MRKT_CLS_CODE": mkt, "FID_SCTN_CLS_CODE": "", "FID_INPUT_ISCD": "",
+             "FID_COND_MRKT_DIV_CODE1": "", "FID_INPUT_HOUR_1": ""})
+    rows = (j or {}).get("output") or []
+    if not rows:
+        return None
+    return rows[0].get("bsop_hour") or "", round(_i(rows[0].get("whol_smtn_ntby_tr_pbmn")) / 100)
+
+
 def last_trade(code: str, mkt: str = "J") -> tuple[str, int] | None:
     """가장 최근 체결 (HHMMSS, 가격). 모의투자 마감 동시호가 확인용 — 종가 체결은 15:30:0x에 찍히고,
     그 전 몇 초 동안 현재가는 아직 15:20 직전 값이라 현재가만 보면 틀린 가격으로 체결된다 (11-27 QA)."""

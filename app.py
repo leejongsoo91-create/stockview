@@ -1690,6 +1690,61 @@ def kr_investor(code: str):
     return jsonify(data)
 
 
+# ── 실시간 수급 창 (11-28, 차트 아래): 프로그램 순매수(체결마다) + 외국인·기관 추정(하루 5번) + 시장 프로그램 ──
+# KIS 종목 프로그램 조회는 최근 30건만 주므로, 화면이 10초마다 부를 때 받은 체결을 모아 오늘 흐름 그래프를 만든다(메모리, 재시작하면 처음부터).
+_FLOW: dict[str, dict] = {}
+_FLOW_LOCK = threading.Lock()
+
+
+@app.route("/api/kr-flow/<code>")
+def kr_flow(code: str):
+    code = df.kr_code(code)
+    if not code:
+        return jsonify({"error": "국내 종목이 아님"}), 400
+    if not kis.enabled():
+        return jsonify({"error": "KIS 키가 없어 수급을 못 받음"})
+    now = paper.now_kst()
+    live = _pp_open_day() and now.hour * 60 + now.minute >= 540      # 오늘 장이 열렸으면 오늘 것만, 아니면 전 거래일 마지막 기록
+    day = now.strftime("%Y-%m-%d") if live else "prev"
+    hms = now.strftime("%H%M%S")
+    t = time.time()
+    with _FLOW_LOCK:
+        rec = _FLOW.get(code)
+        if not rec or rec["day"] != day:
+            rec = _FLOW[code] = {"day": day, "pts": {}, "t": 0.0}
+            if len(_FLOW) > 60:                                       # 오래 안 본 종목부터 지움
+                for k in sorted(_FLOW, key=lambda k: _FLOW[k]["t"])[:10]:
+                    _FLOW.pop(k, None)
+        need = t - rec["t"] >= 8
+        if need:
+            rec["t"] = t
+    if need:
+        ticks = kis.program_ticks(code) or []
+        with _FLOW_LOCK:
+            for h, pr, q, a in ticks:
+                if live and h > hms:                                  # 장 초반엔 아직 지난 거래일 체결이 올 수 있음 → 버림
+                    continue
+                rec["pts"][h] = (pr, q, a)
+    est = cache.get(f"kr_flow_est_{code}")
+    if est is None:
+        est = kis.investor_estimate(code) or []
+        cache.set(f"kr_flow_est_{code}", est, ttl=60)
+    mk = cache.get("kr_flow_market")
+    if mk is None:
+        mk = {"K": kis.market_program("K"), "Q": kis.market_program("Q")}
+        cache.set("kr_flow_market", mk, ttl=30)
+    if live:                                                          # 날짜가 없는 값이라, 장 초반 지난 거래일 값(발표 시각이 지금보다 뒤)은 뺀다
+        hm = now.strftime("%H:%M")
+        est = [r for r in est if r["at"] <= hm]
+        mk = {k: (v if v and v[0] <= hms else None) for k, v in mk.items()}
+    with _FLOW_LOCK:
+        series = [[h, *rec["pts"][h]] for h in sorted(rec["pts"])]
+    last = series[-1] if series else None
+    return jsonify({"code": code, "live": live, "series": series,
+                    "program": {"at": last[0], "price": last[1], "qty": last[2], "amt": last[3]} if last else None,
+                    "est": est, "market": mk, "ts": t})
+
+
 @app.route("/api/kr-disclosures")
 def kr_disclosures():
     """KRX KIND 오늘 공시 목록 (30분 lazy 캐시)"""

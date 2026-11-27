@@ -4024,4 +4024,32 @@ body.light-theme .pp-band { background: #fff4d6; color: #7a5200; }
   #view-chart:has(.pp-mbar:not([hidden])) { padding-bottom: 60px; }
   body.pp-sheet-lock { overflow: hidden; }
 }
+
+/* 📊 실시간 수급 (11-28) — 국내 종목 차트 아래 */
+.kr-flow { border-top: 1px solid var(--border); padding: 6px 10px 8px; font-size: 12px; }
+.kr-flow[hidden] { display: none; }
+.kf-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.kf-name { color: var(--muted); }
+.kf-upd { margin-left: auto; color: var(--muted); font-size: 11px; }
+.kf-fold { background: var(--bg-input); color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
+.kf-fold:hover { color: inherit; }
+.kf-nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.kf-cell { background: var(--bg-input); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+.kf-k { color: var(--muted); font-size: 11px; }
+.kf-k small { margin-left: 4px; font-size: 10px; opacity: .8; }
+.kf-v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kf-s { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.kf-s.up, .kf-v.up, .kf-cell b.up { color: var(--up); }
+.kf-s.down, .kf-v.down, .kf-cell b.down { color: var(--down); }
+.kf-cell b { font-variant-numeric: tabular-nums; }
+.kf-graph-hd { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 2px; color: var(--muted); font-size: 11px; }
+.kf-legend i { display: inline-block; width: 12px; height: 0; vertical-align: middle; margin: 0 3px 0 8px; }
+.kf-l-amt { border-top: 2px solid var(--up); }
+.kf-l-px { border-top: 1px dashed var(--muted); }
+.kf-chart { height: 96px; }
+.kf-note { color: var(--muted); font-size: 10.5px; margin-top: 2px; min-height: 13px; }
+.kf-muted { color: var(--muted); grid-column: 1 / -1; padding: 4px 0; }
+@media (max-width: 760px) {
+  .kf-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kf-legend { display: none; }
 }

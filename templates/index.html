@@ -577,6 +577,21 @@
             <div class="rsi-panel-label">스토캐스틱 (14, 3)</div>
             <div id="sto-chart"></div>
           </div>
+          <!-- 📊 실시간 수급 (11-28): 국내 종목 차트 아래 — 프로그램 순매수(체결마다)·외국인·기관 추정·시장 프로그램 -->
+          <section id="kr-flow" class="kr-flow" hidden aria-label="실시간 수급">
+            <div class="kf-hd">
+              <b>📊 수급</b><span id="kf-name" class="kf-name"></span>
+              <span id="kf-upd" class="kf-upd"></span>
+              <button type="button" id="kf-fold" class="kf-fold" aria-expanded="true" title="수급 창 접기·펴기">접기</button>
+            </div>
+            <div id="kf-body">
+              <div id="kf-nums" class="kf-nums"></div>
+              <div class="kf-graph-hd"><span>프로그램 순매수 흐름</span>
+                <span class="kf-legend"><i class="kf-l-amt"></i>순매수(억, 왼쪽) <i class="kf-l-px"></i>주가(오른쪽)</span></div>
+              <div id="kf-chart" class="kf-chart"></div>
+              <div id="kf-note" class="kf-note"></div>
+            </div>
+          </section>
         </div>
         <!-- 💹 모의투자 모드 ON: 차트 옆 호가·주문 (11-26) -->
         <section id="pp-dock" class="pp-dock" hidden aria-label="모의투자 주문">

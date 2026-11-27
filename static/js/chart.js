@@ -1556,6 +1556,7 @@ async function loadChart(ticker) {
   _currentTicker = ticker;
   document.getElementById('chart-input').value = ticker;
   if (typeof paperOnChart === 'function') paperOnChart(ticker);   // 💹 모의투자 모드: 차트 옆 주문창 종목 바꾸기 (11-26)
+  flowOnChart(ticker);   // 📊 국내 종목이면 차트 아래 실시간 수급 (11-28)
 
   // 헤더 초기화
   const _idxNm = _isIndex(ticker) ? _indexNameOf(ticker) : null;
@@ -2695,7 +2696,9 @@ function _resizeChartPanels() {
   const el      = document.getElementById('lw-chart');
   const topY    = el.getBoundingClientRect().top || 280;
   const TOTAL_H = Math.max(window.innerHeight - topY - 24, 300);
-  const mainH   = Math.max(TOTAL_H - count * (PANEL_H + PANEL_GAP), 200);
+  const kf      = document.getElementById('kr-flow');                     // 📊 수급 창이 보이면 그만큼 메인 차트를 줄여 한 화면에 (11-28)
+  const kfH     = kf && !kf.hidden ? kf.offsetHeight + PANEL_GAP : 0;
+  const mainH   = Math.max(TOTAL_H - count * (PANEL_H + PANEL_GAP) - kfH, 200);
   const w       = el.clientWidth || 900;
   if (_lwChart) _lwChart.resize(w, mainH);
 }
@@ -3826,3 +3829,128 @@ async function _loadStockNews(ticker) {
     section.innerHTML = '';
   }
 }
+
+// ── 📊 실시간 수급 (11-28, 사용자 "거래할 때 외국인·기관·프로그램을 실시간으로, 차트 창 밑에") ──────────
+// 국내 종목 차트 아래 패널. 10초마다 /api/kr-flow — 프로그램 순매수는 체결마다 바뀌는 실시간 값,
+// 외국인·기관은 거래소 가집계(장중 5번)라 '몇 차 · 시각 기준'을 같이 적는다. 흐름 그래프는 서버가 받은 체결을 모아 그림.
+let _kfCode = null, _kfTimer = null, _kfChart = null, _kfAmt = null, _kfPx = null, _kfSeq = 0;
+const _KF_FOLD = 'stockview_kf_fold';
+
+function _kfFmtQty(v) {
+  if (v == null) return '—';
+  const a = Math.abs(v), s = v > 0 ? '+' : v < 0 ? '−' : '';
+  return a >= 10000 ? `${s}${(a / 10000).toFixed(1)}만주` : `${s}${a.toLocaleString('ko-KR')}주`;
+}
+function _kfFmtEok(eok) {
+  if (eok == null) return '—';
+  const a = Math.abs(eok), s = eok > 0 ? '+' : eok < 0 ? '−' : '';
+  return `${s}${a >= 100 ? Math.round(a).toLocaleString('ko-KR') : a.toFixed(a >= 10 ? 0 : 1)}억`;
+}
+const _kfCls = v => (v > 0 ? 'up' : v < 0 ? 'down' : '');
+const _kfHm = h => (h ? `${h.slice(0, 2)}:${h.slice(2, 4)}` : '');
+
+function _kfEnsureChart() {
+  if (_kfChart) return;
+  const el = document.getElementById('kf-chart');
+  const cs = getComputedStyle(document.documentElement);
+  const bg = cs.getPropertyValue('--bg-card').trim() || '#161b22';
+  const fg = cs.getPropertyValue('--muted').trim() || '#8b949e';
+  const bd = cs.getPropertyValue('--border').trim() || '#30363d';
+  _kfChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 600, height: 96,
+    layout: { background: { type: 'solid', color: bg }, textColor: fg, fontSize: 10 },
+    grid: { vertLines: { visible: false }, horzLines: { color: bd } },
+    leftPriceScale: { visible: true, borderColor: bd, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    rightPriceScale: { visible: true, borderColor: bd, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderColor: bd, timeVisible: true, secondsVisible: false },
+    handleScroll: false, handleScale: false,
+  });
+  _kfAmt = _kfChart.addBaselineSeries({
+    priceScaleId: 'left', baseValue: { type: 'price', price: 0 }, lineWidth: 2,
+    topLineColor: cUp(1), topFillColor1: cUp(0.25), topFillColor2: cUp(0.03),
+    bottomLineColor: 'rgba(49,130,246,1)', bottomFillColor1: 'rgba(49,130,246,0.03)', bottomFillColor2: 'rgba(49,130,246,0.25)',
+    priceFormat: { type: 'custom', formatter: v => _kfFmtEok(v) }, priceLineVisible: false,
+  });
+  _kfPx = _kfChart.addLineSeries({ priceScaleId: 'right', color: '#8b949e', lineWidth: 1, lineStyle: 2, priceLineVisible: false,
+    priceFormat: { type: 'custom', formatter: v => Math.round(v).toLocaleString('ko-KR') } });
+  new ResizeObserver(() => { if (_kfChart && el.clientWidth) _kfChart.resize(el.clientWidth, 96); }).observe(el);
+}
+
+function _kfRender(d) {
+  const nums = document.getElementById('kf-nums');
+  const note = document.getElementById('kf-note');
+  if (d.error) { nums.innerHTML = `<div class="kf-muted">${_escHtml(d.error)}</div>`; note.textContent = ''; return; }
+  const p = d.program, est = d.est || [], e = est[est.length - 1], mk = d.market || {};
+  const estCell = (label, v) => `<div class="kf-cell"><div class="kf-k">${label}<small>추정</small></div>
+      <div class="kf-v ${_kfCls(v)}">${e ? _kfFmtQty(v) : '—'}</div>
+      <div class="kf-s">${e ? `${e.n}차 ${e.at} 기준` : (d.live ? '아직 없음 (첫 집계 09:30)' : '집계 없음')}</div></div>`;
+  const mkLine = (nm, r) => `<div><span class="kf-s">${nm}</span> <b class="${_kfCls(r && r[1])}">${r ? _kfFmtEok(r[1]) : '—'}</b></div>`;
+  nums.innerHTML = `
+    <div class="kf-cell"><div class="kf-k">프로그램<small>실시간</small></div>
+      <div class="kf-v ${_kfCls(p && p.qty)}">${p ? _kfFmtQty(p.qty) : '—'}</div>
+      <div class="kf-s ${_kfCls(p && p.amt)}">${p ? _kfFmtEok(p.amt / 1e8) : '아직 체결 없음'}</div></div>
+    ${estCell('외국인', e && e.foreign)}
+    ${estCell('기관', e && e.inst)}
+    <div class="kf-cell"><div class="kf-k">시장 프로그램</div>${mkLine('코스피', mk.K)}${mkLine('코스닥', mk.Q)}</div>`;
+  document.getElementById('kf-upd').textContent = d.live
+    ? `${p ? _kfHm(p.at) + ' 체결까지 · ' : ''}10초마다 갱신`
+    : '장 시작 전·휴일 — 전 거래일 마지막 기록';
+  const ser = d.series || [];
+  _kfEnsureChart();
+  const t = h => Date.UTC(2000, 0, 1, +h.slice(0, 2), +h.slice(2, 4), +h.slice(4, 6)) / 1000;
+  _kfAmt.setData(ser.map(r => ({ time: t(r[0]), value: r[3] / 1e8 })));
+  _kfPx.setData(ser.map(r => ({ time: t(r[0]), value: r[1] })));
+  _kfChart.timeScale().fitContent();
+  note.textContent = !ser.length ? '프로그램 체결 기록이 아직 없어요'
+    : (d.live && ser[0][0] > '090500') ? `그래프는 ${_kfHm(ser[0][0])}부터 — 서버가 이 종목을 처음 조회한 뒤부터 모아요 (증권사는 최근 30건만 줌)`
+    : (!d.live ? '전 거래일 마지막 30건' : '');
+}
+
+async function _kfTick(force) {
+  if (!_kfCode) return;
+  if (!force && (_currentView !== 'chart' || document.hidden)) return;
+  const seq = ++_kfSeq, code = _kfCode;
+  try {
+    const d = await api(`/api/kr-flow/${code}`);
+    if (seq !== _kfSeq || code !== _kfCode) return;
+    _kfRender(d || { error: '수급을 못 받았어요' });
+  } catch { /* 다음 10초에 다시 */ }
+}
+
+function flowOnChart(ticker) {
+  const box = document.getElementById('kr-flow');
+  if (!box) return;
+  const m = /^(\d[0-9A-Z]{5})(\.(KS|KQ))?$/.exec(String(ticker || '').toUpperCase());
+  const code = m ? m[1] : null;
+  if (code === _kfCode && !box.hidden) return;
+  _kfCode = code;
+  clearInterval(_kfTimer); _kfTimer = null;
+  box.hidden = !code;
+  if (!code) { if (typeof _resizeChartPanels === 'function') _resizeChartPanels(); return; }
+  document.getElementById('kf-name').textContent = '';
+  document.getElementById('kf-nums').innerHTML = '<div class="kf-muted">불러오는 중…</div>';
+  document.getElementById('kf-note').textContent = '';
+  if (_kfAmt) { _kfAmt.setData([]); _kfPx.setData([]); }
+  _kfTick(true);
+  _kfTimer = setInterval(() => _kfTick(false), 10000);
+  setTimeout(() => { if (typeof _resizeChartPanels === 'function') _resizeChartPanels(); }, 0);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('kf-fold');
+  if (!btn) return;
+  const apply = fold => {
+    document.getElementById('kf-body').hidden = fold;
+    btn.textContent = fold ? '펴기' : '접기';
+    btn.setAttribute('aria-expanded', String(!fold));
+    if (typeof _resizeChartPanels === 'function') _resizeChartPanels();
+  };
+  let fold = false;
+  try { fold = localStorage.getItem(_KF_FOLD) === '1'; } catch { /* 없으면 펼침 */ }
+  apply(fold);
+  btn.addEventListener('click', () => {
+    fold = !fold;
+    try { localStorage.setItem(_KF_FOLD, fold ? '1' : '0'); } catch { /* 저장 못 해도 동작 */ }
+    apply(fold);
+  });
+});
