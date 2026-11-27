@@ -97,7 +97,7 @@
 |------|------|
 | 시세 | `/api/stocks`, `/api/kr-stocks`, `/api/indices`, `/api/index-members`, `/api/stock/<ticker>`(목록에 없는 미국 티커는 Yahoo 현재가로 응답), `/api/heatmap-perf`, `/api/sector-etf?period=1d\|1w\|1m`(홈 섹터 줄, SPDR 섹터 ETF 11개, 1분 캐시) |
 | 차트·분석 | `/api/chart/<ticker>`, `/api/chart-warmup/<ticker>`(일봉 화면 기간 앞쪽 봉 최대 460개 — 긴 이평선·파란점선 계산 전용), `/api/stock-analysis/<ticker>`, `/api/financials/<ticker>` |
-| 뉴스·공시 | `/api/news`(항목에 `category`, 번역됐으면 `title_ko`), `/api/news/translation`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>`, `/api/kr-flow/<code>`(실시간 수급: KIS 프로그램 순매수 최근 30건을 받을 때마다 메모리에 모아 오늘 흐름 + 외국인·기관 가집계 + 시장 프로그램, 11-28) |
+| 뉴스·공시 | `/api/news`(항목에 `category`, 번역됐으면 `title_ko`), `/api/news/translation`, `/api/reports`, `/api/stock-news/<ticker>`, `/api/kr-news/<code>`, `/api/kr-disclosures`, `/api/kr-investor/<code>`, `/api/kr-flow/<code>`(실시간 수급: KIS 프로그램 순매수·매수·매도 최근 30건을 받을 때마다 메모리에 모아 오늘 흐름 + 외국인·기관 가집계 + 시장 프로그램, 11-28. 소켓: 보내기 `flow_watch`, 받기 `flow_tick` — 웹소켓 서버만, 실시간 H0STPGM0이 조회값과 맞을 때) |
 | Brief·신호 | `/api/brief`, `/api/daily-signals`, `/api/volume-surges`, `/api/candle-patterns`, `/api/rsi-divergence`, `/api/52w-movers`, `/api/earnings-signals`, `/api/fear-greed`, `/api/voice-briefing`, `/api/voice-briefing/audio/<file>` |
 | 수급 | `/api/flow-stock/<ticker>`(미국), `/api/kr-flow/<code>`(국내, KIS 공매도·신용·투자자별, 6시간 캐시, 키 없는 서버는 집 서버 값) |
 | 조건검색 | `/api/cond-search`(프리셋·결과·준비 상태, 장 밖에 재시작했으면 `last_day`), `/api/cond-search/history?preset=&days=`(잡힌 기록·수익). 키움과 다를 수 있는 점: 과거 거래대금은 종가×거래량 근사, 일목 선행스팬은 25봉 전 계산값, 환기종목은 KIS `invt_caful_yn`으로 판정, 이자보상배율은 DART 영업이익 ÷ 현금흐름표 이자 지급, 재무 PER = 현재가 ÷ 최근 연간 EPS, 파라볼릭 SAR은 최근 140봉(5분봉은 3거래일)부터 계산 |

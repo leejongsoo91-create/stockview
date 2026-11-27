@@ -1691,9 +1691,65 @@ def kr_investor(code: str):
 
 
 # ── 실시간 수급 창 (11-28, 차트 아래): 프로그램 순매수(체결마다) + 외국인·기관 추정(하루 5번) + 시장 프로그램 ──
-# KIS 종목 프로그램 조회는 최근 30건만 주므로, 화면이 10초마다 부를 때 받은 체결을 모아 오늘 흐름 그래프를 만든다(메모리, 재시작하면 처음부터).
-_FLOW: dict[str, dict] = {}
+# KIS 종목 프로그램 조회는 최근 30건만 주므로, 받은 체결을 모아 오늘 흐름 그래프를 만든다(메모리, 재시작하면 처음부터).
+# 웹소켓 서버(STOCKVIEW_KIS_WS=1)는 보는 종목의 실시간 프로그램매매(H0STPGM0)를 받아 체결마다 flow_tick으로 보낸다.
+# 그 값은 칸 순서를 장에서 아직 대조하지 못해, 최근 조회값과 맞을 때만 쓴다(_flow_on_ws). 아니면 화면이 3초마다 조회.
+_FLOW: dict[str, dict] = {}                 # 종목 → {day, pts: {HHMMSS: (주가, 순매수 주, 순매수 원, 매수 원, 매도 원)}, t, rest, ws_ok}
 _FLOW_LOCK = threading.Lock()
+_flow_focus = {"code": None, "at": 0.0}     # 차트에서 보는 국내 종목 (웹소켓 구독용)
+_FLOW_WS_LOG = {"n": 0}
+
+
+def _flow_day(now) -> tuple[bool, str]:
+    live = _pp_open_day() and now.hour * 60 + now.minute >= 540      # 오늘 장이 열렸으면 오늘 것만, 아니면 전 거래일 마지막 기록
+    return live, (now.strftime("%Y-%m-%d") if live else "prev")
+
+
+def _flow_rec(code: str, day: str) -> dict:
+    """_FLOW_LOCK 안에서 부른다."""
+    rec = _FLOW.get(code)
+    if not rec or rec["day"] != day:
+        rec = _FLOW[code] = {"day": day, "pts": {}, "t": 0.0, "rest": None, "ws_ok": None}
+        if len(_FLOW) > 60:                                           # 오래 안 본 종목부터 지움
+            for k in sorted(_FLOW, key=lambda k: _FLOW[k]["t"])[:10]:
+                _FLOW.pop(k, None)
+    return rec
+
+
+def _flow_on_ws(d: dict) -> None:
+    """실시간 프로그램매매 한 건 → 최근 조회값과 맞으면 점 하나 추가 + 화면에 flow_tick."""
+    code, h = d.get("code"), d.get("hour") or ""
+    if _FLOW_WS_LOG["n"] < 5:                                         # 11-30 장에서 칸 순서 대조용
+        _FLOW_WS_LOG["n"] += 1
+        log.info(f"수급 실시간 프로그램 원본 {d}")
+    now = paper.now_kst()
+    live, day = _flow_day(now)
+    if not code or not live or len(h) != 6:
+        return
+    with _FLOW_LOCK:
+        rec = _flow_rec(code, day)
+        rest = rec["rest"]                                            # 마지막 조회 (HHMMSS, 주가, 순매수 주, 순매수 원, 매수 원, 매도 원)
+        if not rest:
+            return
+        # 같은 날 누적값이면 조회값과 크게 다를 수 없다: 순매수 = 매수 − 매도, 매수 금액이 조회값의 20%(최소 5억) 안
+        ok = (d["net_q"] == d["buy_q"] - d["sell_q"] and abs(d["buy_amt"] - rest[4]) <= max(rest[4] * 0.2, 5e8)
+              and h >= rest[0])
+        if rec["ws_ok"] is not ok:
+            rec["ws_ok"] = ok
+            log.info(f"수급 실시간 {code}: {'조회값과 맞음 — 체결마다 반영' if ok else '조회값과 안 맞음 — 3초 조회로'} (실시간 {d}, 조회 {rest})")
+        if not ok:
+            return
+        last = rec["pts"][max(rec["pts"])] if rec["pts"] else rest[1:]
+        tr = (_pp_q.get(code) or {}).get("trade") or {}
+        pt = (tr.get("price") or last[0], d["net_q"], d["net_amt"], d["buy_amt"], d["sell_amt"])
+        rec["pts"][h] = pt
+    _pp_emit("flow_tick", {"code": code, "pt": [h, *pt]})
+
+
+@socketio.on("flow_watch")
+def _on_flow_watch(data):
+    code = df.kr_code(str((data or {}).get("code") or "")) or None
+    _flow_focus.update(code=code, at=time.time())
 
 
 @app.route("/api/kr-flow/<code>")
@@ -1704,27 +1760,21 @@ def kr_flow(code: str):
     if not kis.enabled():
         return jsonify({"error": "KIS 키가 없어 수급을 못 받음"})
     now = paper.now_kst()
-    live = _pp_open_day() and now.hour * 60 + now.minute >= 540      # 오늘 장이 열렸으면 오늘 것만, 아니면 전 거래일 마지막 기록
-    day = now.strftime("%Y-%m-%d") if live else "prev"
+    live, day = _flow_day(now)
     hms = now.strftime("%H%M%S")
     t = time.time()
     with _FLOW_LOCK:
-        rec = _FLOW.get(code)
-        if not rec or rec["day"] != day:
-            rec = _FLOW[code] = {"day": day, "pts": {}, "t": 0.0}
-            if len(_FLOW) > 60:                                       # 오래 안 본 종목부터 지움
-                for k in sorted(_FLOW, key=lambda k: _FLOW[k]["t"])[:10]:
-                    _FLOW.pop(k, None)
-        need = t - rec["t"] >= 8
+        rec = _flow_rec(code, day)
+        need = t - rec["t"] >= (15 if rec["ws_ok"] else 2.5)          # 실시간이 맞게 들어오면 조회는 15초마다 보정만
         if need:
             rec["t"] = t
     if need:
-        ticks = kis.program_ticks(code) or []
+        ticks = [x for x in (kis.program_ticks(code) or []) if not (live and x[0] > hms)]   # 장 초반 지난 거래일 체결은 버림
         with _FLOW_LOCK:
-            for h, pr, q, a in ticks:
-                if live and h > hms:                                  # 장 초반엔 아직 지난 거래일 체결이 올 수 있음 → 버림
-                    continue
-                rec["pts"][h] = (pr, q, a)
+            for h, *v in ticks:
+                rec["pts"][h] = tuple(v)
+            if ticks:
+                rec["rest"] = ticks[0]
     est = cache.get(f"kr_flow_est_{code}")
     if est is None:
         est = kis.investor_estimate(code) or []
@@ -1739,9 +1789,10 @@ def kr_flow(code: str):
         mk = {k: (v if v and v[0] <= hms else None) for k, v in mk.items()}
     with _FLOW_LOCK:
         series = [[h, *rec["pts"][h]] for h in sorted(rec["pts"])]
+        ws_ok = bool(rec["ws_ok"])
     last = series[-1] if series else None
-    return jsonify({"code": code, "live": live, "series": series,
-                    "program": {"at": last[0], "price": last[1], "qty": last[2], "amt": last[3]} if last else None,
+    return jsonify({"code": code, "live": live, "series": series, "rt": ws_ok,
+                    "program": {"at": last[0], "price": last[1], "qty": last[2], "amt": last[3], "buy": last[4], "sell": last[5]} if last else None,
                     "est": est, "market": mk, "ts": t})
 
 
@@ -2186,6 +2237,9 @@ def _pp_default_session(now=None) -> str | None:
 
 def _pp_on_data(d: dict) -> None:
     """실시간·조회 시세 한 건 → 캐시·체결 계산·화면 전송."""
+    if d.get("type") == "program":                       # 📊 수급 창 실시간 프로그램매매 — 모의투자 계산과 무관
+        _flow_on_ws(d)
+        return
     code, venue = d.get("code"), d.get("venue")
     if not code:
         return
@@ -2258,6 +2312,9 @@ def _paper_loop():
             venue = _pp_feed_venue(sess)
             if _pp_rt:
                 want = {(kis.TR_BOOK[venue], code), (kis.TR_TRADE[venue], code)} if code and op else set()
+                fc = _flow_focus["code"] if t - _flow_focus["at"] < 90 else None   # 📊 수급 창이 보는 종목 — 실시간 프로그램매매 (11-28)
+                if fc and op:
+                    want.add((kis.TR_PGM, fc))
                 _pp_rt.set_want(want)
                 if code and op and t - last["focus"] > 30:       # 웹소켓이어도 30초마다 한 번 조회(놓친 값 보정)
                     last["focus"] = t

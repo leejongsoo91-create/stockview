@@ -238,11 +238,12 @@ EST_HOURS = {1: "09:30", 2: "10:00", 3: "11:20", 4: "13:20", 5: "14:30"}   # 외
 
 
 def program_ticks(code: str) -> list[tuple] | None:
-    """종목 프로그램매매 최근 30건, 최신부터 [(HHMMSS, 주가, 누적 순매수 주, 누적 순매수 원)]. 체결마다 갱신."""
+    """종목 프로그램매매 최근 30건, 최신부터 [(HHMMSS, 주가, 누적 순매수 주, 누적 순매수 원, 누적 매수 원, 누적 매도 원)]. 체결마다 갱신."""
     j = get(_Q + "program-trade-by-stock", "FHPPG04650101", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
     if not j:
         return None
-    return [(x.get("bsop_hour") or "", _i(x.get("stck_prpr")), _i(x.get("whol_smtn_ntby_qty")), _i(x.get("whol_smtn_ntby_tr_pbmn")))
+    return [(x.get("bsop_hour") or "", _i(x.get("stck_prpr")), _i(x.get("whol_smtn_ntby_qty")), _i(x.get("whol_smtn_ntby_tr_pbmn")),
+             _i(x.get("whol_smtn_shnu_tr_pbmn")), _i(x.get("whol_smtn_seln_tr_pbmn")))
             for x in j.get("output") or [] if x.get("bsop_hour")]
 
 
@@ -331,9 +332,17 @@ _F_TRADE = {"code": 0, "hour": 1, "price": 2, "sign": 3, "chg": 4, "rate": 5, "o
 TR_BOOK = {"UN": "H0UNASP0", "J": "H0STASP0", "NX": "H0NXASP0", "OT": "H0STOAA0"}
 TR_TRADE = {"UN": "H0UNCNT0", "J": "H0STCNT0", "NX": "H0NXCNT0", "OT": "H0STOUP0"}
 _TR_VENUE = {v: k for k, v in {**TR_BOOK}.items()} | {v: k for k, v in TR_TRADE.items()}
+# 실시간 프로그램매매(KRX) — 수급 창(11-28). 칸 순서는 KIS 예제 columns 기준이고 실제 장에서 아직 대조 전이라,
+# app.py가 조회값과 맞는지 확인한 뒤에만 그래프에 쓴다(안 맞으면 버리고 3초 조회로).
+TR_PGM = "H0STPGM0"
+_F_PGM = {"code": 0, "hour": 1, "sell_q": 2, "sell_amt": 3, "buy_q": 4, "buy_amt": 5, "net_q": 6, "net_amt": 7}
 
 
 def _parse(tr: str, vals: list[str]) -> dict:
+    if tr == TR_PGM:
+        g = lambda k: _i(vals[_F_PGM[k]]) if _F_PGM[k] < len(vals) else 0
+        return {"type": "program", "code": vals[0], "hour": vals[1] if len(vals) > 1 else "", "n": len(vals),
+                **{k: g(k) for k in ("sell_q", "sell_amt", "buy_q", "buy_amt", "net_q", "net_amt")}}
     venue = _TR_VENUE.get(tr, "")
     if tr in TR_BOOK.values():
         f = _F_OBOOK if tr == "H0STOAA0" else _F_BOOK

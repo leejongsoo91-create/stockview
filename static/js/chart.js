@@ -3830,24 +3830,28 @@ async function _loadStockNews(ticker) {
   }
 }
 
-// ── 📊 실시간 수급 (11-28, 사용자 "거래할 때 외국인·기관·프로그램을 실시간으로, 차트 창 밑에") ──────────
-// 국내 종목 차트 아래 패널. 10초마다 /api/kr-flow — 프로그램 순매수는 체결마다 바뀌는 실시간 값,
-// 외국인·기관은 거래소 가집계(장중 5번)라 '몇 차 · 시각 기준'을 같이 적는다. 흐름 그래프는 서버가 받은 체결을 모아 그림.
-let _kfCode = null, _kfTimer = null, _kfChart = null, _kfAmt = null, _kfPx = null, _kfSeq = 0;
+// ── 📊 실시간 수급 (11-28, 사용자 "거래할 때 외국인·기관·프로그램을 실시간으로, 차트 창 밑에" → "그래프가 실시간으로, 매수인지 매도인지 보이게") ──
+// 국내 종목 차트 아래 패널. 웹소켓 서버(집 서버)는 체결마다 flow_tick으로 점이 이어지고, 아니면 3초마다 /api/kr-flow.
+// 외국인·기관은 거래소 가집계(장중 5번)라 'N차 HH:MM 기준'을 같이 적는다. 그래프: 누적 순매수(억) + 1분 막대(빨강 매수 우세·파랑 매도 우세) + 주가.
+let _kfCode = null, _kfTimer = null, _kfChart = null, _kfAmt = null, _kfPx = null, _kfBar = null, _kfSeq = 0;
+let _kfSer = [], _kfRt = false, _kfLastFetch = 0, _kfLive = false;
 const _KF_FOLD = 'stockview_kf_fold';
+const _KF_BLUE = 'rgba(49,130,246,';
 
 function _kfFmtQty(v) {
   if (v == null) return '—';
   const a = Math.abs(v), s = v > 0 ? '+' : v < 0 ? '−' : '';
   return a >= 10000 ? `${s}${(a / 10000).toFixed(1)}만주` : `${s}${a.toLocaleString('ko-KR')}주`;
 }
-function _kfFmtEok(eok) {
+function _kfFmtEok(eok, sign = true) {
   if (eok == null) return '—';
-  const a = Math.abs(eok), s = eok > 0 ? '+' : eok < 0 ? '−' : '';
+  const a = Math.abs(eok), s = !sign ? '' : eok > 0 ? '+' : eok < 0 ? '−' : '';
   return `${s}${a >= 100 ? Math.round(a).toLocaleString('ko-KR') : a.toFixed(a >= 10 ? 0 : 1)}억`;
 }
 const _kfCls = v => (v > 0 ? 'up' : v < 0 ? 'down' : '');
+const _kfSide = v => (v > 0 ? '<span class="kf-side up">매수</span>' : v < 0 ? '<span class="kf-side down">매도</span>' : '');
 const _kfHm = h => (h ? `${h.slice(0, 2)}:${h.slice(2, 4)}` : '');
+const _kfT = h => Date.UTC(2000, 0, 1, +h.slice(0, 2), +h.slice(2, 4), +(h.slice(4, 6) || 0)) / 1000;
 
 function _kfEnsureChart() {
   if (_kfChart) return;
@@ -3857,64 +3861,124 @@ function _kfEnsureChart() {
   const fg = cs.getPropertyValue('--muted').trim() || '#8b949e';
   const bd = cs.getPropertyValue('--border').trim() || '#30363d';
   _kfChart = LightweightCharts.createChart(el, {
-    width: el.clientWidth || 600, height: 96,
+    width: el.clientWidth || 600, height: 120,
     layout: { background: { type: 'solid', color: bg }, textColor: fg, fontSize: 10 },
     grid: { vertLines: { visible: false }, horzLines: { color: bd } },
-    leftPriceScale: { visible: true, borderColor: bd, scaleMargins: { top: 0.1, bottom: 0.1 } },
-    rightPriceScale: { visible: true, borderColor: bd, scaleMargins: { top: 0.1, bottom: 0.1 } },
-    timeScale: { borderColor: bd, timeVisible: true, secondsVisible: false },
+    leftPriceScale: { visible: true, borderColor: bd, scaleMargins: { top: 0.08, bottom: 0.3 } },
+    rightPriceScale: { visible: true, borderColor: bd, scaleMargins: { top: 0.08, bottom: 0.3 } },
+    timeScale: { borderColor: bd, timeVisible: true, secondsVisible: false, rightOffset: 2 },
     handleScroll: false, handleScale: false,
   });
+  const eok = { type: 'custom', formatter: v => _kfFmtEok(v) };
+  _kfBar = _kfChart.addHistogramSeries({ priceScaleId: 'kfbar', priceFormat: eok, priceLineVisible: false, lastValueVisible: false });
+  _kfChart.priceScale('kfbar').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
   _kfAmt = _kfChart.addBaselineSeries({
     priceScaleId: 'left', baseValue: { type: 'price', price: 0 }, lineWidth: 2,
-    topLineColor: cUp(1), topFillColor1: cUp(0.25), topFillColor2: cUp(0.03),
-    bottomLineColor: 'rgba(49,130,246,1)', bottomFillColor1: 'rgba(49,130,246,0.03)', bottomFillColor2: 'rgba(49,130,246,0.25)',
-    priceFormat: { type: 'custom', formatter: v => _kfFmtEok(v) }, priceLineVisible: false,
+    topLineColor: cUp(1), topFillColor1: cUp(0.22), topFillColor2: cUp(0.03),
+    bottomLineColor: _KF_BLUE + '1)', bottomFillColor1: _KF_BLUE + '0.03)', bottomFillColor2: _KF_BLUE + '0.22)',
+    priceFormat: eok, priceLineVisible: false,
   });
   _kfPx = _kfChart.addLineSeries({ priceScaleId: 'right', color: '#8b949e', lineWidth: 1, lineStyle: 2, priceLineVisible: false,
     priceFormat: { type: 'custom', formatter: v => Math.round(v).toLocaleString('ko-KR') } });
-  new ResizeObserver(() => { if (_kfChart && el.clientWidth) _kfChart.resize(el.clientWidth, 96); }).observe(el);
+  new ResizeObserver(() => { if (_kfChart && el.clientWidth) _kfChart.resize(el.clientWidth, 120); }).observe(el);
+}
+
+// 1분 막대: 그 1분 동안 누적 순매수(억)가 얼마나 늘었나/줄었나
+function _kfBars(ser) {
+  const out = [];
+  let prevEnd = null, cur = null;
+  for (const r of ser) {
+    const m = r[0].slice(0, 4), v = r[3] / 1e8;
+    if (!cur || cur.m !== m) {
+      if (cur) { out.push(cur); prevEnd = cur.end; }
+      cur = { m, start: prevEnd ?? v, end: v };
+    } else cur.end = v;
+  }
+  if (cur) out.push(cur);
+  return out.map(b => { const d = b.end - b.start;
+    return { time: _kfT(b.m + '00'), value: d, color: d > 0 ? cUp(0.85) : d < 0 ? _KF_BLUE + '0.85)' : 'rgba(139,148,158,0.4)' }; });
+}
+
+function _kfProgramCell(r) {
+  if (!r) return `<div class="kf-cell"><div class="kf-k">프로그램</div><div class="kf-v">—</div><div class="kf-s">아직 체결 없음</div></div>`;
+  const [, , q, amt, buy, sell] = r;
+  const tot = (buy || 0) + (sell || 0), bp = tot ? Math.round(buy / tot * 100) : 50;
+  const lead = amt > 0 ? '<b class="up">순매수 우위 ▲</b>' : amt < 0 ? '<b class="down">순매도 우위 ▼</b>' : '<b>매수·매도 같음</b>';
+  return `<div class="kf-cell kf-prog"><div class="kf-k">프로그램 ${lead}</div>
+    <div class="kf-v ${_kfCls(q)}">${_kfFmtQty(q)} <span class="kf-amt ${_kfCls(amt)}">${_kfFmtEok(amt / 1e8)}</span></div>
+    <div class="kf-ratio" title="프로그램 매수 ${_kfFmtEok(buy / 1e8, false)} · 매도 ${_kfFmtEok(sell / 1e8, false)}">
+      <span class="kf-rb" style="width:${bp}%"></span><span class="kf-rs" style="width:${100 - bp}%"></span></div>
+    <div class="kf-rl"><span class="up">매수 ${_kfFmtEok(buy / 1e8, false)} (${bp}%)</span><span class="down">매도 ${_kfFmtEok(sell / 1e8, false)} (${100 - bp}%)</span></div></div>`;
+}
+
+function _kfRenderProgram() {
+  const el = document.getElementById('kf-prog-slot');
+  if (el) el.innerHTML = _kfProgramCell(_kfSer[_kfSer.length - 1]);
+  const last = _kfSer[_kfSer.length - 1];
+  document.getElementById('kf-upd').innerHTML = !_kfLive ? '장 시작 전·휴일 — 전 거래일 마지막 기록'
+    : `${_kfRt ? '<span class="kf-live">● 실시간</span> 체결마다' : '3초마다 갱신'}${last ? ` · ${_kfHm(last[0])}:${last[0].slice(4, 6)} 체결까지` : ''}`;
 }
 
 function _kfRender(d) {
   const nums = document.getElementById('kf-nums');
   const note = document.getElementById('kf-note');
   if (d.error) { nums.innerHTML = `<div class="kf-muted">${_escHtml(d.error)}</div>`; note.textContent = ''; return; }
-  const p = d.program, est = d.est || [], e = est[est.length - 1], mk = d.market || {};
+  _kfRt = !!d.rt; _kfLive = !!d.live;
+  // 실시간으로 받은 점이 조회보다 새로우면 유지
+  const ser = d.series || [], tail = _kfSer.filter(r => ser.length && r[0] > ser[ser.length - 1][0]);
+  _kfSer = ser.concat(tail);
+  const est = d.est || [], e = est[est.length - 1], mk = d.market || {};
   const estCell = (label, v) => `<div class="kf-cell"><div class="kf-k">${label}<small>추정</small></div>
-      <div class="kf-v ${_kfCls(v)}">${e ? _kfFmtQty(v) : '—'}</div>
-      <div class="kf-s">${e ? `${e.n}차 ${e.at} 기준` : (d.live ? '아직 없음 (첫 집계 09:30)' : '집계 없음')}</div></div>`;
-  const mkLine = (nm, r) => `<div><span class="kf-s">${nm}</span> <b class="${_kfCls(r && r[1])}">${r ? _kfFmtEok(r[1]) : '—'}</b></div>`;
-  nums.innerHTML = `
-    <div class="kf-cell"><div class="kf-k">프로그램<small>실시간</small></div>
-      <div class="kf-v ${_kfCls(p && p.qty)}">${p ? _kfFmtQty(p.qty) : '—'}</div>
-      <div class="kf-s ${_kfCls(p && p.amt)}">${p ? _kfFmtEok(p.amt / 1e8) : '아직 체결 없음'}</div></div>
+      <div class="kf-v ${_kfCls(v)}">${e ? `${_kfSide(v)}${_kfFmtQty(v)}` : '—'}</div>
+      <div class="kf-s">${e ? `${e.n}차 ${e.at} 기준 (하루 5번 집계)` : (d.live ? '아직 없음 (첫 집계 09:30)' : '집계 없음')}</div></div>`;
+  const mkLine = (nm, r) => `<div><span class="kf-s">${nm}</span> ${r ? _kfSide(r[1]) : ''}<b class="${_kfCls(r && r[1])}">${r ? _kfFmtEok(r[1]) : '—'}</b></div>`;
+  nums.innerHTML = `<div id="kf-prog-slot"></div>
     ${estCell('외국인', e && e.foreign)}
     ${estCell('기관', e && e.inst)}
     <div class="kf-cell"><div class="kf-k">시장 프로그램</div>${mkLine('코스피', mk.K)}${mkLine('코스닥', mk.Q)}</div>`;
-  document.getElementById('kf-upd').textContent = d.live
-    ? `${p ? _kfHm(p.at) + ' 체결까지 · ' : ''}10초마다 갱신`
-    : '장 시작 전·휴일 — 전 거래일 마지막 기록';
-  const ser = d.series || [];
+  _kfRenderProgram();
   _kfEnsureChart();
-  const t = h => Date.UTC(2000, 0, 1, +h.slice(0, 2), +h.slice(2, 4), +h.slice(4, 6)) / 1000;
-  _kfAmt.setData(ser.map(r => ({ time: t(r[0]), value: r[3] / 1e8 })));
-  _kfPx.setData(ser.map(r => ({ time: t(r[0]), value: r[1] })));
+  _kfAmt.setData(_kfSer.map(r => ({ time: _kfT(r[0]), value: r[3] / 1e8 })));
+  _kfPx.setData(_kfSer.map(r => ({ time: _kfT(r[0]), value: r[1] })));
+  _kfBar.setData(_kfBars(_kfSer));
   _kfChart.timeScale().fitContent();
-  note.textContent = !ser.length ? '프로그램 체결 기록이 아직 없어요'
-    : (d.live && ser[0][0] > '090500') ? `그래프는 ${_kfHm(ser[0][0])}부터 — 서버가 이 종목을 처음 조회한 뒤부터 모아요 (증권사는 최근 30건만 줌)`
+  note.textContent = !_kfSer.length ? '프로그램 체결 기록이 아직 없어요'
+    : (d.live && _kfSer[0][0] > '090500') ? `그래프는 ${_kfHm(_kfSer[0][0])}부터 — 서버가 이 종목을 처음 조회한 뒤부터 모아요 (증권사는 최근 30건만 줌)`
     : (!d.live ? '전 거래일 마지막 30건' : '');
+}
+
+// 웹소켓 체결 한 건 → 그래프 끝에 이어 붙이기
+function _kfOnTick(msg) {
+  if (!msg || msg.code !== _kfCode || !_kfChart || !msg.pt) return;
+  const r = msg.pt, last = _kfSer[_kfSer.length - 1];
+  if (last && r[0] < last[0]) return;
+  if (last && r[0] === last[0]) _kfSer[_kfSer.length - 1] = r; else _kfSer.push(r);
+  _kfRt = true;
+  const t = _kfT(r[0]);
+  _kfAmt.update({ time: t, value: r[3] / 1e8 });
+  _kfPx.update({ time: t, value: r[1] });
+  const m = r[0].slice(0, 4);                                   // 이번 1분 막대만 다시 계산
+  let i = _kfSer.length - 1;
+  while (i >= 0 && _kfSer[i][0].slice(0, 4) === m) i--;
+  const d = r[3] / 1e8 - _kfSer[i >= 0 ? i : i + 1][3] / 1e8;
+  _kfBar.update({ time: _kfT(m + '00'), value: d, color: d > 0 ? cUp(0.85) : d < 0 ? _KF_BLUE + '0.85)' : 'rgba(139,148,158,0.4)' });
+  _kfRenderProgram();
 }
 
 async function _kfTick(force) {
   if (!_kfCode) return;
   if (!force && (_currentView !== 'chart' || document.hidden)) return;
+  const sock = window._rtSocket;
+  if (sock && sock.connected) sock.emit('flow_watch', { code: _kfCode });   // 웹소켓 서버: 이 종목 실시간 구독 유지
+  if (!force && _kfRt && Date.now() - _kfLastFetch < 15000) return;          // 실시간이 들어오면 조회는 15초마다 보정만
+  if (!force && !_kfLive && Date.now() - _kfLastFetch < 60000) return;       // 장 밖엔 1분마다
+  _kfLastFetch = Date.now();
   const seq = ++_kfSeq, code = _kfCode;
   try {
     const d = await api(`/api/kr-flow/${code}`);
     if (seq !== _kfSeq || code !== _kfCode) return;
     _kfRender(d || { error: '수급을 못 받았어요' });
-  } catch { /* 다음 10초에 다시 */ }
+  } catch { /* 다음에 다시 */ }
 }
 
 function flowOnChart(ticker) {
@@ -3923,16 +3987,16 @@ function flowOnChart(ticker) {
   const m = /^(\d[0-9A-Z]{5})(\.(KS|KQ))?$/.exec(String(ticker || '').toUpperCase());
   const code = m ? m[1] : null;
   if (code === _kfCode && !box.hidden) return;
-  _kfCode = code;
+  _kfCode = code; _kfSer = []; _kfRt = false; _kfLive = false;
   clearInterval(_kfTimer); _kfTimer = null;
   box.hidden = !code;
   if (!code) { if (typeof _resizeChartPanels === 'function') _resizeChartPanels(); return; }
-  document.getElementById('kf-name').textContent = '';
   document.getElementById('kf-nums').innerHTML = '<div class="kf-muted">불러오는 중…</div>';
   document.getElementById('kf-note').textContent = '';
-  if (_kfAmt) { _kfAmt.setData([]); _kfPx.setData([]); }
+  document.getElementById('kf-upd').textContent = '';
+  if (_kfAmt) { _kfAmt.setData([]); _kfPx.setData([]); _kfBar.setData([]); }
   _kfTick(true);
-  _kfTimer = setInterval(() => _kfTick(false), 10000);
+  _kfTimer = setInterval(() => _kfTick(false), 3000);
   setTimeout(() => { if (typeof _resizeChartPanels === 'function') _resizeChartPanels(); }, 0);
 }
 
@@ -3953,4 +4017,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem(_KF_FOLD, fold ? '1' : '0'); } catch { /* 저장 못 해도 동작 */ }
     apply(fold);
   });
+  // 소켓은 main.js가 DOMContentLoaded에서 만든다 → 조금 뒤 붙임
+  let tries = 0;
+  const hook = () => { if (window._rtSocket) window._rtSocket.on('flow_tick', _kfOnTick); else if (++tries < 40) setTimeout(hook, 500); };
+  setTimeout(hook, 0);
 });
