@@ -1709,7 +1709,7 @@ def _flow_rec(code: str, day: str) -> dict:
     """_FLOW_LOCK 안에서 부른다."""
     rec = _FLOW.get(code)
     if not rec or rec["day"] != day:
-        rec = _FLOW[code] = {"day": day, "pts": {}, "t": 0.0, "rest": None, "ws_ok": None}
+        rec = _FLOW[code] = {"day": day, "pts": {}, "t": 0.0, "rest": None, "ws_ok": None, "fpts": {}, "ft": 0.0, "fnow": None}
         if len(_FLOW) > 60:                                           # 오래 안 본 종목부터 지움
             for k in sorted(_FLOW, key=lambda k: _FLOW[k]["t"])[:10]:
                 _FLOW.pop(k, None)
@@ -1775,6 +1775,18 @@ def kr_flow(code: str):
                 rec["pts"][h] = tuple(v)
             if ticks:
                 rec["rest"] = ticks[0]
+    # 외국계 창구(외국인 실시간 추정): 5초마다, 받은 시각으로 점 하나. 시각이 없는 값이라 오늘 프로그램 체결이 생긴 뒤부터만 쌓는다
+    with _FLOW_LOCK:
+        fneed = t - rec["ft"] >= 5
+        if fneed:
+            rec["ft"] = t
+    if fneed:
+        fm = kis.member_foreign(code)
+        with _FLOW_LOCK:
+            if fm and (fm["buy"] or fm["sell"]):
+                rec["fnow"] = fm
+                if live and rec["pts"]:
+                    rec["fpts"][hms] = (fm["net"], fm["buy"], fm["sell"])
     est = cache.get(f"kr_flow_est_{code}")
     if est is None:
         est = kis.investor_estimate(code) or []
@@ -1789,11 +1801,13 @@ def kr_flow(code: str):
         mk = {k: (v if v and v[0] <= hms else None) for k, v in mk.items()}
     with _FLOW_LOCK:
         series = [[h, *rec["pts"][h]] for h in sorted(rec["pts"])]
+        fseries = [[h, *rec["fpts"][h]] for h in sorted(rec["fpts"])]
+        fnow = rec["fnow"]
         ws_ok = bool(rec["ws_ok"])
     last = series[-1] if series else None
     return jsonify({"code": code, "live": live, "series": series, "rt": ws_ok,
                     "program": {"at": last[0], "price": last[1], "qty": last[2], "amt": last[3], "buy": last[4], "sell": last[5]} if last else None,
-                    "est": est, "market": mk, "ts": t})
+                    "foreign": fnow if (not live or series) else None, "fseries": fseries, "est": est, "market": mk, "ts": t})
 
 
 @app.route("/api/kr-disclosures")

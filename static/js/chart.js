@@ -3835,7 +3835,8 @@ async function _loadStockNews(ticker) {
 // 외국인·기관은 거래소 가집계(장중 5번)라 'N차 HH:MM 기준'을 같이 적는다. 그래프: 누적 순매수(억) + 1분 막대(빨강 매수 우세·파랑 매도 우세) + 주가.
 let _kfCode = null, _kfTimer = null, _kfChart = null, _kfAmt = null, _kfPx = null, _kfBar = null, _kfSeq = 0;
 let _kfSer = [], _kfRt = false, _kfLastFetch = 0, _kfLive = false;
-const _KF_FOLD = 'stockview_kf_fold';
+let _kfChart2 = null, _kfFr = null, _kfEf = null, _kfEi = null, _kfTab = 'prog';
+const _KF_FOLD = 'stockview_kf_fold', _KF_TAB = 'stockview_kf_tab';
 const _KF_BLUE = 'rgba(49,130,246,';
 
 function _kfFmtQty(v) {
@@ -3899,16 +3900,61 @@ function _kfBars(ser) {
     return { time: _kfT(b.m + '00'), value: d, color: d > 0 ? cUp(0.85) : d < 0 ? _KF_BLUE + '0.85)' : 'rgba(139,148,158,0.4)' }; });
 }
 
+// 매수·매도 비율 막대 (fmt: 값 → 글자)
+function _kfRatioHtml(buy, sell, fmt) {
+  const tot = (buy || 0) + (sell || 0), bp = tot ? Math.round(buy / tot * 100) : 50;
+  return `<div class="kf-ratio" title="매수 ${fmt(buy)} · 매도 ${fmt(sell)}">
+      <span class="kf-rb" style="width:${bp}%"></span><span class="kf-rs" style="width:${100 - bp}%"></span></div>
+    <div class="kf-rl"><span class="up">매수 ${fmt(buy)} (${bp}%)</span><span class="down">매도 ${fmt(sell)} (${100 - bp}%)</span></div>`;
+}
+const _kfLead = v => (v > 0 ? '<b class="up">순매수 우위 ▲</b>' : v < 0 ? '<b class="down">순매도 우위 ▼</b>' : '<b>매수·매도 같음</b>');
+const _kfMan = v => { const a = Math.abs(v || 0); return a >= 10000 ? `${(a / 10000).toFixed(1)}만` : a.toLocaleString('ko-KR'); };
+
+function _kfEnsureChart2() {
+  if (_kfChart2) return;
+  const el = document.getElementById('kf-chart2');
+  const cs = getComputedStyle(document.documentElement);
+  const bg = cs.getPropertyValue('--bg-card').trim() || '#161b22';
+  const fg = cs.getPropertyValue('--muted').trim() || '#8b949e';
+  const bd = cs.getPropertyValue('--border').trim() || '#30363d';
+  _kfChart2 = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 600, height: 120,
+    layout: { background: { type: 'solid', color: bg }, textColor: fg, fontSize: 10 },
+    grid: { vertLines: { visible: false }, horzLines: { color: bd } },
+    rightPriceScale: { borderColor: bd, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderColor: bd, timeVisible: true, secondsVisible: false, rightOffset: 2 },
+    handleScroll: false, handleScale: false,
+  });
+  const man = { type: 'custom', formatter: v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1)}만` };
+  _kfFr = _kfChart2.addLineSeries({ color: '#e3b341', lineWidth: 2, priceFormat: man, priceLineVisible: false });
+  _kfEf = _kfChart2.addLineSeries({ color: cUp(0.9), lineWidth: 1, lineType: 1, pointMarkersVisible: true, priceFormat: man, priceLineVisible: false, lastValueVisible: false });
+  _kfEi = _kfChart2.addLineSeries({ color: '#a371f7', lineWidth: 1, lineType: 1, pointMarkersVisible: true, priceFormat: man, priceLineVisible: false, lastValueVisible: false });
+  _kfFr.createPriceLine({ price: 0, color: bd, lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
+  new ResizeObserver(() => { if (_kfChart2 && el.clientWidth) _kfChart2.resize(el.clientWidth, 120); }).observe(el);
+}
+
+// 외국인·기관 그래프: 외국계 창구(실시간 선) + 가집계(계단, 09:00 0에서 시작해 지금 시각까지 이어 그림)
+function _kfRenderInv(fser, est, endH) {
+  _kfEnsureChart2();
+  _kfFr.setData(fser.map(r => ({ time: _kfT(r[0]), value: r[1] / 1e4 })));
+  const step = key => {
+    if (!est.length) return [];
+    const pts = [{ time: _kfT('090000'), value: 0 }, ...est.map(e => ({ time: _kfT(e.at.replace(':', '') + '00'), value: e[key] / 1e4 }))];
+    const lastT = pts[pts.length - 1].time, endT = endH ? _kfT(endH) : 0;
+    if (endT > lastT) pts.push({ time: endT, value: pts[pts.length - 1].value });
+    return pts;
+  };
+  _kfEf.setData(step('foreign'));
+  _kfEi.setData(step('inst'));
+  _kfChart2.timeScale().fitContent();
+}
+
 function _kfProgramCell(r) {
   if (!r) return `<div class="kf-cell"><div class="kf-k">프로그램</div><div class="kf-v">—</div><div class="kf-s">아직 체결 없음</div></div>`;
   const [, , q, amt, buy, sell] = r;
-  const tot = (buy || 0) + (sell || 0), bp = tot ? Math.round(buy / tot * 100) : 50;
-  const lead = amt > 0 ? '<b class="up">순매수 우위 ▲</b>' : amt < 0 ? '<b class="down">순매도 우위 ▼</b>' : '<b>매수·매도 같음</b>';
-  return `<div class="kf-cell kf-prog"><div class="kf-k">프로그램 ${lead}</div>
+  return `<div class="kf-cell kf-prog"><div class="kf-k">프로그램<small>실시간</small> ${_kfLead(amt)}</div>
     <div class="kf-v ${_kfCls(q)}">${_kfFmtQty(q)} <span class="kf-amt ${_kfCls(amt)}">${_kfFmtEok(amt / 1e8)}</span></div>
-    <div class="kf-ratio" title="프로그램 매수 ${_kfFmtEok(buy / 1e8, false)} · 매도 ${_kfFmtEok(sell / 1e8, false)}">
-      <span class="kf-rb" style="width:${bp}%"></span><span class="kf-rs" style="width:${100 - bp}%"></span></div>
-    <div class="kf-rl"><span class="up">매수 ${_kfFmtEok(buy / 1e8, false)} (${bp}%)</span><span class="down">매도 ${_kfFmtEok(sell / 1e8, false)} (${100 - bp}%)</span></div></div>`;
+    ${_kfRatioHtml(buy, sell, v => _kfFmtEok(v / 1e8, false))}</div>`;
 }
 
 function _kfRenderProgram() {
@@ -3928,13 +3974,21 @@ function _kfRender(d) {
   const ser = d.series || [], tail = _kfSer.filter(r => ser.length && r[0] > ser[ser.length - 1][0]);
   _kfSer = ser.concat(tail);
   const est = d.est || [], e = est[est.length - 1], mk = d.market || {};
-  const estCell = (label, v) => `<div class="kf-cell"><div class="kf-k">${label}<small>추정</small></div>
-      <div class="kf-v ${_kfCls(v)}">${e ? `${_kfSide(v)}${_kfFmtQty(v)}` : '—'}</div>
-      <div class="kf-s">${e ? `${e.n}차 ${e.at} 기준 (하루 5번 집계)` : (d.live ? '아직 없음 (첫 집계 09:30)' : '집계 없음')}</div></div>`;
+  const estTxt = v => (e ? `가집계 ${e.n}차 ${e.at}: ${_kfSide(v)}<b class="${_kfCls(v)}">${_kfFmtQty(v)}</b>`
+    : (d.live ? '가집계 아직 없음 (첫 집계 09:30)' : '가집계 없음'));
+  const f = d.foreign;
+  const frgnCell = `<div class="kf-cell kf-frgn"><div class="kf-k">외국인<small title="외국계 증권사 창구 순매수 — 외국인이 국내 증권사로 낸 주문은 안 잡혀요">외국계 창구 · 실시간</small> ${f ? _kfLead(f.net) : ''}</div>
+      <div class="kf-v ${_kfCls(f && f.net)}">${f ? _kfFmtQty(f.net) : '—'}</div>
+      ${f ? _kfRatioHtml(f.buy, f.sell, _kfMan) : ''}
+      <div class="kf-s">${estTxt(e && e.foreign)}</div></div>`;
+  const instCell = `<div class="kf-cell"><div class="kf-k">기관<small>가집계</small></div>
+      <div class="kf-v ${_kfCls(e && e.inst)}">${e ? `${_kfSide(e.inst)}${_kfFmtQty(e.inst)}` : '—'}</div>
+      <div class="kf-s">${e ? `${e.n}차 ${e.at} 기준 (하루 5번)` : (d.live ? '아직 없음 (첫 집계 09:30)' : '집계 없음')}</div>
+      <div class="kf-s kf-why">실시간 매수·매도는 거래소가 장중에 공개하지 않아요</div></div>`;
   const mkLine = (nm, r) => `<div><span class="kf-s">${nm}</span> ${r ? _kfSide(r[1]) : ''}<b class="${_kfCls(r && r[1])}">${r ? _kfFmtEok(r[1]) : '—'}</b></div>`;
   nums.innerHTML = `<div id="kf-prog-slot"></div>
-    ${estCell('외국인', e && e.foreign)}
-    ${estCell('기관', e && e.inst)}
+    ${frgnCell}
+    ${instCell}
     <div class="kf-cell"><div class="kf-k">시장 프로그램</div>${mkLine('코스피', mk.K)}${mkLine('코스닥', mk.Q)}</div>`;
   _kfRenderProgram();
   _kfEnsureChart();
@@ -3942,6 +3996,8 @@ function _kfRender(d) {
   _kfPx.setData(_kfSer.map(r => ({ time: _kfT(r[0]), value: r[1] })));
   _kfBar.setData(_kfBars(_kfSer));
   _kfChart.timeScale().fitContent();
+  const fser = d.fseries || [];
+  _kfRenderInv(fser, est, d.live ? (fser.length ? fser[fser.length - 1][0] : (_kfSer.length ? _kfSer[_kfSer.length - 1][0] : '')) : '');
   note.textContent = !_kfSer.length ? '프로그램 체결 기록이 아직 없어요'
     : (d.live && _kfSer[0][0] > '090500') ? `그래프는 ${_kfHm(_kfSer[0][0])}부터 — 서버가 이 종목을 처음 조회한 뒤부터 모아요 (증권사는 최근 30건만 줌)`
     : (!d.live ? '전 거래일 마지막 30건' : '');
@@ -3995,6 +4051,7 @@ function flowOnChart(ticker) {
   document.getElementById('kf-note').textContent = '';
   document.getElementById('kf-upd').textContent = '';
   if (_kfAmt) { _kfAmt.setData([]); _kfPx.setData([]); _kfBar.setData([]); }
+  if (_kfFr) { _kfFr.setData([]); _kfEf.setData([]); _kfEi.setData([]); }
   _kfTick(true);
   _kfTimer = setInterval(() => _kfTick(false), 3000);
   setTimeout(() => { if (typeof _resizeChartPanels === 'function') _resizeChartPanels(); }, 0);
@@ -4018,6 +4075,16 @@ document.addEventListener('DOMContentLoaded', () => {
     apply(fold);
   });
   // 소켓은 main.js가 DOMContentLoaded에서 만든다 → 조금 뒤 붙임
+  const setTab = tab => {
+    _kfTab = tab === 'inv' ? 'inv' : 'prog';
+    document.querySelectorAll('#kr-flow .kf-tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.kf === _kfTab)));
+    document.querySelectorAll('#kr-flow .kf-legend, #kr-flow .kf-chart').forEach(x => { x.hidden = x.dataset.kf !== _kfTab; });
+  };
+  try { setTab(localStorage.getItem(_KF_TAB) || 'prog'); } catch { setTab('prog'); }
+  document.querySelectorAll('#kr-flow .kf-tabs button').forEach(b => b.addEventListener('click', () => {
+    setTab(b.dataset.kf);
+    try { localStorage.setItem(_KF_TAB, _kfTab); } catch { /* 저장 못 해도 동작 */ }
+  }));
   let tries = 0;
   const hook = () => { if (window._rtSocket) window._rtSocket.on('flow_tick', _kfOnTick); else if (++tries < 40) setTimeout(hook, 500); };
   setTimeout(hook, 0);

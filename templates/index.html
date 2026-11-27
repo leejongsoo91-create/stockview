@@ -586,9 +586,16 @@
             </div>
             <div id="kf-body">
               <div id="kf-nums" class="kf-nums"></div>
-              <div class="kf-graph-hd"><span>프로그램 순매수 흐름</span>
-                <span class="kf-legend"><i class="kf-l-amt"></i>누적 순매수(억, 왼쪽) <i class="kf-l-px"></i>주가(오른쪽) <i class="kf-l-bar"></i>1분 막대: 빨강 매수 우세·파랑 매도 우세</span></div>
-              <div id="kf-chart" class="kf-chart"></div>
+              <div class="kf-graph-hd">
+                <span class="kf-tabs" role="tablist">
+                  <button type="button" role="tab" data-kf="prog" aria-selected="true">프로그램 흐름</button>
+                  <button type="button" role="tab" data-kf="inv" aria-selected="false">외국인·기관 흐름</button>
+                </span>
+                <span class="kf-legend" data-kf="prog"><i class="kf-l-amt"></i>누적 순매수(억, 왼쪽) <i class="kf-l-px"></i>주가(오른쪽) <i class="kf-l-bar"></i>1분 막대: 빨강 매수 우세·파랑 매도 우세</span>
+                <span class="kf-legend" data-kf="inv" hidden><i class="kf-l-frgn"></i>외국계 창구(실시간) <i class="kf-l-efr"></i>외국인 가집계 <i class="kf-l-ein"></i>기관 가집계 (만주)</span>
+              </div>
+              <div id="kf-chart" class="kf-chart" data-kf="prog"></div>
+              <div id="kf-chart2" class="kf-chart" data-kf="inv" hidden></div>
               <div id="kf-note" class="kf-note"></div>
             </div>
           </section>

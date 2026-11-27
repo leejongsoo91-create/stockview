@@ -259,6 +259,17 @@ def investor_estimate(code: str) -> list[dict] | None:
     return sorted((r for r in out if r["n"]), key=lambda r: r["n"])
 
 
+def member_foreign(code: str) -> dict | None:
+    """외국계 증권사 창구 오늘 누적 {buy, sell, net} (주). 외국인 실시간 추정용 — 외국인이 국내 증권사로 낸 주문은 안 잡힌다.
+    (11-27 삼성전자: 창구 +146.7만 / 외국인 가집계 5차 +199.9만 — 방향은 같고 크기는 다름)"""
+    j = get(_Q + "inquire-member", "FHKST01010600", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    o = (j or {}).get("output") or {}
+    o = o[0] if isinstance(o, list) and o else o
+    if not isinstance(o, dict) or not o:
+        return None
+    return {"buy": _i(o.get("glob_total_shnu_qty")), "sell": _i(o.get("glob_total_seln_qty")), "net": _i(o.get("glob_ntby_qty"))}
+
+
 def market_program(mkt: str) -> tuple[str, int] | None:
     """시장 전체 프로그램 순매수 (HHMMSS, 억 원) 최신. mkt K = 코스피, Q = 코스닥. KIS 단위는 백만 원(11-27 네이버 +10,463억과 일치)."""
     j = get(_Q + "comp-program-trade-today", "FHPPG04600101",
