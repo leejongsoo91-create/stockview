@@ -897,8 +897,8 @@ def refresh_finnhub_company_news():
 def refresh_news_translations():
     """영어 뉴스 제목 한글 번역 — 뉴스 갱신 직후 백그라운드로. 새로 번역됐으면 화면에 알린다."""
     try:
-        titles = [n["title"] for key in ("news", "finnhub_news", "finnhub_company_news")
-                  for n in (cache.get(key) or [])]
+        titles = [n["title"] for key in ("news", "finnhub_news", "finnhub_company_news", "reports")   # 리포트도 (11-28)
+                  for n in (cache.get(key) or []) if n.get("title")]
         if df.translate_news_titles(titles):
             _emit_queue.put(("news_update", {"translated": True}))
             _archive_fill_ko(titles)
@@ -929,6 +929,7 @@ def refresh_reports():
             log.info(f"리포트 갱신 완료: {len(data)}건")
     except Exception as e:
         log.warning(f"리포트 갱신 실패: {e}")
+    refresh_news_translations()          # 리포트 영어 제목도 한글로 (11-28 — 전엔 뉴스만 번역해 리포트는 영문 그대로)
 
 
 def refresh_earnings():
@@ -2834,7 +2835,16 @@ def stock_news_archive_api(ticker):
 
 @app.route("/api/reports")
 def reports():
-    return jsonify(cache.get("reports") or [])
+    """리포트(PR Newswire·Globe Newswire·연준) — 영어 제목엔 title_ko. 번역은 집 서버만 하고 작업 PC는 집 서버 값을 빌린다(결정 007)."""
+    out = []
+    for r in cache.get("reports") or []:
+        ko = df.news_title_ko(r.get("title", "")) if df.news_needs_tr(r.get("title", "")) else None
+        out.append(dict(r, title_ko=df.ko_headline(ko)) if ko else r)
+    if not df.NEWS_TR_ENABLED and any(df.news_needs_tr(r.get("title", "")) and not r.get("title_ko") for r in out):
+        home = _home_json("/api/reports", {}, "reports_home_ko", None) or []
+        home_ko = {h.get("title"): h.get("title_ko") for h in home if h.get("title_ko")}
+        out = [dict(r, title_ko=home_ko[r["title"]]) if not r.get("title_ko") and r.get("title") in home_ko else r for r in out]
+    return jsonify(out)
 
 
 def _earn_tab_reactions(items: list) -> list:

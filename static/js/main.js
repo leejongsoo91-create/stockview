@@ -2094,7 +2094,7 @@ function renderReports(rtype) {
       <div class="report-card" onclick="window.open('${r.url}','_blank')">
         <span class="report-type-badge ${badgeClass(r.report_type)}">${koReportType(r.report_type)}</span>
         <div class="news-body">
-          <div class="news-title">${r.title}</div>
+          <div class="news-title"${_nxView.lang === 'ko' && r.title_ko ? ` title="${_escHtml(r.title)}"` : ''}>${_escHtml(_nxTitle(r))}${_nxView.lang === 'ko' && r.title_ko ? '<span class="nx-tr" title="영어 제목을 자동 번역했어요">번역</span>' : ''}</div>
           <div class="news-meta">
             <span class="news-source">${r.source}</span>
             <span>${r.time}</span>
