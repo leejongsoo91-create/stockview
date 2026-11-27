@@ -233,6 +233,16 @@ def strength(code: str, mkt: str = "J") -> float | None:
     return _f(rows[0].get("tday_rltv")) if rows else None
 
 
+def last_trade(code: str, mkt: str = "J") -> tuple[str, int] | None:
+    """가장 최근 체결 (HHMMSS, 가격). 모의투자 마감 동시호가 확인용 — 종가 체결은 15:30:0x에 찍히고,
+    그 전 몇 초 동안 현재가는 아직 15:20 직전 값이라 현재가만 보면 틀린 가격으로 체결된다 (11-27 QA)."""
+    j = get(_Q + "inquire-ccnl", "FHKST01010300", {"FID_COND_MRKT_DIV_CODE": mkt, "FID_INPUT_ISCD": code})
+    rows = (j or {}).get("output") or []
+    if not rows or not _i(rows[0].get("stck_prpr")):
+        return None
+    return rows[0].get("stck_cntg_hour") or "", _i(rows[0].get("stck_prpr"))
+
+
 def minute_bars(code: str, mkt: str, hour: str) -> list[tuple] | None:
     """오늘 1분봉 — hour(HHMMSS)까지 최근 30개, 최신부터. [(날짜, HHMMSS, 시가, 고가, 저가, 종가, 그 1분 거래량)].
     mkt NX = 넥스트레이드(08:00 프리마켓 포함), J = KRX. 시세가 없는 분은 가격 0으로 온다."""

@@ -2231,13 +2231,20 @@ def _paper_loop():
                     if pr and pr.get("price"):
                         PAPER.last_price[h_code] = int(pr["price"])
             # 동시호가: 9시 시가·15시 30분 종가로 (5분 동안 시도)
+            # 시가는 정해지기 전엔 0으로 와서 기다리면 되지만, 현재가는 15:30:00~15:30:0x 동안 아직 15:20 직전 값이다.
+            # → 종가는 KRX 최근 체결 시각이 15:30:00 이후(15:40 전)로 찍힌 뒤에만 그 가격으로 (11-27 QA ❌ 수정)
             m = now.hour * 60 + now.minute
-            for kind, lo, field in (("auc_open", 540, "open"), ("auc_close", 930, "price")):
+            for kind, lo in (("auc_open", 540), ("auc_close", 930)):
                 if lo <= m < lo + 5:
                     for o_code in {o["code"] for o in PAPER.open_orders() if o["session"] in (kind, paper.AUTO)}:
-                        pr = kis.price(o_code, "J")
-                        if pr and pr.get(field):
-                            PAPER.on_trade(o_code, "J", pr[field], 0, "open" if kind == "auc_open" else "close")
+                        if kind == "auc_open":
+                            pr = kis.price(o_code, "J")
+                            px = pr.get("open") if pr else 0
+                        else:
+                            lt = kis.last_trade(o_code, "J")
+                            px = lt[1] if lt and "153000" <= lt[0] < "154000" else 0
+                        if px:
+                            PAPER.on_trade(o_code, "J", px, 0, "open" if kind == "auc_open" else "close")
             # 시간외 단일가: 20초마다 체결량이 늘었으면 그 가격으로
             if "single" in op or (m < 18 * 60 + 5 and m >= 16 * 60):
                 if t - last["single"] >= 20:
