@@ -1791,6 +1791,15 @@ def kr_flow(code: str):
     if est is None:
         est = kis.investor_estimate(code) or []
         cache.set(f"kr_flow_est_{code}", est, ttl=60)
+    # 외국인·기관 확정 매수·매도: 장중엔 전 거래일, 15:40 뒤 오늘 줄이 생기면 오늘 (11-28)
+    conf_rows = cache.get(f"kr_flow_conf_{code}")
+    if conf_rows is None:
+        conf_rows = kis.investor_confirmed(code)
+        late = now.hour * 60 + now.minute >= 940
+        cache.set(f"kr_flow_conf_{code}", conf_rows, ttl=120 if late else 1800)
+    today = now.strftime("%Y-%m-%d")
+    conf_today = next((r for r in conf_rows if r["day"] == today), None) if now.hour * 60 + now.minute >= 940 else None
+    conf_prev = next((r for r in conf_rows if r["day"] < today), None)
     mk = cache.get("kr_flow_market")
     if mk is None:
         mk = {"K": kis.market_program("K"), "Q": kis.market_program("Q")}
@@ -1807,7 +1816,8 @@ def kr_flow(code: str):
     last = series[-1] if series else None
     return jsonify({"code": code, "live": live, "series": series, "rt": ws_ok,
                     "program": {"at": last[0], "price": last[1], "qty": last[2], "amt": last[3], "buy": last[4], "sell": last[5]} if last else None,
-                    "foreign": fnow if (not live or series) else None, "fseries": fseries, "est": est, "market": mk, "ts": t})
+                    "foreign": fnow if (not live or series) else None, "fseries": fseries,
+                    "confirmed": {"today": conf_today, "prev": conf_prev}, "est": est, "market": mk, "ts": t})
 
 
 @app.route("/api/kr-disclosures")

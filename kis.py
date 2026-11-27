@@ -160,6 +160,21 @@ def investor_daily(code: str) -> list[dict]:
     return sorted(out, key=lambda x: x["day"])
 
 
+def investor_confirmed(code: str) -> list[dict]:
+    """외국인·기관 확정 매수·매도 일별, 최신부터 [{day, frg: {buy, sell, net, net_amt}, inst: {...}}] (주, 원).
+    수급 창 '전일/오늘 확정' 막대용 (11-28). 매수·매도가 둘 다 0인 줄(장중 오늘 줄 등)은 뺀다."""
+    j = get(_Q + "inquire-investor", "FHKST01010900", {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+    out = []
+    for x in (j or {}).get("output") or []:
+        d = _day(x.get("stck_bsop_date"))
+        side = lambda p: {"buy": _i(x.get(f"{p}_shnu_vol")), "sell": _i(x.get(f"{p}_seln_vol")), "net": _i(x.get(f"{p}_ntby_qty")),
+                          "net_amt": _i(x.get(f"{p}_ntby_tr_pbmn")) * 1_000_000}      # KIS 금액 단위 백만 원
+        f, o = side("frgn"), side("orgn")
+        if d and (f["buy"] or f["sell"]) and (o["buy"] or o["sell"]):
+            out.append({"day": d, "frg": f, "inst": o})
+    return sorted(out, key=lambda r: r["day"], reverse=True)
+
+
 # ── 모의투자용 시세 (11-26) ── 호가·현재가·시간외·휴장일. mkt: J(KRX)·NX(넥스트레이드)·UN(통합)
 def book(code: str, mkt: str = "UN") -> dict | None:
     """호가 10단계 스냅숏 {asks:[(가격, 잔량)] 최우선부터, bids, total_ask, total_bid, price, prev_close(기준가), open, high, low}."""

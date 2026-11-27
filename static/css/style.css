@@ -4033,7 +4033,7 @@ body.light-theme .pp-band { background: #fff4d6; color: #7a5200; }
 .kf-upd { margin-left: auto; color: var(--muted); font-size: 11px; }
 .kf-fold { background: var(--bg-input); color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
 .kf-fold:hover { color: inherit; }
-.kf-nums { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+.kf-nums { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 6px; }
 #kf-prog-slot { display: contents; }
 .kf-cell { background: var(--bg-input); border-radius: 6px; padding: 5px 8px; min-width: 0; }
 .kf-k { color: var(--muted); font-size: 11px; }
@@ -4056,6 +4056,7 @@ body.light-theme .pp-band { background: #fff4d6; color: #7a5200; }
 .kf-s b { font-variant-numeric: tabular-nums; }
 .kf-s b.up { color: var(--up); } .kf-s b.down { color: var(--down); }
 .kf-why { font-size: 10px; opacity: .8; margin-top: 2px; }
+.kf-sub { border-top: 1px dashed var(--border); margin-top: 5px; padding-top: 4px; }
 .kf-tabs { display: inline-flex; gap: 2px; }
 .kf-tabs button { background: none; border: 1px solid transparent; color: var(--muted); font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; }
 .kf-tabs button[aria-selected="true"] { color: inherit; border-color: var(--border); background: var(--bg-input); font-weight: 700; }

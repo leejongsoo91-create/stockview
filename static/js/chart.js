@@ -3977,14 +3977,26 @@ function _kfRender(d) {
   const estTxt = v => (e ? `가집계 ${e.n}차 ${e.at}: ${_kfSide(v)}<b class="${_kfCls(v)}">${_kfFmtQty(v)}</b>`
     : (d.live ? '가집계 아직 없음 (첫 집계 09:30)' : '가집계 없음'));
   const f = d.foreign;
-  const frgnCell = `<div class="kf-cell kf-frgn"><div class="kf-k">외국인<small title="외국계 증권사 창구 순매수 — 외국인이 국내 증권사로 낸 주문은 안 잡혀요">외국계 창구 · 실시간</small> ${f ? _kfLead(f.net) : ''}</div>
+  // 확정 매수·매도 (장 마감 뒤 KIS 값): 오늘 것이 나왔으면 칸의 주인공으로, 아니면 아래에 전일(최근 거래일) 막대
+  const conf = d.confirmed || {}, ct = conf.today, cp = conf.prev;
+  const md = day => (day ? `${day.slice(5, 7)}-${day.slice(8, 10)}` : '');
+  const confSub = (r, key) => !r ? '' : `<div class="kf-sub"><div class="kf-k">${d.live ? '전일' : '최근 거래일'}(${md(r.day)}) 확정</div>
+      ${_kfRatioHtml(r[key].buy, r[key].sell, _kfMan)}
+      <div class="kf-s">${r[key].net >= 0 ? '순매수' : '순매도'} <b class="${_kfCls(r[key].net)}">${_kfFmtQty(r[key].net)}</b> <span class="${_kfCls(r[key].net_amt)}">${_kfFmtEok(r[key].net_amt / 1e8)}</span></div></div>`;
+  const confMain = (label, r, key, cmp) => `<div class="kf-cell${key === 'frg' ? ' kf-frgn' : ''}"><div class="kf-k">${label}<small>오늘(${md(r.day)}) 확정</small> ${_kfLead(r[key].net)}</div>
+      <div class="kf-v ${_kfCls(r[key].net)}">${_kfFmtQty(r[key].net)} <span class="kf-amt ${_kfCls(r[key].net_amt)}">${_kfFmtEok(r[key].net_amt / 1e8)}</span></div>
+      ${_kfRatioHtml(r[key].buy, r[key].sell, _kfMan)}
+      <div class="kf-s">${cmp}</div></div>`;
+  const frgnCell = ct ? confMain('외국인', ct, 'frg', `비교: 외국계 창구 ${f ? _kfFmtQty(f.net) : '—'}${e ? ` · 가집계 ${e.n}차 ${_kfFmtQty(e.foreign)}` : ''}`)
+    : `<div class="kf-cell kf-frgn"><div class="kf-k">외국인<small title="외국계 증권사 창구 순매수 — 외국인이 국내 증권사로 낸 주문은 안 잡혀요">외국계 창구 · 실시간</small> ${f ? _kfLead(f.net) : ''}</div>
       <div class="kf-v ${_kfCls(f && f.net)}">${f ? _kfFmtQty(f.net) : '—'}</div>
       ${f ? _kfRatioHtml(f.buy, f.sell, _kfMan) : ''}
-      <div class="kf-s">${estTxt(e && e.foreign)}</div></div>`;
-  const instCell = `<div class="kf-cell"><div class="kf-k">기관<small>가집계</small></div>
+      <div class="kf-s">${estTxt(e && e.foreign)}</div>${confSub(cp, 'frg')}</div>`;
+  const instCell = ct ? confMain('기관', ct, 'inst', e ? `비교: 가집계 ${e.n}차 ${_kfFmtQty(e.inst)}` : '')
+    : `<div class="kf-cell"><div class="kf-k">기관<small>가집계</small></div>
       <div class="kf-v ${_kfCls(e && e.inst)}">${e ? `${_kfSide(e.inst)}${_kfFmtQty(e.inst)}` : '—'}</div>
       <div class="kf-s">${e ? `${e.n}차 ${e.at} 기준 (하루 5번)` : (d.live ? '아직 없음 (첫 집계 09:30)' : '집계 없음')}</div>
-      <div class="kf-s kf-why">실시간 매수·매도는 거래소가 장중에 공개하지 않아요</div></div>`;
+      <div class="kf-s kf-why">실시간 매수·매도는 거래소가 장중에 공개하지 않아 전일 확정을 보여 줘요</div>${confSub(cp, 'inst')}</div>`;
   const mkLine = (nm, r) => `<div><span class="kf-s">${nm}</span> ${r ? _kfSide(r[1]) : ''}<b class="${_kfCls(r && r[1])}">${r ? _kfFmtEok(r[1]) : '—'}</b></div>`;
   nums.innerHTML = `<div id="kf-prog-slot"></div>
     ${frgnCell}
