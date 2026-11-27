@@ -1877,8 +1877,10 @@ def stock_news(ticker: str):
         _archive_news(data, ticker)
         if df.NEWS_TR_ENABLED and data:
             try:
-                if df.translate_news_titles([n["title"] for n in data[:10] if n.get("title")]):
-                    _archive_fill_ko([n["title"] for n in data[:10]])
+                # 전엔 앞 10건만 번역해 '지난 30일 뉴스'에 영어 제목이 섞였다(11-28 QA) → 받은 것 전부(종목당 20건 안팎)
+                titles = [n["title"] for n in data[:60] if n.get("title")]
+                if df.translate_news_titles(titles):
+                    _archive_fill_ko(titles)
             except Exception as e:
                 log.warning(f"종목 뉴스 번역 실패 ({ticker}): {e}")
     out = []
@@ -2828,9 +2830,19 @@ def stock_news_archive_api(ticker):
     if home is not None:
         return jsonify(home)
     since = int(time.time()) - days * 86400
-    return jsonify(_archive_rows("SELECT n.url, title, title_ko, source, market, category, ts, sentiment FROM news n"
-                                 " JOIN news_tk t ON t.url = n.url WHERE t.tk = ? AND n.ts >= ? ORDER BY n.ts DESC LIMIT 200",
-                                 (t, since)))
+    q = ("SELECT n.url, title, title_ko, source, market, category, ts, sentiment FROM news n"
+         " JOIN news_tk t ON t.url = n.url WHERE t.tk = ? AND n.ts >= ? ORDER BY n.ts DESC LIMIT 200")
+    rows = _archive_rows(q, (t, since))
+    # 번역 안 된 지난 기사(예전엔 종목 뉴스 앞 10건만 번역)는 열 때 번역해 채운다 — 집 서버만 (11-28 QA)
+    todo = [r["title"] for r in rows if not r.get("title_ko") and df.news_needs_tr(r.get("title", ""))][:80]
+    if todo and df.NEWS_TR_ENABLED:
+        try:
+            if df.translate_news_titles(todo):
+                _archive_fill_ko(todo)
+                rows = _archive_rows(q, (t, since))
+        except Exception as e:
+            log.warning(f"지난 종목 뉴스 번역 실패 ({t}): {e}")
+    return jsonify(rows)
 
 
 @app.route("/api/reports")
@@ -3265,7 +3277,10 @@ def _home_json(path: str, params: dict, key: str, need: str) -> dict | None:
         d = None
     if isinstance(d, dict):
         d["from_home"] = True
-    cache.set(key, d or {}, ttl=300 if d else 120)
+    # 뉴스 목록인데 번역이 하나도 없으면 집 서버가 막 재시작한 때일 수 있다 → 짧게만 기억 (11-28: 5001이 몇 분간 7/401만 한글)
+    raw = d if isinstance(d, list) else None
+    no_ko = bool(raw) and any(isinstance(x, dict) and "title" in x for x in raw[:50]) and not any(isinstance(x, dict) and x.get("title_ko") for x in raw)
+    cache.set(key, d or {}, ttl=30 if (not d or no_ko) else 300)
     return d
 
 

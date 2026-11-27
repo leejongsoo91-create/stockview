@@ -1855,7 +1855,10 @@ async function _initNewsDate() {
 function _nxSave() { try { localStorage.setItem('NXV', JSON.stringify(_nxView)); } catch {} }
 function _nxTitle(n) { return (_nxView.lang === 'ko' && n.title_ko) ? n.title_ko : n.title; }
 function _newsTitleKo(n) { return n.title_ko || n.title; }   // 홈·테이프용
-function _toggleNewsLang() { _nxView.lang = _nxView.lang === 'ko' ? 'en' : 'ko'; _nxSave(); renderNews(); }
+function _toggleNewsLang() {   // 뉴스·리포트 같이 (11-28 QA: 리포트엔 전환이 없었음)
+  _nxView.lang = _nxView.lang === 'ko' ? 'en' : 'ko'; _nxSave(); renderNews();
+  if (_allReports.length) renderReports(_activeReportType);
+}
 function _toggleNewsSide() { _nxView.side = !_nxView.side; _nxSave(); renderNews(); }
 function _setNewsCat(c) { _nxView.cat = c; _nxLimit = 150; _nxSave(); renderNews(); window.scrollTo({ top: 0 }); }
 
@@ -2079,6 +2082,8 @@ function renderReports(rtype) {
     ? Object.values(NB.load()).filter(item => item.report_type != null)
     : (rtype === 'all' ? _allReports : _allReports.filter(r => r.report_type === rtype));
   const el = document.getElementById('reports-list');
+  const rpLang = document.getElementById('rp-lang-toggle');
+  if (rpLang) { rpLang.textContent = _nxView.lang === 'ko' ? '가 한글' : 'A 원문'; rpLang.classList.toggle('active', _nxView.lang === 'ko'); }
   if (!list.length) {
     const emptyMsg = _showReportsBookmarkedOnly ? '북마크한 리포트가 없습니다.' : '리포트가 없습니다.';
     el.innerHTML = `<div style="color:var(--muted);padding:20px 0">${emptyMsg}</div>`;
