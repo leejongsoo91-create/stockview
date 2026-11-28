@@ -483,6 +483,12 @@
             <button id="ind-help-btn" class="ind-icon-btn" title="지표 가이드 — 각 지표의 뜻" aria-haspopup="dialog">?</button>
             <button id="vol-trend-btn" class="ind-icon-btn" title="일별 시세 — 주요 지표 + 일별 시가·고가·저가·종가·거래량·거래대금 (20일·60일·1년)" aria-haspopup="dialog">📋 일별 시세</button>
           </span>
+          <!-- 🪟 차트 1·2·4칸 (11-28) — 칸마다 다른 종목, 누른 칸이 큰 차트(지표·그리기·옆칸·수급) -->
+          <span class="chart-split" id="chart-split" role="group" aria-label="차트 칸 수">
+            <button type="button" data-n="1" class="on" title="차트 1개" aria-label="차트 1개" aria-pressed="true"><svg viewBox="0 0 16 12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1.5"/></svg></button>
+            <button type="button" data-n="2" title="차트 2개 (좌우) — 칸마다 다른 종목" aria-label="차트 2개" aria-pressed="false"><svg viewBox="0 0 16 12" aria-hidden="true"><rect x="1" y="1" width="6" height="10" rx="1"/><rect x="9" y="1" width="6" height="10" rx="1"/></svg></button>
+            <button type="button" data-n="4" title="차트 4개 (2×2) — 칸마다 다른 종목" aria-label="차트 4개" aria-pressed="false"><svg viewBox="0 0 16 12" aria-hidden="true"><rect x="1" y="1" width="6" height="4" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="1" y="7" width="6" height="4" rx="1"/><rect x="9" y="7" width="6" height="4" rx="1"/></svg></button>
+          </span>
           <span id="chart-live-badge" class="chart-live-badge" style="display:none">● 실시간</span>
           <span id="chart-updated-at" class="chart-updated-at"></span>
           <!-- ⚙ 지표 설정 창 -->
@@ -538,6 +544,8 @@
       </div>
       <div class="chart-layout">
         <div class="chart-main">
+          <div id="chart-grid" class="chart-grid n1">
+          <div id="chart-slot-main" class="chart-slot">
           <div class="chart-header">
             <div>
               <span id="chart-ticker-label" class="chart-ticker-name">—</span>
@@ -577,15 +585,19 @@
             <div class="rsi-panel-label">스토캐스틱 (14, 3)</div>
             <div id="sto-chart"></div>
           </div>
+          </div><!-- /chart-slot-main -->
+          </div><!-- /chart-grid -->
           <!-- 📊 실시간 수급 (11-28): 국내 종목 차트 아래 — 프로그램 순매수(체결마다)·외국인·기관 추정·시장 프로그램 -->
           <section id="kr-flow" class="kr-flow" hidden aria-label="실시간 수급">
             <div class="kf-hd">
               <b>📊 수급</b><span id="kf-name" class="kf-name"></span>
               <span id="kf-upd" class="kf-upd"></span>
-              <button type="button" id="kf-fold" class="kf-fold" aria-expanded="true" title="수급 창 접기·펴기">접기</button>
+              <button type="button" id="kf-fold" class="kf-fold" aria-expanded="false" title="흐름 그래프 펴기·접기 (숫자·비율막대는 늘 보임)">그래프 펴기 ▾</button>
             </div>
             <div id="kf-body">
               <div id="kf-nums" class="kf-nums"></div>
+              <!-- 11-28: 접기는 그래프만 — 숫자 칸·비율막대는 늘 보임 -->
+              <div id="kf-graphs">
               <div class="kf-graph-hd">
                 <span class="kf-tabs" role="tablist">
                   <button type="button" role="tab" data-kf="prog" aria-selected="true">프로그램 흐름</button>
@@ -597,6 +609,7 @@
               <div id="kf-chart" class="kf-chart" data-kf="prog"></div>
               <div id="kf-chart2" class="kf-chart" data-kf="inv" hidden></div>
               <div id="kf-note" class="kf-note"></div>
+              </div>
             </div>
           </section>
         </div>
@@ -659,21 +672,36 @@
             <div class="info-section-title">✏️ 그린 선 <button id="draw-clear-all-btn" class="draw-clear-all-btn" onclick="clearAllDrawings()">전체 삭제</button></div>
             <div id="chart-draw-list"></div>
           </div>
-          <div id="signal-card" style="display:none"></div>
-          <!-- 관련 뉴스: 종합 신호 바로 아래 (11-24, 예전엔 오른쪽 칸 맨 아래) -->
-          <div id="stock-news-section"></div>
-          <!-- 🏦 증권사 리포트 (11-24 텔레그램 리서치 수집) -->
-          <div id="broker-research-section"></div>
-          <!-- 📅 실적 (11-25, 미국) -->
-          <div id="earnings-section"></div>
-          <!-- 🧭 수급·내부자 (11-25, 미국) -->
-          <div id="flow-section"></div>
-          <div id="financials-card" style="display:none"></div>
-          <div id="stock-info-panel">
-            <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>
+          <!-- 11-28 옆칸 탭: 요약·뉴스·리포트·재무 (종합 신호 카드는 차트 왼쪽 위 배지로 옮김). 마지막 탭은 localStorage CSB -->
+          <div class="csb-tabs" role="tablist" aria-label="종목 정보">
+            <button type="button" role="tab" data-csb="sum" aria-selected="true">요약</button>
+            <button type="button" role="tab" data-csb="news" aria-selected="false">뉴스<span class="csb-cnt" id="csb-cnt-news"></span></button>
+            <button type="button" role="tab" data-csb="rep" aria-selected="false">리포트<span class="csb-cnt" id="csb-cnt-rep"></span></button>
+            <button type="button" role="tab" data-csb="fin" aria-selected="false">재무</button>
           </div>
-          <!-- 종합 진단: 맨 아래·기본 접힘 (11-23) -->
-          <div id="stock-analysis-card" style="display:none"></div>
+          <div class="csb-pane" data-csb="sum" role="tabpanel">
+            <div id="stock-info-panel">
+              <div class="info-placeholder">종목을 선택하면 차트와 정보가 표시됩니다</div>
+            </div>
+            <!-- 📅 실적 (11-25, 미국) -->
+            <div id="earnings-section"></div>
+            <!-- 🧭 수급·내부자 (11-25, 미국) -->
+            <div id="flow-section"></div>
+            <!-- 최신 뉴스 2건 (뉴스 탭에서 복사) -->
+            <div id="csb-news-mini"></div>
+            <!-- 종합 진단: 맨 아래·기본 접힘 (11-23) -->
+            <div id="stock-analysis-card" style="display:none"></div>
+          </div>
+          <div class="csb-pane" data-csb="news" role="tabpanel" hidden>
+            <div id="stock-news-section"></div>
+          </div>
+          <div class="csb-pane" data-csb="rep" role="tabpanel" hidden>
+            <!-- 🏦 증권사 리포트 (11-24 텔레그램 리서치 수집) -->
+            <div id="broker-research-section"></div>
+          </div>
+          <div class="csb-pane" data-csb="fin" role="tabpanel" hidden>
+            <div id="financials-card" style="display:none"></div>
+          </div>
         </aside>
       </div>
       <div id="pp-mbar" class="pp-mbar" hidden>
