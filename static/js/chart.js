@@ -2820,7 +2820,11 @@ function _mcLayout() {
     if (document.hidden || !grid.offsetParent) return;
     Object.keys(_mcPanes).forEach(k => _mcLoad(+k, true));
   }, 60000);
-  requestAnimationFrame(_resizeChartPanels);
+  requestAnimationFrame(() => {
+    _resizeChartPanels();
+    // 폭이 바뀌면 봉 간격은 그대로라 최근 구간이 오른쪽 밖으로 밀림 → 다시 전체 맞춤 (11-28)
+    if (_lwChart && _lastOhlcv.length && !_compareMode) _fitChart();
+  });
 }
 
 function _mcDestroy(i) {
